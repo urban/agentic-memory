@@ -1,11 +1,3 @@
----
-type: schema
-status: active
-created: 2026-05-26
-updated: 2026-05-26
-summary: Reflection workflow for memory graph health and session feedback.
----
-
 # Reflection Workflow
 
 Reflection is the maintenance loop that keeps Agentic Memory useful over time.
@@ -19,13 +11,31 @@ Reflection improves the memory system by inspecting:
 1. the memory graph itself
 2. agent usage patterns from external session traces, when provided
 
-It should strengthen navigation, reduce context cost, and preserve useful rationale for future agents.
+It should strengthen navigation, reduce context cost, preserve useful rationale, and help the memory system learn from how agents actually use it.
 
-## Trigger
+## When to use Reflection
+
+Run Reflection when:
+
+- `MEMORY.md` or maps are getting too large
+- agents repeatedly fail to find useful context
+- atomic notes are weakly connected or duplicated
+- many notes are still `draft` or `seedling`
+- a session produced durable usage insights
+- a migration or major reorganization has just happened
+- you want to review memory health before or after meaningful work
+
+## Skill behavior
 
 Reflection is manually triggered through the companion skill at `skills/reflection/SKILL.md`.
 
-Reflection is automation-compatible, but not automatic.
+The skill is a thin dispatcher. It locates the vault and defers to the local vault instructions at:
+
+```text
+.agentic-memory/instructions/reflection.md
+```
+
+Those local LLM instructions define the detailed version-specific procedure.
 
 ## Session traces
 
@@ -36,153 +46,35 @@ Rules:
 - Do not store raw session logs in the memory vault.
 - Reflection may inspect external session traces when the user provides them.
 - Durable summaries of session usage may be saved only when useful.
-- If saved, summaries belong in `sources/` as immutable evidence.
-- Interpretation derived from summaries belongs in `notes/`, `mocs/`, `MEMORY.md`, or `outputs/`.
+- If saved as evidence, session-usage summaries belong in `sources/`.
+- Interpretation derived from summaries belongs in `notes/`, `maps/`, `MEMORY.md`, or `records/`.
 
-## Passes
+## Typical outcomes
 
-### 1. Context and Git baseline
+Reflection may produce:
 
-- Inspect `MEMORY_SYSTEM.md`.
-- Inspect `git status` when the vault is Git-backed.
-- Record what files and optional session traces are available.
+- improved map routing links
+- new or stronger semantic links between notes
+- proposed note merges, splits, or pruning
+- a proposed lift + decompose plan for overloaded notes
+- token-budget warnings
+- stale or weak memory warnings
+- a Reflection record in `records/`
 
-### 2. Token budget health
+High-impact changes require human approval. Examples include deletion, archiving, splitting, merging, materially rewriting `MEMORY.md`, changing instructions, or altering human-authored meaning.
 
-Flag:
+## Git workflow
 
-- `MEMORY.md` above warning threshold
-- MOCs that contain too much explanation
-- atomic notes above warning threshold
-- repeated content duplicated across files
-- outputs that lack summaries
+Agentic Memory assumes Git-backed persistence, but agents do not commit automatically.
 
-### 3. MOC routing quality
+Commit to Git before and after Reflection to see how memory changed over time.
 
-Check:
+A Reflection closeout should normally provide:
 
-- MOC links follow `[[target]] — description. Read when: condition.`
-- `MEMORY.md` routes to relevant MOCs.
-- MOCs are not content dumps.
-- routing links are useful enough for progressive disclosure.
+- `git status`
+- a concise diff summary when useful
+- what changed and why
+- what was proposed but not changed
+- an optional suggested commit message
 
-### 4. Semantic link health
-
-Check atomic notes for:
-
-- required `links:` frontmatter
-- body `## Semantic links` section
-- meaningful Idea Compass categories
-- orphan notes
-- weak or unexplained links
-
-### 5. Note maturity
-
-Check:
-
-- `type: note` has `maturity`
-- `active` + `seedling` tensions
-- notes with fewer than 3 semantic links
-- candidates for `seedling` → `budding` → `evergreen`
-- candidates for merge, pruning, or compaction
-
-### 6. Session usage feedback
-
-When external session traces are provided, look for:
-
-- files agents repeatedly loaded
-- files agents ignored
-- repeated failed searches
-- missing MOCs
-- confusing instructions
-- repeated edits to the same memory area
-- notes that are found only by direct search, not graph navigation
-
-Use these patterns to improve routing and semantic links.
-
-### 7. Safe edits and proposals
-
-Allowed directly:
-
-- add missing summaries
-- add or fix frontmatter
-- add obvious semantic-link scaffolds
-- normalize MOC routing-link format
-- mark graph debt
-- update `updated` dates
-- create the reflection summary source
-
-Require approval before:
-
-- deleting notes
-- archiving notes
-- materially rewriting `MEMORY.md`
-- splitting or merging large notes
-- changing schema or instructions
-- altering user-authored meaning
-- substantively changing mature evergreen notes
-
-### 8. Reflection summary source
-
-Every substantial Reflection run should create an immutable source file:
-
-```text
-sources/YYYY-MM-DD-reflection-summary.md
-```
-
-It records the agent's rationale at the time, based on the context available.
-
-Frontmatter:
-
-```yaml
----
-type: source
-status: active
-created: YYYY-MM-DD
-updated: YYYY-MM-DD
-source_type: reflection-summary
-generated_by: agent
-summary: Reflection run summary for graph health, token budgets, and memory usage patterns.
----
-```
-
-Required body sections:
-
-```md
-# Reflection Summary
-
-This is an agent-generated maintenance summary. Treat it as a time-bound rationale record, not as canonical system policy.
-
-## Context available
-
-## What was inspected
-
-## Changes made
-
-## Why changes were made
-
-## Changes proposed but not made
-
-## Usage patterns observed
-
-## Open follow-up questions
-
-## Git status and commit
-```
-
-### 9. Git closeout
-
-Reflection assumes the vault is Git-backed.
-
-At the end:
-
-- show `git status`
-- summarize changes
-- prepare a commit message
-- ask before committing
-
-Suggested commit message:
-
-```text
-reflection: improve memory graph health YYYY-MM-DD
-```
+The human reviews diffs and commits manually unless they explicitly instruct an agent to commit in that moment.

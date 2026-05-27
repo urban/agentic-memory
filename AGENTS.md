@@ -11,6 +11,6 @@ This repository defines Agentic Memory.
 ## Scope
 
 - Human-facing docs live in `docs/`.
-- Copyable vault implementation lives in `templates/vault/`.
+- Copyable vault implementation lives in `template/`.
 - Companion skills live in `skills/`.
 - Versioned migration guides and skills live in `migrations/`.

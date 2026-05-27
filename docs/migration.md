@@ -1,11 +1,3 @@
----
-type: schema
-status: active
-created: 2026-05-26
-updated: 2026-05-26
-summary: Migration philosophy and versioned migration structure for Agentic Memory.
----
-
 # Migration
 
 Agentic Memory is designed to evolve without trapping memory in hidden tool state.
@@ -14,13 +6,23 @@ Migration should be explicit, reviewable, and Git-auditable.
 
 ## Version contract
 
-Each vault carries a local `MEMORY_SYSTEM.md` file that declares:
+Each vault carries a local control-plane contract file:
 
-- Agentic Memory version
-- required structure
-- local deviations
-- migration notes
-- canonical spec reference, if applicable
+```text
+.agentic-memory/LLMS.md
+```
+
+Its frontmatter contains the lock-step Agentic Memory version:
+
+```yaml
+---
+version: 0.1.0
+---
+```
+
+The body may describe required structure, local deviations, small local term definitions, and migration notes.
+
+Agentic Memory uses one lock-step `version` field rather than separate schema, package, and skill versions.
 
 ## Migration locations
 
@@ -51,20 +53,6 @@ A migration may include:
 - Normalize structure gradually.
 - Use Git branches or commits as checkpoints.
 - Ask before pruning, archiving, or materially rewriting user-authored memory.
+- Do not commit automatically; let the human review diffs and commit manually.
 
 ## Current migration
-
-The initial migration path is:
-
-```text
-migrations/agentic-brain-to-v1/
-```
-
-It helps move the existing Agentic Brain implementation into the simpler Agentic Memory v1 model.
-
-The migration is intentionally conservative because the source repository contains both:
-
-- memory-system architecture
-- real personal/project memory
-
-The first pass should classify and propose moves before making destructive changes.

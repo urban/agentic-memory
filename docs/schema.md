@@ -1,53 +1,70 @@
----
-type: schema
-status: active
-created: 2026-05-26
-updated: 2026-05-26
-summary: Agentic Memory schema, metadata, naming, and token-budget rules.
----
-
 # Schema
 
 This document defines the Agentic Memory filesystem and metadata contract.
+
+## Versioning
+
+Agentic Memory uses one lock-step version field.
+
+In a vault, the version is declared in:
+
+```text
+.agentic-memory/LLMS.md
+```
+
+Use:
+
+```yaml
+---
+version: 0.1.0
+---
+```
+
+Skills and future tooling should use the same version value. Agentic Memory does not separately version schema, skills, packages, or migrations.
 
 ## Required files and folders
 
 ```text
 AGENTS.md
 MEMORY.md
-MEMORY_SYSTEM.md
-instructions/
-mocs/
+.agentic-memory/LLMS.md
+.agentic-memory/instructions/writing-memory.md
+.agentic-memory/instructions/linking-and-maps.md
+.agentic-memory/instructions/reflection.md
+.agentic-memory/templates/map.md
+.agentic-memory/templates/note.md
+.agentic-memory/templates/record.md
+.agentic-memory/templates/reflection-record.md
+.agentic-memory/templates/source.md
+maps/
 notes/
 sources/
-outputs/
-templates/
+records/
 ```
 
-## File roles
+## Managed file roles
 
-Allowed `type` values:
+Allowed managed memory `type` values are only:
 
 ```yaml
-type: core|moc|note|source|output|template|schema|agent
+type: core|map|note|source|record
 ```
 
 Meanings:
 
-- `core` — root memory and root MOC, normally `MEMORY.md`.
-- `moc` — routing map of content.
-- `note` — atomic Zettel / graph leaf.
-- `source` — immutable captured evidence or source-like record.
-- `output` — durable generated artifact.
-- `template` — reusable file template.
-- `schema` — system contract or documentation.
-- `agent` — agent-facing instruction file.
+- `core` — root memory and root memory map, normally `MEMORY.md`.
+- `map` — memory map / routing surface.
+- `note` — atomic knowledge unit.
+- `source` — immutable captured evidence.
+- `record` — append-stable recall summary of work or events.
 
-Do not add semantic categories like `project`, `preference`, `decision`, or `concept` to `type`. Use links, MOCs, headings, and optional tags instead.
+Do not add semantic categories like `project`, `preference`, `decision`, or `concept` to `type`. Use links, maps, headings, and optional tags instead.
+
+Control-plane files under `.agentic-memory/` are not managed memory files and do not require Agentic Memory `type` frontmatter. This includes `LLMS.md`, instruction files, and templates.
 
 ## Status values
 
-Allowed `status` values:
+Allowed `status` values for managed memory files:
 
 ```yaml
 status: draft|active|stale|archived
@@ -58,11 +75,13 @@ status: draft|active|stale|archived
 - `stale` — may be outdated; verify before relying on it.
 - `archived` — retained for history, not current guidance.
 
+There is no `deleted` status. Use Git history for deleted files, and require explicit human approval before deletion.
+
 ## Required frontmatter
 
-All managed Markdown files should include frontmatter, except `AGENTS.md` when harness compatibility requires plain instructions.
+Managed Markdown files should include frontmatter, except `AGENTS.md` and all `.agentic-memory/**` control-plane files.
 
-Minimum:
+Minimum for managed memory files:
 
 ```yaml
 ---
@@ -120,7 +139,7 @@ Heuristic:
 - `budding` — useful standalone idea with partial graph connections.
 - `evergreen` — durable, concise, source-aware when needed, and usually 3+ meaningful semantic links.
 
-An active atomic note should ideally have at least 3 semantic links. Notes below that threshold are candidates for linking, merging, pruning, or compaction.
+Connectivity is only one quality signal. Reflection should also evaluate focus, independent context, compression, source awareness, stability, non-duplication, and actionability.
 
 ## Source frontmatter
 
@@ -132,48 +151,72 @@ type: source
 status: active
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
-source_type: article|book|note|session-summary|reflection-summary|other
 summary: One-line summary.
-source_url:
-generated_by:
 ---
 ```
 
-For reflection summaries, use:
+Do not add source-specific metadata fields by default. If provenance matters, put it visibly in the body.
 
-```yaml
-source_type: reflection-summary
-generated_by: agent
-```
+## Record frontmatter
 
-## Output frontmatter
+Records are append-stable recall summaries, not full artifact storage.
 
 ```yaml
 ---
-type: output
+type: record
 status: active
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
-output_type: answer|briefing|handoff|spec|migration-report|other
-summary: One-line summary.
+record_type: work|decision|handoff|migration|reflection|session|other
+summary: One-line record summary.
 sources: []
 ---
 ```
 
+Records should capture:
+
+- what happened or was created
+- when it happened
+- why it mattered
+- how it was done
+- key takeaways or insights
+- where the full artifact lives, if applicable
+
+Records may be corrected or linked over time, but should not be rewritten to erase original rationale. Use dated correction or update sections when understanding changes.
+
+## Link conventions
+
+Use vault-root-relative Obsidian wikilinks for memory content:
+
+```md
+[[maps/name]]
+[[notes/name]]
+[[sources/name]]
+[[records/name]]
+```
+
+Rules:
+
+- Omit `.md`.
+- Prefer full vault-root-relative paths over bare `[[name]]`.
+- Do not rely on Obsidian's shortest-path resolution.
+- Avoid duplicate filenames across memory folders when practical.
+- Use normal Markdown links for control-plane files in `.agentic-memory/` when such links are needed.
+
 ## Naming conventions
 
 - Use kebab-case filenames for managed files.
-- Use ISO dates for dated source and output files.
+- Use ISO dates for dated source and record files.
 - Keep folders flat by default.
 - Use frontmatter `aliases` for human-friendly titles.
 
 Examples:
 
 ```text
-mocs/agent-operations.md
+maps/memory-architecture.md
 notes/progressive-disclosure.md
-sources/2026-05-26-reflection-summary.md
-outputs/2026-05-26-session-handoff.md
+sources/2026-05-27-session-usage-summary.md
+records/2026-05-27-reflection.md
 ```
 
 ## Token and word budgets
@@ -183,10 +226,10 @@ Budgets are soft limits with warning thresholds.
 | File type   |     Soft budget |     Warning threshold |
 | ----------- | --------------: | --------------------: |
 | `MEMORY.md` | 500–1,000 words |          >1,500 words |
-| MOC         |   300–800 words |          >1,200 words |
+| Memory map  |   300–800 words |          >1,200 words |
 | Atomic note |   150–500 words |            >800 words |
 | Source      | no fixed budget | not loaded by default |
-| Output      | no fixed budget |  must include summary |
+| Record      |   150–700 words |          >1,000 words |
 
 Reflection should flag files over warning thresholds.
 
@@ -194,10 +237,4 @@ Reflection should flag files over warning thresholds.
 
 Agentic Memory vaults are assumed to be Git-backed. Memory changes should be auditable through Git history.
 
-Suggested commit prefixes:
-
-```text
-memory:
-reflection:
-migration:
-```
+Agents may inspect `git status` and `git diff` to summarize changes, but should not commit automatically. The human commits manually unless explicitly instructing an agent to commit in that moment.
