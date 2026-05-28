@@ -7,15 +7,15 @@ status: draft
 maturity: seedling
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
-summary: One-line summary.
-aliases: []
+summary: "One-line summary."
+aliases:
+  - "Title"
 tags: []
 sources: []
-links:
-  comes_from: []
-  similar_to: []
-  leads_to: []
-  competes_with: []
+comes_from: []
+similar_to: []
+leads_to: []
+competes_with: []
 ---
 
 # Title
@@ -26,14 +26,23 @@ One durable idea, written concisely.
 
 Optional. Add only when applicability is non-obvious, broad, frequently reused, or frequently misused.
 
-## Semantic links
+---
 
-### Comes from
-- [[notes/example]] — explanation. Read when: condition.
-
-### Similar to
-
-### Leads to
-
-### Competes with
+> [!info] Semantic links
+>
+> **Comes from**:
+>
+> - [[notes/example]] — explanation. Read when: condition.
+>
+> **Similar to**:
+>
+> - [[notes/example]] — explanation. Read when: condition.
+>
+> **Leads to**:
+>
+> - [[notes/example]] — explanation. Read when: condition.
+>
+> **Competes with**:
+>
+> - [[notes/example]] — explanation. Read when: condition.
 ```

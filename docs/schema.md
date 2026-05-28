@@ -16,7 +16,7 @@ Use:
 
 ```yaml
 ---
-version: 0.1.0
+version: 0.2.0
 ---
 ```
 
@@ -33,11 +33,13 @@ MEMORY.md
 .agentic-memory/instructions/reflection.md
 .agentic-memory/templates/map.md
 .agentic-memory/templates/note.md
+.agentic-memory/templates/person.md
 .agentic-memory/templates/record.md
 .agentic-memory/templates/reflection-record.md
 .agentic-memory/templates/source.md
 maps/
 notes/
+people/
 sources/
 records/
 ```
@@ -47,7 +49,7 @@ records/
 Allowed managed memory `type` values are only:
 
 ```yaml
-type: core|map|note|source|record
+type: core|map|note|person|source|record
 ```
 
 Meanings:
@@ -55,6 +57,7 @@ Meanings:
 - `core` — root memory and root memory map, normally `MEMORY.md`.
 - `map` — memory map / routing surface.
 - `note` — atomic knowledge unit.
+- `person` — durable profile or context note about a specific person.
 - `source` — immutable captured evidence.
 - `record` — append-stable recall summary of work or events.
 
@@ -77,6 +80,33 @@ status: draft|active|stale|archived
 
 There is no `deleted` status. Use Git history for deleted files, and require explicit human approval before deletion.
 
+## Obsidian-compatible frontmatter rules
+
+Managed Markdown files use YAML frontmatter shaped for Obsidian Properties.
+
+Rules:
+
+- Use Obsidian's default property name `aliases`, not deprecated `alias`.
+- Every managed page must include at least one human-readable alias, usually matching the H1.
+- Quote `summary` values.
+- List properties may be empty inline lists, such as `tags: []`.
+- Non-empty list properties should use YAML block-list format.
+- Internal links in frontmatter list values must be quoted.
+- Do not use nested frontmatter properties. Obsidian does not fully support nested properties in the Properties UI.
+- Atomic-note semantic links are top-level list properties: `comes_from`, `similar_to`, `leads_to`, and `competes_with`.
+
+Example list formatting:
+
+```yaml
+aliases:
+  - "Progressive Disclosure"
+tags: []
+sources:
+  - "[[sources/example-source]]"
+similar_to:
+  - "[[notes/related-note]]"
+```
+
 ## Required frontmatter
 
 Managed Markdown files should include frontmatter, except `AGENTS.md` and all `.agentic-memory/**` control-plane files.
@@ -89,26 +119,22 @@ type: note
 status: draft
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
-summary: One-line summary.
+summary: "One-line summary."
+aliases:
+  - "Human Readable Title"
 ---
 ```
 
 Optional common fields:
 
 ```yaml
-aliases: []
 tags: []
 sources: []
-links:
-  comes_from: []
-  similar_to: []
-  leads_to: []
-  competes_with: []
 ```
 
 ## Atomic note frontmatter
 
-`type: note` files require `maturity` and semantic-link scaffolding.
+`type: note` files require `maturity` and top-level semantic-link scaffolding.
 
 ```yaml
 ---
@@ -117,13 +143,15 @@ status: draft
 maturity: seedling
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
-summary: One-line summary.
+summary: "One-line summary."
+aliases:
+  - "Human Readable Title"
+tags: []
 sources: []
-links:
-  comes_from: []
-  similar_to: []
-  leads_to: []
-  competes_with: []
+comes_from: []
+similar_to: []
+leads_to: []
+competes_with: []
 ---
 ```
 
@@ -141,6 +169,44 @@ Heuristic:
 
 Connectivity is only one quality signal. Reflection should also evaluate focus, independent context, compression, source awareness, stability, non-duplication, and actionability.
 
+## Person frontmatter
+
+`type: person` files live in `people/` and capture durable context about a specific person. Create person notes only for people who are meaningfully relevant to durable memory, projects, collaborations, preferences, or recurring context. Do not create person notes for names that appear only incidentally in raw sources, citations, competitor pages, or historical captures.
+
+```yaml
+---
+type: person
+status: active
+created: YYYY-MM-DD
+updated: YYYY-MM-DD
+summary: "Short context about this person."
+aliases:
+  - "Person Name"
+tags: []
+sources: []
+---
+```
+
+Recommended body sections:
+
+```md
+# Person Name
+
+## Context
+
+## Preferences and communication style
+
+## Projects and associations
+
+## Important facts
+
+## Open questions
+
+## Related
+```
+
+Preserve privacy and uncertainty. Do not infer sensitive traits or private facts without explicit evidence.
+
 ## Source frontmatter
 
 Sources are immutable after capture.
@@ -151,7 +217,9 @@ type: source
 status: active
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
-summary: One-line summary.
+summary: "One-line summary."
+aliases:
+  - "Source Title"
 ---
 ```
 
@@ -168,7 +236,9 @@ status: active
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
 record_type: work|decision|handoff|migration|reflection|session|other
-summary: One-line record summary.
+summary: "One-line record summary."
+aliases:
+  - "Record Title"
 sources: []
 ---
 ```
@@ -191,6 +261,7 @@ Use vault-root-relative Obsidian wikilinks for memory content:
 ```md
 [[maps/name]]
 [[notes/name]]
+[[people/name]]
 [[sources/name]]
 [[records/name]]
 ```
@@ -215,6 +286,7 @@ Examples:
 ```text
 maps/memory-architecture.md
 notes/progressive-disclosure.md
+people/jane-doe.md
 sources/2026-05-27-session-usage-summary.md
 records/2026-05-27-reflection.md
 ```
@@ -228,6 +300,7 @@ Budgets are soft limits with warning thresholds.
 | `MEMORY.md` | 500–1,000 words |          >1,500 words |
 | Memory map  |   300–800 words |          >1,200 words |
 | Atomic note |   150–500 words |            >800 words |
+| Person note |   100–500 words |            >800 words |
 | Source      | no fixed budget | not loaded by default |
 | Record      |   150–700 words |          >1,000 words |
 

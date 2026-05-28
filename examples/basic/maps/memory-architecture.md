@@ -3,7 +3,9 @@ type: map
 status: active
 created: 2026-05-27
 updated: 2026-05-27
-summary: Routing map for Agentic Memory architecture concepts.
+summary: "Routing map for Agentic Memory architecture concepts."
+aliases:
+  - "Memory Architecture"
 ---
 
 # Memory Architecture

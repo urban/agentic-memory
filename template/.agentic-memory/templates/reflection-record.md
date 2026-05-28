@@ -7,7 +7,9 @@ status: active
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
 record_type: reflection
-summary: Reflection run summary for graph health, token budgets, and memory usage patterns.
+summary: "Reflection run summary for graph health, token budgets, and memory usage patterns."
+aliases:
+  - "Reflection"
 sources: []
 ---
 

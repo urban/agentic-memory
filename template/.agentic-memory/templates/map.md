@@ -6,7 +6,9 @@ type: map
 status: draft
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
-summary: One-line routing summary.
+summary: "One-line routing summary."
+aliases:
+  - "Title"
 ---
 
 # Title

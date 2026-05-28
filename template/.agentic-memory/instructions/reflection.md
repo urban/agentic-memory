@@ -10,6 +10,7 @@ Reflection is the maintenance workflow for graph health, compaction, and usage-p
 - map depth and top-level map quality
 - atomic-note semantic links and maturity
 - orphan or weakly connected notes
+- people-note quality, missing durable people context, and speculative people context
 - stale or duplicated memory
 - record quality and size
 - optional external session traces, if provided
@@ -25,6 +26,7 @@ If a durable summary of session usage is worth preserving as evidence, save a co
 Allowed directly:
 
 - add missing frontmatter or summaries to managed memory files
+- normalize Obsidian-compatible frontmatter formatting
 - normalize memory-map routing links
 - add semantic-link scaffolds
 - mark graph debt
@@ -34,11 +36,20 @@ Allowed directly:
 Ask before:
 
 - deleting, pruning, or archiving notes
+- deleting, pruning, or archiving people notes
 - materially rewriting `MEMORY.md`
 - splitting or merging notes
 - changing schema or instructions
 - altering human-authored meaning
 - lifting and decomposing an overloaded note into a map plus multiple notes
+
+## People-note review
+
+Create or propose people notes only for people who are meaningfully relevant to durable memory, projects, collaborations, preferences, or recurring context.
+
+Do not create people notes for every name found in text. Incidental names in raw sources, citations, competitor pages, articles, or historical captures should not become `people/` notes unless directly useful for future work.
+
+Flag people notes that are speculative, sensitive, duplicated, stale, or too detailed for durable memory.
 
 ## Lift + decompose
 

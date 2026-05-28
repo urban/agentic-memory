@@ -20,6 +20,7 @@ Run Reflection when:
 - `MEMORY.md` or maps are getting too large
 - agents repeatedly fail to find useful context
 - atomic notes are weakly connected or duplicated
+- people notes are missing, noisy, duplicated, or speculative
 - many notes are still `draft` or `seedling`
 - a session produced durable usage insights
 - a migration or major reorganization has just happened
@@ -47,7 +48,7 @@ Rules:
 - Reflection may inspect external session traces when the user provides them.
 - Durable summaries of session usage may be saved only when useful.
 - If saved as evidence, session-usage summaries belong in `sources/`.
-- Interpretation derived from summaries belongs in `notes/`, `maps/`, `MEMORY.md`, or `records/`.
+- Interpretation derived from summaries belongs in `notes/`, `people/`, `maps/`, `MEMORY.md`, or `records/`.
 
 ## Typical outcomes
 
@@ -55,6 +56,7 @@ Reflection may produce:
 
 - improved map routing links
 - new or stronger semantic links between notes
+- proposed people-note additions or cleanup
 - proposed note merges, splits, or pruning
 - a proposed lift + decompose plan for overloaded notes
 - token-budget warnings

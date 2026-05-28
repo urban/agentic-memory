@@ -1,5 +1,5 @@
 ---
-version: 0.1.0
+version: 0.2.0
 ---
 
 # Agentic Memory LLM Instructions
@@ -10,7 +10,7 @@ Read this file before meaningful vault work. Then load only the optional instruc
 
 ## Purpose
 
-Agentic Memory is a small, Markdown-based memory system for AI agents. It uses progressive disclosure, memory maps, atomic notes, sources, records, and Git-auditable changes to preserve useful context without loading the whole vault.
+Agentic Memory is a small, Markdown-based memory system for AI agents. It uses progressive disclosure, memory maps, atomic notes, people notes, sources, records, and Git-auditable changes to preserve useful context without loading the whole vault.
 
 ## Required structure
 
@@ -26,11 +26,13 @@ MEMORY.md
 └── templates/
     ├── map.md
     ├── note.md
+    ├── person.md
     ├── record.md
     ├── reflection-record.md
     └── source.md
 maps/
 notes/
+people/
 sources/
 records/
 ```
@@ -40,6 +42,7 @@ records/
 - **Core memory**: `MEMORY.md`; always-loaded memory and root memory map.
 - **Memory map**: routing note in `maps/` that tells agents what to read and when.
 - **Atomic note**: focused note in `notes/` containing one durable idea.
+- **Person note**: durable context in `people/` about a specific person who is meaningfully relevant to projects, collaborations, preferences, or recurring context.
 - **Source**: immutable captured evidence in `sources/`.
 - **Record**: append-stable recall summary in `records/` describing work, decisions, sessions, migrations, handoffs, or Reflection.
 - **Control plane**: `.agentic-memory/`; LLM-facing system contract, instructions, and templates.
@@ -52,7 +55,7 @@ records/
 3. `MEMORY.md`
 4. optional instruction files routed below
 5. relevant memory map from `maps/`
-6. specific atomic notes from `notes/`
+6. specific atomic notes from `notes/` or people notes from `people/`
 7. records or sources only when needed
 
 ## Progressive disclosure
@@ -61,24 +64,25 @@ Load the smallest useful context:
 
 1. core memory in `MEMORY.md`
 2. relevant memory map
-3. specific atomic note
+3. specific atomic note or person note
 4. record or source only if needed
 
 Do not load entire folders by default.
 
 ## Optional instruction routing
 
-- `.agentic-memory/instructions/writing-memory.md` — persistence rules, layer choice, `MEMORY.md` management, and file maintenance. Read when: creating or editing memory files.
-- `.agentic-memory/instructions/linking-and-maps.md` — memory-map routing links, vault-root-relative link rules, and atomic-note semantic-linking rules. Read when: creating maps, creating notes, adding links, or evaluating note maturity.
-- `.agentic-memory/instructions/reflection.md` — manual Reflection workflow for graph health and usage feedback. Read when: running Reflection, compaction, pruning analysis, lift + decompose analysis, or session-usage review.
+- `.agentic-memory/instructions/writing-memory.md` — persistence rules, layer choice, `MEMORY.md` management, frontmatter formatting, and file maintenance. Read when: creating or editing memory files.
+- `.agentic-memory/instructions/linking-and-maps.md` — memory-map routing links, vault-root-relative link rules, atomic-note semantic-linking rules, and people-note routing. Read when: creating maps, creating notes, creating people notes, adding links, or evaluating note maturity.
+- `.agentic-memory/instructions/reflection.md` — manual Reflection workflow for graph health and usage feedback. Read when: running Reflection, compaction, pruning analysis, lift + decompose analysis, people-note cleanup, or session-usage review.
 
 ## Reading rules
 
 - Use progressive disclosure.
 - Prefer routing surfaces before detailed notes.
 - Read summaries and `Read when:` clauses before opening linked files.
-- Use vault-root-relative wikilinks for memory content, such as `[[maps/name]]` or `[[notes/name]]`.
+- Use vault-root-relative wikilinks for memory content, such as `[[maps/name]]`, `[[notes/name]]`, `[[people/name]]`, `[[sources/name]]`, and `[[records/name]]`.
 - Do not load all notes just because they exist.
+- Treat people notes as durable collaborator/contact context, not a place for speculation.
 - Treat sources as evidence, not default context.
 - Treat records as compact recall summaries, not full artifacts.
 - Do not route memory maps to `.agentic-memory/` control-plane files.
@@ -90,6 +94,7 @@ Use the smallest correct memory layer:
 - `MEMORY.md` — cross-cutting core memory and root routing.
 - `maps/` — routing and navigation.
 - `notes/` — atomic durable ideas.
+- `people/` — durable context about specific people.
 - `sources/` — immutable captured evidence.
 - `records/` — append-stable summaries of work, decisions, sessions, migrations, handoffs, or Reflection.
 
@@ -101,16 +106,17 @@ Prefer updating existing files over creating duplicates.
 
 ## Managed file rules
 
-- Managed memory types are only `core`, `map`, `note`, `source`, and `record`.
-- Managed Markdown files use YAML frontmatter.
+- Managed memory types are only `core`, `map`, `note`, `person`, `source`, and `record`.
+- Managed Markdown files use Obsidian-compatible YAML frontmatter; read `.agentic-memory/instructions/writing-memory.md` for the canonical formatting rules.
 - Control-plane files under `.agentic-memory/` do not use managed memory `type` frontmatter.
 - Filenames use kebab-case.
 - Folders are flat by default.
 - `MEMORY.md` is core memory and root memory map.
-- Memory content links use vault-root-relative wikilinks, such as `[[maps/name]]`, `[[notes/name]]`, `[[sources/name]]`, and `[[records/name]]`.
+- Memory content links use vault-root-relative wikilinks, such as `[[maps/name]]`, `[[notes/name]]`, `[[people/name]]`, `[[sources/name]]`, and `[[records/name]]`.
 - Memory-map routing links use root-relative paths: `[[notes/name]] — description. Read when: condition.`
 - Maps should not route to control-plane files.
-- Atomic notes include semantic links in frontmatter and body.
+- Atomic notes include semantic links; read `.agentic-memory/instructions/linking-and-maps.md` for the canonical semantic-link rules.
+- People notes are created only for people with durable relevance to projects, collaborations, preferences, or recurring context.
 - Sources are immutable after capture.
 - Records are append-stable recall summaries, not full artifact storage.
 - The vault is assumed to be Git-backed, but agents do not commit automatically.
@@ -121,6 +127,7 @@ Prefer updating existing files over creating duplicates.
 - Keep source material distinct from agent synthesis.
 - Mark uncertainty explicitly in visible prose.
 - Do not silently convert an agent proposal into accepted user direction.
+- Do not infer sensitive traits or private facts about people without explicit evidence.
 - If memory conflicts with current evidence, current evidence wins.
 
 ## Local deviations

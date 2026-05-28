@@ -6,7 +6,9 @@ type: source
 status: active
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
-summary: One-line source summary.
+summary: "One-line source summary."
+aliases:
+  - "Source Title"
 ---
 
 # Source Title

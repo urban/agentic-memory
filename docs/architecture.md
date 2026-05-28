@@ -22,6 +22,7 @@ The content plane contains files a human may browse in Obsidian:
 - `MEMORY.md`
 - `maps/`
 - `notes/`
+- `people/`
 - `sources/`
 - `records/`
 
@@ -39,6 +40,7 @@ The control plane lives in a hidden folder:
 └── templates/
     ├── map.md
     ├── note.md
+    ├── person.md
     ├── record.md
     ├── reflection-record.md
     └── source.md
@@ -48,7 +50,7 @@ The control plane stores the local version contract, version-specific agent inst
 
 ## Core model
 
-Agentic Memory has five practical content parts:
+Agentic Memory has six practical content parts:
 
 1. **Core memory** — `MEMORY.md`
    - Always-loaded summary and root memory map.
@@ -65,12 +67,17 @@ Agentic Memory has five practical content parts:
    - Each note captures one reusable idea, decision, pattern, question, or concept.
    - Notes mature from `seedling` to `budding` to `evergreen`.
 
-4. **Sources** — `sources/*.md`
+4. **People** — `people/*.md`
+   - Durable context about specific people.
+   - People notes are not atomic idea notes; they capture relationships, preferences, associations, and stable facts that help future collaboration.
+   - Create them only for people who are meaningfully relevant to durable memory, projects, collaborations, preferences, or recurring context.
+
+5. **Sources** — `sources/*.md`
    - Immutable captured evidence.
    - Raw source material or source-like records.
    - Not loaded by default.
 
-5. **Records** — `records/*.md`
+6. **Records** — `records/*.md`
    - Compact recall summaries of work, decisions, handoffs, migrations, sessions, or Reflection runs.
    - Records describe what happened, why, how, and what mattered.
    - They do not store full artifacts by default.
@@ -90,18 +97,20 @@ memory/
 │   └── templates/
 │       ├── map.md
 │       ├── note.md
+│       ├── person.md
 │       ├── record.md
 │       ├── reflection-record.md
 │       └── source.md
 ├── maps/
 ├── notes/
+├── people/
 ├── sources/
 └── records/
 ```
 
 Content folders are flat by default. Use memory maps and links for structure instead of deep folder hierarchy.
 
-`template/` starts with empty `maps/`, `notes/`, `sources/`, and `records/` folders. See `examples/basic/` for reference content.
+`template/` starts with empty `maps/`, `notes/`, `people/`, `sources/`, and `records/` folders. See `examples/basic/` for reference content.
 
 ## Progressive disclosure
 
@@ -112,7 +121,7 @@ Agents should load memory in this order:
 3. `MEMORY.md`
 4. optional instruction files routed from `LLMS.md`
 5. relevant memory map
-6. specific atomic notes
+6. specific atomic notes or people notes
 7. records, only when needed
 8. sources, only for verification or ingestion
 
@@ -123,8 +132,9 @@ The system should make it possible to answer most routing questions from `MEMORY
 - `MEMORY.md` is the root memory map.
 - `maps/` contains topic-specific memory maps.
 - Atomic notes are focused knowledge units that agents load after following routing links.
+- People notes are entity notes for meaningful human collaborators or recurring contacts.
 - Atomic notes connect to other atomic notes using semantic links.
-- Sources and records are referenced by notes and maps but are not default context.
+- Sources and records are referenced by notes, people notes, and maps but are not default context.
 
 Memory maps may reference other memory maps, but depth should remain shallow:
 

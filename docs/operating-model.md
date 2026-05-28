@@ -19,7 +19,7 @@ Then `LLMS.md` routes to optional instruction files based on the task.
 - Use progressive disclosure.
 - Prefer routing surfaces before detailed notes.
 - Read summaries and `Read when:` clauses before opening linked files.
-- Use vault-root-relative wikilinks for memory content, such as `[[maps/name]]` or `[[notes/name]]`.
+- Use vault-root-relative wikilinks for memory content, such as `[[maps/name]]`, `[[notes/name]]`, or `[[people/name]]`.
 - Do not load all notes just because they exist.
 - Treat sources as evidence, not default context.
 - Treat records as compact recall summaries, not full artifacts.
@@ -31,6 +31,7 @@ Use the smallest correct memory layer:
 - `MEMORY.md` — cross-cutting core memory and root routing.
 - `maps/` — routing and navigation.
 - `notes/` — atomic durable ideas.
+- `people/` — durable context about specific people.
 - `sources/` — immutable captured evidence.
 - `records/` — append-stable summaries of work, decisions, sessions, migrations, handoffs, or Reflection.
 
@@ -43,6 +44,14 @@ The LLM control plane is separate:
 Edit control-plane files only when changing how the memory system works, not when storing task memory.
 
 Prefer updating existing files over creating duplicates.
+
+Use Obsidian-compatible frontmatter when writing managed memory files:
+
+- quote `summary` values
+- include at least one human-readable `aliases` value
+- use block lists for non-empty list properties
+- quote internal links inside frontmatter lists
+- keep semantic-link properties flat (`comes_from`, `similar_to`, `leads_to`, `competes_with`), not nested under `links`
 
 ## What to persist
 
@@ -107,6 +116,7 @@ When editing a managed Markdown file:
 - keep summaries current
 - maintain memory-map routing links
 - maintain semantic links for atomic notes
+- maintain person notes when durable people context emerges
 - keep files within token budgets when possible
 - maintain the distinction between sources, notes, records, and map files
 

@@ -10,7 +10,7 @@ This repository is not itself an Agentic Memory vault. It defines the system and
 
 Agentic Memory separates a memory vault into two planes:
 
-- **Memory content**: `MEMORY.md`, `maps/`, `notes/`, `sources/`, and `records/`.
+- **Memory content**: `MEMORY.md`, `maps/`, `notes/`, `people/`, `sources/`, and `records/`.
 - **LLM control plane**: `.agentic-memory/`, which contains the local version contract, agent instructions, and file templates.
 
 The memory content stays readable in Obsidian. The hidden control plane tells agents how to operate the vault.
@@ -27,7 +27,7 @@ template/                  # clean Agentic Memory vault template
 
 ## Starter vault vs examples
 
-`template/` is intentionally clean. Its `maps/`, `notes/`, `sources/`, and `records/` folders start empty so a new memory system does not inherit seed content.
+`template/` is intentionally clean. Its `maps/`, `notes/`, `people/`, `sources/`, and `records/` folders start empty so a new memory system does not inherit seed content.
 
 `examples/basic/` contains a small reference content plane showing how memory maps and atomic notes can look. It intentionally omits `.agentic-memory/`; combine it with `template/.agentic-memory/` to make a runnable vault.
 

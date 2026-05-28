@@ -26,11 +26,11 @@ Rules:
 
 - Every routing link in a map should include a short description.
 - Every routing link in a map must include `Read when:`.
-- Maps should primarily point to other maps or atomic notes.
+- Maps should primarily point to other maps, atomic notes, or people notes.
 - Maps may point to records when a work/event summary is useful.
 - Maps may point to sources only when evidence is directly useful.
 - Maps should not route to control-plane files under `.agentic-memory/`.
-- Maps should not duplicate the full content of atomic notes.
+- Maps should not duplicate the full content of atomic notes or people notes.
 
 Control-plane files are loaded through `AGENTS.md` and `.agentic-memory/LLMS.md`.
 
@@ -41,6 +41,7 @@ Use vault-root-relative Obsidian wikilinks for memory content:
 ```md
 [[maps/name]]
 [[notes/name]]
+[[people/name]]
 [[sources/name]]
 [[records/name]]
 ```
@@ -51,7 +52,7 @@ Rules:
 - Prefer full vault-root-relative paths over bare `[[name]]`.
 - Do not rely on Obsidian's shortest-path resolution.
 - Avoid duplicate filenames across memory folders when practical.
-- Use normal Markdown links for control-plane files in `.agentic-memory/` when needed.
+- Use normal Markdown links for control-plane files in `.agentic-memory/` if such links are needed.
 
 ## `MEMORY.md` as root memory map
 
@@ -65,7 +66,7 @@ A map should be linked from `MEMORY.md` when it is:
 - an active project or thread
 - a major area of responsibility
 - a frequently used route
-- a high-level map that leads to several submaps or notes
+- a high-level map that leads to several submaps, notes, people notes, records, or sources
 - important enough that future agents should see it early
 
 A map can be omitted from `MEMORY.md` when it is:
@@ -118,16 +119,29 @@ A good atomic note is:
 
 A `## Use when` section is optional. Add it when the note's applicability is non-obvious, broad, frequently reused, or frequently misused. Routine routing guidance should live in memory-map links instead.
 
+## People notes
+
+People notes live in `people/` and use `type: person`. They capture durable context about a specific person, not an abstract idea.
+
+Create a people note only when the person is meaningfully relevant to durable memory, projects, collaborations, preferences, or recurring context. Do not create person notes for names that appear only incidentally in raw sources, competitor pages, citations, articles, or historical captures.
+
+People notes should prefer evidence-backed, non-sensitive, useful context. Mark uncertainty visibly and avoid inferring private or sensitive traits.
+
+Maps may route to people notes with the same routing-link format:
+
+```md
+- [[people/jane-doe]] — collaboration context and preferences. Read when: preparing for work involving Jane.
+```
+
 ## Semantic links in frontmatter
 
-Atomic notes use four semantic-link categories adapted from the Idea Compass pattern. The docs define the categories directly so agents do not need to know the external method.
+Atomic notes use four top-level semantic-link properties adapted from the Idea Compass pattern. The docs define the categories directly so agents do not need to know the external method.
 
 ```yaml
-links:
-  comes_from: []
-  similar_to: []
-  leads_to: []
-  competes_with: []
+comes_from: []
+similar_to: []
+leads_to: []
+competes_with: []
 ```
 
 Meanings:
@@ -139,30 +153,37 @@ Meanings:
 
 Prefer semantic links over a generic `related` field because semantic links explain why two notes are connected.
 
+Use Obsidian-compatible list formatting. Non-empty semantic-link lists should be block lists with quoted internal links:
+
+```yaml
+similar_to:
+  - "[[notes/sibling-idea]]"
+```
+
 ## Semantic links in the body
 
-Atomic notes should also include a body section with readable semantic-link explanations.
+Atomic notes should also include a body callout with readable semantic-link explanations.
 
 Recommended format:
 
 ```md
-## Semantic links
-
-### Comes from
-
-- [[notes/source-idea]] — establishes this note's origin or parent concept. Read when: deciding whether the parent context matters.
-
-### Similar to
-
-- [[notes/sibling-idea]] — explains a related or analogous idea.
-
-### Leads to
-
-- [[notes/downstream-idea]] — explains a consequence or application. Read when: applying this note.
-
-### Competes with
-
-- [[notes/alternative-idea]] — explains a tension, opposite, or tradeoff.
+> [!info] Semantic links
+>
+> **Comes from**:
+>
+> - [[notes/source-idea]] — establishes this note's origin or parent concept. Read when: deciding whether the parent context matters.
+>
+> **Similar to**:
+>
+> - [[notes/sibling-idea]] — explains a related or analogous idea.
+>
+> **Leads to**:
+>
+> - [[notes/downstream-idea]] — explains a consequence or application. Read when: applying this note.
+>
+> **Competes with**:
+>
+> - [[notes/alternative-idea]] — explains a tension, opposite, or tradeoff.
 ```
 
 `Read when:` is mandatory in memory maps and recommended in atomic notes when the link is useful for progressive disclosure.
