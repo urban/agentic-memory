@@ -88,6 +88,8 @@ Do not persist:
 
 When an agent works outside the memory vault, its primary job remains the current task. Its secondary job is to preserve durable context in the memory vault when doing so would help future work.
 
+Use repository-level `BOOTSTRAP.md` as the canonical bootstrap snippet for harness-specific entrypoints such as Pi `APPEND_SYSTEM.md`, Claude `CLAUDE.md`, or repo-level `AGENTS.md`. Those adapter files are not required Agentic Memory content. See `docs/bootstrap.md` for human-facing setup guidance.
+
 The agent should proactively update memory at natural stopping points when it observes high-signal context, especially:
 
 - a project candidate becoming a recurring effort

@@ -1,6 +1,6 @@
 # Writing Memory
 
-Read this file when creating or editing Agentic Memory files.
+Read this file when creating or editing Agentic Memory files. This is the canonical persistence policy for what to save, where to save it, and when to promote project observations into reusable memory.
 
 ## Persist only what matters
 

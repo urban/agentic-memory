@@ -51,7 +51,9 @@ The control plane lives in a hidden folder:
     └── user.md
 ```
 
-The control plane stores the local version contract, version-specific agent instructions, and scaffolds agents can use when creating new files. It is not ordinary memory content.
+The control plane stores the local version contract, version-specific agent instructions, and scaffolds agents can use when creating new memory files.
+
+The repository-level `BOOTSTRAP.md` is separate from the vault control plane. Humans or setup tooling copy/adapt it into harness-specific entrypoints such as Pi `APPEND_SYSTEM.md`, user-level `AGENTS.md` / `CLAUDE.md`, or repo-level `AGENTS.md` / `CLAUDE.md`.
 
 ## Core model
 

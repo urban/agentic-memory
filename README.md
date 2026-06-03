@@ -18,6 +18,7 @@ The memory content stays readable in Obsidian. The hidden control plane tells ag
 ## Repository layout
 
 ```text
+BOOTSTRAP.md               # copy/adapt into harness-specific cross-project entrypoints
 docs/                      # human-facing canonical documentation
 examples/basic/            # small example memory graph for reference
 skills/reflection/         # manual companion skill dispatcher for Reflection
@@ -42,5 +43,6 @@ Agentic Memory is intended to have a Bun-powered `agentic-memory` CLI with comma
 - [Operating model](docs/operating-model.md) — how agents load, write, and maintain memory.
 - [Linking and maps](docs/linking-and-maps.md) — memory-map, project-routing, and semantic-linking rules.
 - [Cross-project persistence](docs/cross-project-persistence.md) — proactive project/user memory capture across agent sessions.
+- [Bootstrap](docs/bootstrap.md) — how to install `BOOTSTRAP.md` into harness-specific entrypoints.
 - [Reflection workflow](docs/reflection-workflow.md) — graph health, compaction, and session-feedback loop.
 - [Migration](docs/migration.md) — migration philosophy and versioned migration structure.

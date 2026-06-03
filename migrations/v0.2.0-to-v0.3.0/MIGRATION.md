@@ -15,11 +15,12 @@ The migration changes:
 3. `projects/` is added for `type: project` files.
 4. `.agentic-memory/templates/user.md` and `.agentic-memory/templates/project.md` are added.
 5. `.agentic-memory/instructions/cross-project-persistence.md` is added.
-6. The managed type set expands to `core|user|map|project|note|person|source|record`.
-7. `MEMORY.md` gains a dedicated Projects section when useful.
-8. Maps are clarified as high-level conceptual/domain framing supported by notes and projects.
-9. Project files become project-specific memory maps plus durable state.
-10. Repeated project observations should be promoted into atomic notes or `USER.md`.
+6. The repository-level `BOOTSTRAP.md` provides a human-installed cross-project bootstrap snippet for harness-specific entrypoints.
+7. The managed type set expands to `core|user|map|project|note|person|source|record`.
+8. `MEMORY.md` gains a dedicated Projects section when useful.
+9. Maps are clarified as high-level conceptual/domain framing supported by notes and projects.
+10. Project files become project-specific memory maps plus durable state.
+11. Repeated project observations should be promoted into atomic notes or `USER.md`.
 
 ## Required target structure
 
@@ -127,6 +128,8 @@ Add:
 ```
 
 Update the map and note templates if needed to mention project routing and promotion.
+
+The repository-level `BOOTSTRAP.md` is the generic snippet to adapt into harness-specific files such as Pi `APPEND_SYSTEM.md`, Claude `CLAUDE.md`, or repo-level `AGENTS.md`; those adapter files are not required Agentic Memory content.
 
 ### 4. Add root user memory
 

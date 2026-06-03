@@ -429,16 +429,16 @@ records/2026-05-27-reflection.md
 
 Budgets are soft limits with warning thresholds.
 
-| File type   |     Soft budget | Warning threshold |
-| ----------- | --------------: | ----------------: |
-| `MEMORY.md` | 500–1,000 words |      >1,500 words |
-| `USER.md`   |   250–800 words |      >1,200 words |
-| Memory map  |   300–800 words |      >1,200 words |
-| Project     |   300–900 words |      >1,500 words |
-| Atomic note |   150–500 words |        >800 words |
-| Person note |   100–500 words |        >800 words |
+| File type   |     Soft budget |     Warning threshold |
+| ----------- | --------------: | --------------------: |
+| `MEMORY.md` | 500–1,000 words |          >1,500 words |
+| `USER.md`   |   250–800 words |          >1,200 words |
+| Memory map  |   300–800 words |          >1,200 words |
+| Project     |   300–900 words |          >1,500 words |
+| Atomic note |   150–500 words |            >800 words |
+| Person note |   100–500 words |            >800 words |
 | Source      | no fixed budget | not loaded by default |
-| Record      |   150–700 words |      >1,000 words |
+| Record      |   150–700 words |          >1,000 words |
 
 Reflection should flag files over warning thresholds.
 
