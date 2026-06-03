@@ -1,76 +1,46 @@
 # Reflection
 
-Reflection is the maintenance workflow for graph health, compaction, promotion review, and cleanup proposals.
+Maintenance workflow for graph health, compaction, promotion review, and cleanup proposals.
 
-Use `.agentic-memory/instructions/writing-memory.md` as the canonical persistence and promotion policy. Use `.agentic-memory/instructions/linking-and-maps.md` as the canonical navigation policy.
+Use `writing-memory.md` for persistence/promotion rules and `linking-and-maps.md` for navigation rules.
 
 ## Inspect
 
-- Git status and relevant diffs
-- `MEMORY.md` routes and budget
-- `USER.md` budget, confidence labels, and pointer quality
-- map framing, route format, and map depth
-- project lifecycle state, routing, stale state, and promotion opportunities
-- atomic-note focus, semantic links, maturity, duplication, and orphan status
-- people-note usefulness and speculation risk
-- record/source boundaries and file sizes
+- Git status/diffs
+- `MEMORY.md`: budget, top-level routes, project routes
+- `USER.md`: budget, confidence labels, pointer quality, overconfidence/sensitivity
+- maps: purpose, route format, depth, content-dump risk
+- projects: `project_status`, current state, next context, stale state, duplicated source facts, promotion opportunities
+- notes: focus, maturity, semantic links, duplication, orphan status
+- people: usefulness, evidence, speculation/sensitivity risk
+- records/sources: boundaries, sizes, provenance
 - optional external session summaries, if provided
 
-Do not copy raw session logs into the vault. Save compact session evidence in `sources/` only when useful.
+Never copy raw session logs into the vault.
 
 ## Safe direct edits
 
-Allowed directly:
+Allowed: normalize frontmatter/summaries/routes/link scaffolds, mark stale/uncertain memory, add needed confidence labels, update `updated`, and create a Reflection record.
 
-- normalize managed frontmatter and summaries
-- normalize route links and semantic-link scaffolds
-- mark graph debt or stale/uncertain memory visibly
-- add confidence labels to clearly inferred user observations
-- update `updated` dates
-- create a Reflection record
+Ask before high-impact changes: deletion, pruning, archiving, splitting, merging, materially rewriting `MEMORY.md`/`USER.md`/projects/human meaning, changing schema/instructions, or major lift/decompose work.
 
-Ask before high-impact changes:
+## Flag
 
-- deleting, pruning, archiving, splitting, or merging files
-- materially rewriting `MEMORY.md`, `USER.md`, projects, or human-authored meaning
-- changing schema or instructions
-- lifting/decomposing overloaded notes or projects
+- missing `project_status`, current state, or next useful context
+- project task logs/source-code summaries/reusable insights that belong elsewhere
+- bulky, duplicated, overconfident, speculative, or unlabeled `USER.md` entries
+- maps that duplicate notes/projects instead of routing
+- overloaded/duplicated/weakly linked notes
+- people notes for incidental names or sensitive speculation
 
-## Review focus
+## Promotion / decomposition plan
 
-Flag:
-
-- project files missing `project_status`, current state, or next useful context
-- project files that store source-code facts, task logs, or reusable insights that should move to `notes/` or `USER.md`
-- `USER.md` entries that are bulky, duplicated, overconfident, sensitive/speculative, or missing confidence labels
-- maps that are content dumps instead of high-level framing routes
-- notes that are overloaded, duplicated, weakly linked, or not atomic
-- people notes for incidental names or speculative/sensitive claims
-
-## Promotion and lift/decompose
-
-For promotion criteria, follow `writing-memory.md`.
-
-Before substantial promotion or decomposition, propose:
-
-1. what should move or split
-2. destination file(s)
-3. links/routes to update
-4. wording to keep, compact, archive, or delete
-5. risks or uncertainty
-
-Proceed only after approval when the change alters human-authored meaning or structure materially.
+Before material movement, propose: source text, destination file(s), links/routes to update, wording to keep/compact/archive/delete, and risks/uncertainty. Proceed only after approval when meaning or structure changes materially.
 
 ## Reflection record
 
-For substantial Reflection runs, create:
-
-```text
-records/YYYY-MM-DD-reflection.md
-```
-
-Include context available, what was inspected, changes made, rationale, proposed-but-not-made changes, usage/promotion patterns, open questions, and Git status/diff summary.
+For substantial runs create `records/YYYY-MM-DD-reflection.md` with context inspected, changes made, rationale, proposed-but-not-made changes, usage/promotion patterns, open questions, and Git status/diff summary.
 
 ## Closeout
 
-Show what changed and why, summarize relevant diffs when useful, suggest a commit message if helpful, and do not commit automatically.
+Summarize what changed and why, relevant diffs, proposed follow-ups, optional commit message, and Git status. Do not commit automatically.

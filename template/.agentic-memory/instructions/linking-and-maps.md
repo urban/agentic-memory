@@ -1,89 +1,43 @@
-# Linking, Memory Maps, and Projects
+# Linking, Maps, and Projects
 
-Read when adding links, creating maps/projects, or reviewing navigation. For persistence policy and promotion criteria, use `.agentic-memory/instructions/writing-memory.md`.
+Navigation policy. For persistence/layer choice, read `writing-memory.md`.
 
-## Link format
+## Wikilinks
 
-Use vault-root-relative Obsidian wikilinks for memory content:
+Use vault-root-relative Obsidian links for memory content:
 
 ```md
-[[MEMORY]]
-[[USER]]
-[[maps/name]]
-[[projects/name]]
-[[notes/name]]
-[[people/name]]
-[[sources/name]]
-[[records/name]]
+[[MEMORY]] [[USER]] [[maps/name]] [[projects/name]] [[notes/name]] [[people/name]] [[sources/name]] [[records/name]]
 ```
 
-Rules:
-
-- Omit `.md`.
-- Prefer full vault-root-relative paths over bare links, except root files `[[MEMORY]]` and `[[USER]]`.
-- Avoid duplicate filenames across memory folders when practical.
-- Use normal Markdown links for `.agentic-memory/` control-plane files if needed.
+Omit `.md`. Prefer full paths except root files. Avoid duplicate filenames across folders. Use normal Markdown links for `.agentic-memory/` files if needed.
 
 ## Routing links
 
-Every routing link in `MEMORY.md`, maps, and project routing sections must use:
+Every route in `MEMORY.md`, maps, and project routing sections uses:
 
 ```md
-- [[path/to-file]] — description. Read when: condition.
+- [[path/name]] — short description. Read when: condition.
 ```
 
-Descriptions should be short but useful enough to decide whether to load the target.
+Description + `Read when:` must be sufficient to decide whether to load the target.
 
-## Maps versus projects
+## Maps vs projects
 
-Maps (`maps/`, `type: map`) frame a high-level concept, category, or domain and route to supporting files. A map should explain why its linked notes/projects belong together without duplicating them.
+- Map (`maps/`, `type: map`): high-level concept/category/domain framing and routes. Explain why linked files belong together; do not duplicate them.
+- Project (`projects/`, `type: project`): project-specific map plus durable effort state: lifecycle, current state, goals, decisions/rationale, open loops, next context, subproject routing.
 
-Projects (`projects/`, `type: project`) are project-specific memory maps plus durable state. Use a project when the file needs lifecycle/status, current state, goals, decisions/rationale, open questions, next useful context, or subproject routing.
+If a project/group mainly organizes reusable knowledge rather than active effort state, route through or convert toward a map.
 
-A group of projects should become or link to a map when its main value shifts from tracking an effort to organizing reusable knowledge across efforts.
+## `MEMORY.md`
 
-## `MEMORY.md` routing
+Route only to top-level maps and active/important projects: recurring work, umbrella efforts, important candidates, or completed projects with reusable decisions/patterns. Do not list every file.
 
-`MEMORY.md` should link only to top-level maps and active/important projects:
+Keep depth shallow: preferred `MEMORY → map/project → note`; acceptable `MEMORY → map → map/project → note`; review deeper chains during Reflection.
 
-- maps that are broadly relevant, frequently used, or route many files
-- projects that are active, recurring, umbrella efforts, important candidates, or completed projects with reusable decisions/patterns
+## Semantic links
 
-Do not list every file. Route through parent maps/projects when possible.
-
-## Map depth
-
-Keep routing shallow:
-
-- preferred: `MEMORY.md → map/project → note`
-- acceptable: `MEMORY.md → map → map/project → note`
-- deeper chains should be reviewed during Reflection
-
-## Project semantic links
-
-Projects use frontmatter semantic links:
-
-```yaml
-comes_from: []
-similar_to: []
-leads_to: []
-competes_with: []
-```
-
-Allowed targets include `[[projects/name]]`, `[[maps/name]]`, and `[[notes/name]]`.
-
-Meanings:
-
-- `comes_from` — parent/umbrella projects, source domains, or originating concepts.
-- `similar_to` — sibling projects, analogous efforts, or related domains.
-- `leads_to` — subprojects, downstream efforts, implementation tracks, or concepts likely to emerge.
-- `competes_with` — alternative efforts, tradeoff concepts, or rejected approaches.
-
-Use semantic links instead of rigid project-kind fields when graph links explain the relationship.
-
-## Atomic-note semantic links
-
-Atomic notes use the same frontmatter properties:
+Notes and projects use top-level frontmatter lists:
 
 ```yaml
 comes_from: []
@@ -94,22 +48,15 @@ competes_with: []
 
 Meanings:
 
-- `comes_from` — origins, causes, parent ideas, broader categories.
-- `similar_to` — sibling ideas, analogies, alternate framings.
-- `leads_to` — applications, consequences, child ideas, next concepts.
-- `competes_with` — tensions, opposites, tradeoffs, alternatives.
+- `comes_from`: origins, parents, causes, umbrellas, source domains.
+- `similar_to`: siblings, analogies, related domains.
+- `leads_to`: applications, consequences, subprojects, downstream tracks.
+- `competes_with`: alternatives, tensions, tradeoffs, rejected approaches.
 
-Atomic-note semantic links usually point to other notes, but may point to maps or projects when the relationship is semantic rather than merely navigational.
+Atomic-note semantic links usually target notes; projects may target projects, maps, or notes. Use quoted wikilinks in non-empty frontmatter lists.
 
-Use Obsidian-compatible block lists with quoted wikilinks:
+Body semantic-link callouts are optional when links need explanation. `Read when:` is required for routes and recommended for semantic links that guide loading.
 
-```yaml
-similar_to:
-  - "[[notes/related-note]]"
-```
+## Graph quality flags
 
-Atomic notes should include a body callout explaining semantic links when useful. `Read when:` is required for routing links and recommended for semantic-link explanations that guide loading.
-
-## Graph quality
-
-Good navigation is shallow, explicit, DRY, and purpose-labeled. Reflection should flag orphan notes, over-deep map chains, maps that became content dumps, projects that became domain maps, and project-local insights that should be promoted to atomic notes or `USER.md`.
+During review, flag orphan notes, content-dump maps, over-deep map chains, projects that became maps, duplicated routes, and project-local insights that should be promoted to `notes/` or `USER.md`.

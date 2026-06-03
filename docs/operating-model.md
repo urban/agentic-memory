@@ -6,14 +6,14 @@ Human-facing docs explain the system. Vault-local LLM instructions in `.agentic-
 
 ## Startup
 
-At the start of meaningful vault work, agents should read:
+Agentic Memory has two startup routes.
 
-1. `AGENTS.md`
-2. `.agentic-memory/LLMS.md`
-3. `MEMORY.md`
-4. `USER.md`
+1. **Vault-local startup**: when the harness starts inside an initialized Agentic Memory vault, it should read the root `AGENTS.md`. That file routes to `.agentic-memory/LLMS.md`.
+2. **Cross-project bootstrap startup**: when the harness starts outside the vault, a global or project-level adapter copied from `BOOTSTRAP.md` points at the central vault. Current project instructions remain primary; the central vault is secondary durable memory.
 
-Then `LLMS.md` routes to optional instruction files based on the task.
+If a global bootstrap is active while the harness is inside the memory vault, treat it as redundant and follow the vault-local `AGENTS.md` path.
+
+After `.agentic-memory/LLMS.md` is reached through either route, agents should read `MEMORY.md`, read `USER.md`, and then follow `LLMS.md` to optional instruction files based on the task.
 
 For project-oriented work, the agent should identify the relevant existing project, umbrella project, or project candidate before deciding what else to load.
 
@@ -88,7 +88,7 @@ Do not persist:
 
 When an agent works outside the memory vault, its primary job remains the current task. Its secondary job is to preserve durable context in the memory vault when doing so would help future work.
 
-Use repository-level `BOOTSTRAP.md` as the canonical bootstrap snippet for harness-specific entrypoints such as Pi `APPEND_SYSTEM.md`, Claude `CLAUDE.md`, or repo-level `AGENTS.md`. Those adapter files are not required Agentic Memory content. See `docs/bootstrap.md` for human-facing setup guidance.
+Use repository-level `BOOTSTRAP.md` as the canonical bootstrap snippet for harness-specific entry points such as user-level `AGENTS.md`, Claude `CLAUDE.md`, Pi `APPEND_SYSTEM.md`, or repo-level `AGENTS.md` / `CLAUDE.md`. Those adapter files are not required Agentic Memory content. See `docs/bootstrap.md` for human-facing setup guidance.
 
 The agent should proactively update memory at natural stopping points when it observes high-signal context, especially:
 

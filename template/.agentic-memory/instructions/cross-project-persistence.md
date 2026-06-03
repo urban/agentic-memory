@@ -1,62 +1,40 @@
 # Cross-Project Persistence
 
-Read when an agent is working outside this vault and using the vault as secondary durable memory.
+Delta for agents working outside this vault while using it as secondary durable memory.
 
-This file is the external-session delta. For canonical persistence, layer choice, promotion criteria, confidence labels, and frontmatter rules, read `.agentic-memory/instructions/writing-memory.md`. For link and routing formats, read `.agentic-memory/instructions/linking-and-maps.md`.
+## Priority
 
-## Priorities
+1. Finish the current project task.
+2. Persist only durable memory that will help future sessions/projects.
 
-1. Complete the current task in the current project.
-2. Preserve durable, high-signal memory only when it will help future sessions or future projects.
+Do not derail the task. Save at natural stopping points.
 
-Do not derail the current task. Persist at natural stopping points.
+## Startup when memory is useful
 
-## Startup
+Assume the bootstrap has already resolved the central vault and `LLMS.md` has routed here. Read `MEMORY.md` and `USER.md` if they are not already loaded.
 
-When memory is useful:
+1. Identify the relevant project, umbrella project, or candidate.
+2. Load only needed maps/projects/notes/people/records/sources.
 
-1. Read `AGENTS.md`, `.agentic-memory/LLMS.md`, `MEMORY.md`, and `USER.md`.
-2. Identify the relevant `projects/` file, umbrella project, or project candidate.
-3. Load only the specific map, project, note, record, person, or source needed.
+For write policy use `writing-memory.md`; for route/link syntax use `linking-and-maps.md`.
 
-Do not load entire folders.
+## Capture
 
-## Session-to-project association
+Prefer context not cheaply re-read from the current repo: goals, durable state, decisions/rationale, open loops, next context, repeated user/workflow/tech-selection patterns, compact handoff/work records, and evidence worth preserving.
 
-Each substantial session should usually correspond to an existing project, an umbrella project, or a project candidate. Create a candidate only when the effort appears durable or likely to recur; one-off tasks usually do not need project files.
+Skip routine implementation facts, file lists, task logs, raw chat logs, duplicate summaries, and one-off observations framed as stable preferences.
 
-## What to capture
+## Save location
 
-Prefer project/user context that is not cheaply re-read from the current repo:
+- `projects/`: recurring-effort state and routing.
+- `USER.md`: lean owner context and links to detailed user-pattern notes.
+- `notes/`: reusable cross-project ideas, preferences, workflows, heuristics, rationale.
+- `records/`: dated summaries.
+- `sources/`: immutable evidence.
+- `maps/`: high-level reusable domain/category routing.
 
-- goals, current durable state, decisions, rationale, open loops, and next useful context
-- repeated user communication, prompting, workflow, or tech-selection patterns
-- compact records for meaningful work, decisions, or handoffs
-- sources only when evidence needs to be preserved
+## Closeout
 
-Skip routine implementation facts, file lists, chatty updates, raw logs, duplicate summaries, and one-off observations framed as stable preferences.
+Ask: Which project/candidate did this belong to? Does it need state, decision, open-loop, route, or next-context updates? Did a user observation or repeated pattern meet capture/promotion criteria? Is a record/source warranted? Did routing change? What does `git status --short` show, if practical?
 
-## Where to save
-
-Use the canonical layer chooser in `writing-memory.md`:
-
-- `projects/` for recurring effort state and project-specific routing
-- `USER.md` for lean owner context and pointers to user-pattern notes
-- `notes/` for reusable cross-project ideas, preferences, workflows, and decision heuristics
-- `records/` for dated summaries
-- `sources/` for immutable evidence
-- `maps/` for high-level domain/category framing supported by notes and projects
-
-## Closeout checklist
-
-Before ending substantial work:
-
-- Which project or project candidate did this session belong to?
-- Does that project need a small state, decision, open-question, or route update?
-- Did the session reveal a user observation for `USER.md`?
-- Did a repeated pattern meet promotion criteria for an atomic note?
-- Is a compact record or source capture warranted?
-- Did routing change?
-- What does `git status --short` show, if practical?
-
-Every persisted sentence should earn its future token cost.
+Every persisted sentence must earn its future token cost.

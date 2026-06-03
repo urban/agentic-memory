@@ -4,18 +4,22 @@ Central Agentic Memory vault:
 
 `/absolute/path/to/memory-vault`
 
-Priority:
+Use this snippet to attach the current harness to that central vault from another repo.
 
-1. Complete the current task in the current project.
-2. Preserve durable memory only when it will help future sessions or future projects.
+If the current working directory is the central vault itself, follow the vault's local `AGENTS.md` entry point and treat this bootstrap as redundant.
 
-Startup, when useful:
+Priorities:
+
+1. Follow current project/vault instructions and complete the current task.
+2. Use the central vault as secondary memory only when durable context will help future sessions or future projects.
+
+Startup, when memory is useful and the current working directory is outside the central vault:
 
 1. Read `AGENTS.md` in the central vault.
-2. Read `.agentic-memory/LLMS.md`.
-3. Read `MEMORY.md`.
-4. Read `USER.md`.
-5. For cross-project memory updates, read `.agentic-memory/instructions/cross-project-persistence.md`.
+2. Read `.agentic-memory/LLMS.md` in the central vault.
+3. Read `MEMORY.md` and `USER.md` in the central vault.
+4. For cross-project memory updates, read `.agentic-memory/instructions/cross-project-persistence.md` in the central vault.
+5. Load only relevant maps, projects, notes, people, records, or sources.
 
 Rules:
 

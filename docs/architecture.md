@@ -53,7 +53,16 @@ The control plane lives in a hidden folder:
 
 The control plane stores the local version contract, version-specific agent instructions, and scaffolds agents can use when creating new memory files.
 
-The repository-level `BOOTSTRAP.md` is separate from the vault control plane. Humans or setup tooling copy/adapt it into harness-specific entrypoints such as Pi `APPEND_SYSTEM.md`, user-level `AGENTS.md` / `CLAUDE.md`, or repo-level `AGENTS.md` / `CLAUDE.md`.
+The repository-level `BOOTSTRAP.md` is separate from the vault control plane. Humans or setup tooling copy/adapt it into harness-specific entry points such as Pi `APPEND_SYSTEM.md`, user-level `AGENTS.md` / `CLAUDE.md`, or repo-level `AGENTS.md` / `CLAUDE.md`.
+
+## Agent entry points
+
+Agentic Memory has two supported agent entry points.
+
+1. **Vault-local entry point** — used when the current repo or directory is already an initialized Agentic Memory vault. The harness reads the root `AGENTS.md`; that file routes to `.agentic-memory/LLMS.md`; the vault control plane then routes content loading.
+2. **Cross-project bootstrap entry point** — used when an agent is working outside the vault but should persist durable information to a central vault. A global or project-level adapter copied from `BOOTSTRAP.md` points at the central vault by absolute path and keeps the current project task primary.
+
+If both entry points are visible because a global bootstrap is active while the harness is inside the memory vault, the vault-local entry point wins. The bootstrap is redundant in that context and should not create a second cross-project memory flow.
 
 ## Core model
 
@@ -136,17 +145,15 @@ Content folders are flat by default. Use memory maps, project links, and semanti
 
 ## Progressive disclosure
 
-Agents should load memory in this order:
+Entrypoint resolution happens before content loading. Once an agent has reached `.agentic-memory/LLMS.md` through either supported entry point, it should load memory in this order:
 
-1. `AGENTS.md`
-2. `.agentic-memory/LLMS.md`
-3. `MEMORY.md`
-4. `USER.md`
-5. optional instruction files routed from `LLMS.md`
-6. relevant memory map or project file
-7. specific atomic notes, people notes, or related projects
-8. records, only when needed
-9. sources, only for verification or ingestion
+1. `MEMORY.md`
+2. `USER.md`
+3. optional instruction files routed from `LLMS.md`
+4. relevant memory map or project file
+5. specific atomic notes, people notes, or related projects
+6. records, only when needed
+7. sources, only for verification or ingestion
 
 The system should make it possible to answer most routing questions from `MEMORY.md`, `USER.md`, and one relevant memory map or project file.
 
