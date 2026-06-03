@@ -35,6 +35,8 @@ The control plane lives in a hidden folder:
 ```text
 .agentic-memory/
 ├── LLMS.md
+├── adapters/
+│   └── MEMORY_ADAPTER.md
 ├── instructions/
 │   ├── writing-memory.md
 │   ├── linking-and-maps.md
@@ -51,18 +53,16 @@ The control plane lives in a hidden folder:
     └── user.md
 ```
 
-The control plane stores the local version contract, version-specific agent instructions, and scaffolds agents can use when creating new memory files.
-
-The repository-level `BOOTSTRAP.md` is separate from the vault control plane. Humans or setup tooling copy/adapt it into harness-specific entry points such as Pi `APPEND_SYSTEM.md`, user-level `AGENTS.md` / `CLAUDE.md`, or repo-level `AGENTS.md` / `CLAUDE.md`.
+The control plane stores the local version contract, version-specific agent instructions, scaffolds agents can use when creating new memory files, and adapter snippets humans can copy into harness-specific entry points such as Pi `APPEND_SYSTEM.md`, user-level `AGENTS.md` / `CLAUDE.md`, or repo-level `AGENTS.md` / `CLAUDE.md`.
 
 ## Agent entry points
 
 Agentic Memory has two supported agent entry points.
 
 1. **Vault-local entry point** — used when the current repo or directory is already an initialized Agentic Memory vault. The harness reads the root `AGENTS.md`; that file routes to `.agentic-memory/LLMS.md`; the vault control plane then routes content loading.
-2. **Cross-project bootstrap entry point** — used when an agent is working outside the vault but should persist durable information to a central vault. A global or project-level adapter copied from `BOOTSTRAP.md` points at the central vault by absolute path and keeps the current project task primary.
+2. **Outside-vault memory adapter entry point** — used when an agent is working outside the vault but should persist durable information to a central vault. A global or project-level adapter copied from `.agentic-memory/adapters/MEMORY_ADAPTER.md` points at the central vault by absolute path and keeps the current project task primary.
 
-If both entry points are visible because a global bootstrap is active while the harness is inside the memory vault, the vault-local entry point wins. The bootstrap is redundant in that context and should not create a second cross-project memory flow.
+If both entry points are visible because a global memory adapter is active while the harness is inside the memory vault, the vault-local entry point wins. The adapter is redundant in that context and should not create a second cross-project memory flow.
 
 ## Core model
 
@@ -117,6 +117,8 @@ memory/
 ├── USER.md
 ├── .agentic-memory/
 │   ├── LLMS.md
+│   ├── adapters/
+│   │   └── MEMORY_ADAPTER.md
 │   ├── instructions/
 │   │   ├── writing-memory.md
 │   │   ├── linking-and-maps.md

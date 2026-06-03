@@ -15,7 +15,7 @@ The migration changes:
 3. `projects/` is added for `type: project` files.
 4. `.agentic-memory/templates/user.md` and `.agentic-memory/templates/project.md` are added.
 5. `.agentic-memory/instructions/cross-project-persistence.md` is added.
-6. The repository-level `BOOTSTRAP.md` provides a human-installed cross-project bootstrap snippet for harness-specific entrypoints.
+6. `.agentic-memory/adapters/MEMORY_ADAPTER.md` provides a human-installed memory adapter snippet for harness-specific entry points.
 7. The managed type set expands to `core|user|map|project|note|person|source|record`.
 8. `MEMORY.md` gains a dedicated Projects section when useful.
 9. Maps are clarified as high-level conceptual/domain framing supported by notes and projects.
@@ -32,6 +32,8 @@ MEMORY.md
 USER.md
 .agentic-memory/
 ├── LLMS.md
+├── adapters/
+│   └── MEMORY_ADAPTER.md
 ├── instructions/
 │   ├── writing-memory.md
 │   ├── linking-and-maps.md
@@ -118,9 +120,9 @@ Update `.agentic-memory/instructions/reflection.md`:
 
 Add `.agentic-memory/instructions/cross-project-persistence.md`.
 
-### 3. Add templates
+### 3. Add templates and adapter
 
-Add:
+Add templates:
 
 ```text
 .agentic-memory/templates/project.md
@@ -129,7 +131,13 @@ Add:
 
 Update the map and note templates if needed to mention project routing and promotion.
 
-The repository-level `BOOTSTRAP.md` is the generic snippet to adapt into harness-specific files such as Pi `APPEND_SYSTEM.md`, Claude `CLAUDE.md`, or repo-level `AGENTS.md`; those adapter files are not required Agentic Memory content.
+Add adapter:
+
+```text
+.agentic-memory/adapters/MEMORY_ADAPTER.md
+```
+
+`.agentic-memory/adapters/MEMORY_ADAPTER.md` is the generic snippet to adapt into harness-specific files such as Pi `APPEND_SYSTEM.md`, Claude `CLAUDE.md`, or repo-level `AGENTS.md`; installed adapter files are harness instructions, not ordinary memory content.
 
 ### 4. Add root user memory
 
@@ -263,6 +271,7 @@ Capture:
 - `.agentic-memory/templates/project.md` exists.
 - `.agentic-memory/templates/user.md` exists.
 - `.agentic-memory/instructions/cross-project-persistence.md` exists.
+- `.agentic-memory/adapters/MEMORY_ADAPTER.md` exists.
 - Managed type guidance includes `user` and `project`.
 - Link guidance includes `[[USER]]` and `[[projects/name]]`.
 - `MEMORY.md` has a Projects section when useful.

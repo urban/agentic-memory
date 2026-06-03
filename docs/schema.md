@@ -29,6 +29,7 @@ AGENTS.md
 MEMORY.md
 USER.md
 .agentic-memory/LLMS.md
+.agentic-memory/adapters/MEMORY_ADAPTER.md
 .agentic-memory/instructions/writing-memory.md
 .agentic-memory/instructions/linking-and-maps.md
 .agentic-memory/instructions/cross-project-persistence.md
@@ -70,7 +71,7 @@ Meanings:
 
 Do not add semantic categories like `preference`, `decision`, or `concept` to `type`. Use links, maps, headings, and optional tags instead. `project` is a managed role because recurring efforts need lifecycle state and project-specific routing that maps and records do not provide.
 
-Control-plane files under `.agentic-memory/` are not managed memory files and do not require Agentic Memory `type` frontmatter. This includes `LLMS.md`, instruction files, and templates.
+Control-plane files under `.agentic-memory/` are not managed memory files and do not require Agentic Memory `type` frontmatter. This includes `LLMS.md`, adapter snippets, instruction files, and templates.
 
 ## Status values
 

@@ -1,7 +1,7 @@
 ---
 name: agentic-memory-v0.2.0-to-v0.3.0
 version: 0.3.0
-description: Migrate an Agentic Memory vault from v0.2.0 to v0.3.0 by adding USER.md, projects/, project/user templates, and cross-project persistence instructions.
+description: Migrate an Agentic Memory vault from v0.2.0 to v0.3.0 by adding USER.md, projects/, project/user templates, cross-project persistence instructions, and the memory adapter.
 ---
 
 # Agentic Memory v0.2.0 to v0.3.0 Migration Skill
@@ -27,6 +27,7 @@ Do not delete files, rewrite human meaning, infer stable user preferences from o
    - add `projects/`
    - add `type: user` and `type: project` guidance
    - add cross-project persistence instructions
+   - add `.agentic-memory/adapters/MEMORY_ADAPTER.md`
    - update `MEMORY.md` with a Projects section when useful
    - identify project candidates conservatively
    - promote repeated project observations into atomic notes or `USER.md` only when criteria are met

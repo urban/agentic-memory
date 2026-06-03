@@ -34,7 +34,7 @@ Rules:
 - Maps should not route to control-plane files under `.agentic-memory/`.
 - Maps should not duplicate the full content of atomic notes, project files, or people notes.
 
-Control-plane files are reached through the vault-local `AGENTS.md` entry point or an external bootstrap, not through memory-map links.
+Control-plane files are reached through the vault-local `AGENTS.md` entry point or an external memory adapter, not through memory-map links.
 
 ## Maps versus projects
 

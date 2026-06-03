@@ -1,12 +1,14 @@
-# Cross-Project Agentic Memory Persistence
+# Agentic Memory Adapter
+
+This file is a copyable instruction snippet for connecting agents outside an Agentic Memory vault to that vault as persistent secondary memory.
 
 Central Agentic Memory vault:
 
 `/absolute/path/to/memory-vault`
 
-Use this snippet to attach the current harness to that central vault from another repo.
+Copy/adapt this snippet into a global or project-level agent instruction file such as user-level `AGENTS.md`, `CLAUDE.md`, Pi `APPEND_SYSTEM.md`, or a harness-specific equivalent.
 
-If the current working directory is the central vault itself, follow the vault's local `AGENTS.md` entry point and treat this bootstrap as redundant.
+If the current working directory is the central vault itself, follow the vault's local `AGENTS.md` entry point and treat this adapter as redundant.
 
 Priorities:
 

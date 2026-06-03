@@ -4,9 +4,9 @@ version: 0.3.0
 
 # Agentic Memory v0.3.0
 
-Vault-local LLM contract. This file may be reached from the vault's root `AGENTS.md` or from an external bootstrap that points at this vault. Do not re-read entrypoint files just to satisfy a load order; continue with progressive disclosure.
+Vault-local LLM contract. This file may be reached from the vault's root `AGENTS.md` or from an external memory adapter that points at this vault. Do not re-read entrypoint files just to satisfy a load order; continue with progressive disclosure.
 
-If a global bootstrap is active while the current working directory is this vault, the vault-local entry point is authoritative and the bootstrap is redundant.
+If a global memory adapter is active while the current working directory is this vault, the vault-local entry point is authoritative and the adapter is redundant.
 
 ## Startup after this file
 
@@ -21,7 +21,7 @@ Never load whole folders by default.
 
 Root: `AGENTS.md`, `MEMORY.md`, `USER.md`, `.agentic-memory/`, `maps/`, `projects/`, `notes/`, `people/`, `sources/`, `records/`.
 
-Control plane: `.agentic-memory/LLMS.md`, `instructions/{writing-memory,linking-and-maps,cross-project-persistence,reflection}.md`, `templates/{map,project,note,person,record,reflection-record,source,user}.md`.
+Control plane: `.agentic-memory/LLMS.md`, `adapters/MEMORY_ADAPTER.md`, `instructions/{writing-memory,linking-and-maps,cross-project-persistence,reflection}.md`, `templates/{map,project,note,person,record,reflection-record,source,user}.md`.
 
 ## Roles
 

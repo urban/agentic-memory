@@ -9,9 +9,9 @@ Human-facing docs explain the system. Vault-local LLM instructions in `.agentic-
 Agentic Memory has two startup routes.
 
 1. **Vault-local startup**: when the harness starts inside an initialized Agentic Memory vault, it should read the root `AGENTS.md`. That file routes to `.agentic-memory/LLMS.md`.
-2. **Cross-project bootstrap startup**: when the harness starts outside the vault, a global or project-level adapter copied from `BOOTSTRAP.md` points at the central vault. Current project instructions remain primary; the central vault is secondary durable memory.
+2. **Outside-vault adapter startup**: when the harness starts outside the vault, a global or project-level adapter copied from `.agentic-memory/adapters/MEMORY_ADAPTER.md` points at the central vault. Current project instructions remain primary; the central vault is secondary durable memory.
 
-If a global bootstrap is active while the harness is inside the memory vault, treat it as redundant and follow the vault-local `AGENTS.md` path.
+If a global memory adapter is active while the harness is inside the memory vault, treat it as redundant and follow the vault-local `AGENTS.md` path.
 
 After `.agentic-memory/LLMS.md` is reached through either route, agents should read `MEMORY.md`, read `USER.md`, and then follow `LLMS.md` to optional instruction files based on the task.
 
@@ -45,6 +45,7 @@ Use the smallest correct memory layer:
 The LLM control plane is separate:
 
 - `.agentic-memory/LLMS.md` — local version, system contract, and baseline agent operating policy.
+- `.agentic-memory/adapters/` — copyable snippets for connecting outside-vault agents to this vault.
 - `.agentic-memory/instructions/` — optional task-specific agent instructions.
 - `.agentic-memory/templates/` — scaffolds agents can use when creating memory files.
 
@@ -88,7 +89,7 @@ Do not persist:
 
 When an agent works outside the memory vault, its primary job remains the current task. Its secondary job is to preserve durable context in the memory vault when doing so would help future work.
 
-Use repository-level `BOOTSTRAP.md` as the canonical bootstrap snippet for harness-specific entry points such as user-level `AGENTS.md`, Claude `CLAUDE.md`, Pi `APPEND_SYSTEM.md`, or repo-level `AGENTS.md` / `CLAUDE.md`. Those adapter files are not required Agentic Memory content. See `docs/bootstrap.md` for human-facing setup guidance.
+Use `.agentic-memory/adapters/MEMORY_ADAPTER.md` as the canonical snippet for harness-specific entry points such as user-level `AGENTS.md`, Claude `CLAUDE.md`, Pi `APPEND_SYSTEM.md`, or repo-level `AGENTS.md` / `CLAUDE.md`. Those installed adapter files are harness instructions, not ordinary memory content. See `docs/memory-adapter.md` for human-facing setup guidance.
 
 The agent should proactively update memory at natural stopping points when it observes high-signal context, especially:
 
