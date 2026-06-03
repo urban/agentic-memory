@@ -6,21 +6,22 @@ Migration should be explicit, reviewable, and Git-auditable.
 
 ## Version contract
 
-Each vault carries a local control-plane contract file:
+Each vault carries two local control-plane contract files:
 
 ```text
-.agentic-memory/LLMS.md
+.agentic-memory/LLM-vault-local.md
+.agentic-memory/LLM-outside-vault.md
 ```
 
-Its frontmatter contains the lock-step Agentic Memory version:
+Their frontmatter contains the same lock-step Agentic Memory version:
 
 ```yaml
 ---
-version: 0.2.0
+version: 0.3.0
 ---
 ```
 
-The body may describe required structure, local deviations, small local term definitions, and migration notes.
+Their bodies describe required structure, local deviations, small local term definitions, mode-specific startup routing, and migration notes.
 
 Agentic Memory uses one lock-step `version` field rather than separate schema, package, and skill versions.
 
@@ -57,4 +58,6 @@ A migration may include:
 
 ## Current migration
 
-The current schema-level migration is `migrations/v0.1.0-to-v0.2.0/MIGRATION.md`.
+The current schema-level migration is `migrations/v0.2.0-to-v0.3.0/MIGRATION.md`.
+
+The previous schema-level migration was `migrations/v0.1.0-to-v0.2.0/MIGRATION.md`.

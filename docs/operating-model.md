@@ -6,21 +6,26 @@ Human-facing docs explain the system. Vault-local LLM instructions in `.agentic-
 
 ## Startup
 
-At the start of meaningful vault work, agents should read:
+Agentic Memory has two startup routes.
 
-1. `AGENTS.md`
-2. `.agentic-memory/LLMS.md`
-3. `MEMORY.md`
+1. **Vault-local startup**: when the harness starts with the current working directory at the root of an initialized Agentic Memory vault, it should read the root `AGENTS.md`. That file routes to `.agentic-memory/LLM-vault-local.md`.
+2. **Outside-vault adapter startup**: when the harness starts outside the vault, a global or project-level adapter copied from `.agentic-memory/adapters/MEMORY_ADAPTER.md` checks whether the current working directory contains `.agentic-memory/`. If not, it routes to the central vault's `.agentic-memory/LLM-outside-vault.md`. Current project instructions remain primary; the central vault is secondary durable memory.
 
-Then `LLMS.md` routes to optional instruction files based on the task.
+If a global memory adapter is active while the current working directory contains `.agentic-memory/`, treat it as redundant and follow the vault-local `AGENTS.md` path.
+
+After the appropriate LLM contract file is reached, agents should read `MEMORY.md`, read `USER.md`, and then follow that contract to optional instruction files based on the task.
+
+For project-oriented work, the agent should identify the relevant existing project, umbrella project, or project candidate before deciding what else to load.
 
 ## Reading rules
 
 - Use progressive disclosure.
 - Prefer routing surfaces before detailed notes.
 - Read summaries and `Read when:` clauses before opening linked files.
-- Use vault-root-relative wikilinks for memory content, such as `[[maps/name]]`, `[[notes/name]]`, or `[[people/name]]`.
+- Use vault-root-relative wikilinks for memory content, such as `[[USER]]`, `[[maps/name]]`, `[[projects/name]]`, `[[notes/name]]`, or `[[people/name]]`.
 - Do not load all notes just because they exist.
+- Treat `USER.md` as lean owner context; follow its note links only when relevant.
+- Treat project files as current-state routing surfaces, not complete histories.
 - Treat sources as evidence, not default context.
 - Treat records as compact recall summaries, not full artifacts.
 
@@ -28,16 +33,20 @@ Then `LLMS.md` routes to optional instruction files based on the task.
 
 Use the smallest correct memory layer:
 
-- `MEMORY.md` — cross-cutting core memory and root routing.
-- `maps/` — routing and navigation.
-- `notes/` — atomic durable ideas.
-- `people/` — durable context about specific people.
+- `MEMORY.md` — cross-cutting core memory, root routing, and active project routes.
+- `USER.md` — lean durable owner facts, communication preferences, glossary terms, and inferred preferences.
+- `maps/` — conceptual/domain framing and navigation.
+- `projects/` — durable recurring effort state, goals, decisions, open loops, and project-specific routing.
+- `notes/` — atomic durable ideas, preferences, patterns, heuristics, and reusable knowledge.
+- `people/` — durable context about specific people other than the vault owner.
 - `sources/` — immutable captured evidence.
 - `records/` — append-stable summaries of work, decisions, sessions, migrations, handoffs, or Reflection.
 
 The LLM control plane is separate:
 
-- `.agentic-memory/LLMS.md` — local version, system contract, and baseline agent operating policy.
+- `.agentic-memory/LLM-vault-local.md` — local version, vault-local system contract, and baseline agent operating policy.
+- `.agentic-memory/LLM-outside-vault.md` — local version and outside-vault secondary-memory contract.
+- `.agentic-memory/adapters/` — copyable snippets for connecting outside-vault agents to this vault.
 - `.agentic-memory/instructions/` — optional task-specific agent instructions.
 - `.agentic-memory/templates/` — scaffolds agents can use when creating memory files.
 
@@ -63,6 +72,7 @@ Persist only high-signal information likely to help future agents:
 - important project or system context
 - source-grounded synthesis
 - open questions worth revisiting
+- repeated prompting, communication, or technical-decision patterns
 - Reflection findings that improve future memory use
 - compact records of meaningful work done elsewhere
 
@@ -73,8 +83,24 @@ Do not persist:
 - low-confidence speculation without context
 - raw session logs
 - repeated paraphrases of existing memory
-- facts that are cheap to re-read from the current repo
+- facts that are cheap to re-read from the current repo or project files
 - full artifacts by default
+
+## Cross-project persistence
+
+When an agent works outside the memory vault, its primary job remains the current task. Its secondary job is to preserve durable context in the memory vault when doing so would help future work.
+
+Use `.agentic-memory/adapters/MEMORY_ADAPTER.md` as the canonical snippet for harness-specific entry points such as user-level `AGENTS.md`, Claude `CLAUDE.md`, Pi `APPEND_SYSTEM.md`, or repo-level `AGENTS.md` / `CLAUDE.md`. The adapter should stay short: it checks whether the current working directory contains `.agentic-memory/` and, when outside a vault, routes to `.agentic-memory/LLM-outside-vault.md` in the central vault. Installed adapter files are harness instructions, not ordinary memory content. See `docs/memory-adapter.md` for human-facing setup guidance.
+
+The agent should proactively update memory at natural stopping points when it observes high-signal context, especially:
+
+- a project candidate becoming a recurring effort
+- a current project state or open loop that future sessions need
+- a decision or rationale that is not obvious from source files
+- a repeated user preference, glossary meaning, communication pattern, or tech-selection rationale
+- a reusable workflow or prompting pattern that may help future projects
+
+Repeated project-specific observations should be promoted into `notes/` or `USER.md` and linked from the project files. Project files should not become the long-term home for reusable cross-project knowledge.
 
 ## Authorship and trust
 
@@ -82,6 +108,7 @@ Do not persist:
 - Keep source material distinct from agent synthesis.
 - Mark uncertainty explicitly.
 - Do not silently convert an agent proposal into accepted user direction.
+- Label user preferences as explicit, observed, repeated, or inferred when confidence matters.
 - If memory conflicts with current evidence, current evidence wins.
 
 ## Uncertainty
@@ -101,7 +128,9 @@ Good patterns:
 Inline labels are acceptable:
 
 ```md
-- Assumption: This applies when...
+- Explicit: The user said...
+- Observed: Across this project, the user repeatedly...
+- Inferred: The user may prefer...; verify before relying on this.
 - Needs verification: Confirm against source before relying on this.
 ```
 
@@ -114,17 +143,38 @@ When editing a managed Markdown file:
 - preserve `created`
 - update `updated` on material edits
 - keep summaries current
+- maintain root routes in `MEMORY.md`
+- maintain project routes and lifecycle state in `projects/`
+- maintain `USER.md` as lean pointer-heavy owner context
 - maintain memory-map routing links
-- maintain semantic links for atomic notes
+- maintain semantic links for atomic notes and projects
 - maintain person notes when durable people context emerges
 - keep files within token budgets when possible
-- maintain the distinction between sources, notes, records, and map files
+- maintain the distinction between sources, notes, records, projects, maps, and user memory
+
+## Promotion into evergreen memory
+
+Project memory is a staging area for durable discoveries, not the final home for reusable knowledge.
+
+Promote an observation into an atomic note or `USER.md` when it is:
+
+- repeated across two or more projects or across many sessions
+- useful for future decisions beyond the source project
+- not cheaply re-derived from current project files
+- expressible as one reusable idea, preference, rationale, workflow, or pattern
+- stable enough to trust, or clearly marked as inferred / lower-confidence
+- better represented once than duplicated in many project files
+
+Use `notes/` for reusable principles, decision heuristics, workflows, prompting patterns, and technical rationale. Use `USER.md` for stable owner facts, communication preferences, glossary meanings, and compact links to detailed user-pattern notes.
 
 ## Closing a session
 
 Before ending substantial work, ask:
 
 - What should future agents remember?
+- Which project did this session correspond to?
+- Does a project file, project candidate, or project route need to be updated?
+- Did this reveal a reusable pattern that should be promoted to an atomic note or `USER.md`?
 - Does any memory need to be updated, linked, or compacted?
 - Did the task reveal a missing memory map or atomic note?
 - Did any file exceed its intended budget?

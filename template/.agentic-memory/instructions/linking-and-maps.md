@@ -1,81 +1,43 @@
-# Linking and Memory Maps
+# Linking, Maps, and Projects
 
-Read this file when creating maps, creating atomic notes, creating people notes, adding links, or evaluating note maturity.
+Navigation policy. For persistence/layer choice, read `writing-memory.md`.
 
-## Link resolution
+## Wikilinks
 
-Use vault-root-relative Obsidian wikilinks for memory content:
-
-```md
-[[maps/name]]
-[[notes/name]]
-[[people/name]]
-[[sources/name]]
-[[records/name]]
-```
-
-Rules:
-
-- Omit `.md`.
-- Prefer full vault-root-relative paths over bare `[[name]]`.
-- Do not rely on Obsidian's shortest-path resolution.
-- Avoid duplicate filenames across memory folders when practical.
-- Use normal Markdown links for control-plane files in `.agentic-memory/` if such links are needed.
-
-## Memory-map link format
-
-Every routing link in a memory map must use:
+Use vault-root-relative Obsidian links for memory content:
 
 ```md
-- [[path/to-file]] — description. Read when: condition.
+[[MEMORY]] [[USER]] [[maps/name]] [[projects/name]] [[notes/name]] [[people/name]] [[sources/name]] [[records/name]]
 ```
 
-This lets agents decide whether to load the linked file.
+Omit `.md`. Prefer full paths except root files. Avoid duplicate filenames across folders. Use normal Markdown links for `.agentic-memory/` files if needed.
 
-## Memory-map structure
+## Routing links
 
-Memory maps should include:
+Every route in `MEMORY.md`, maps, and project routing sections uses:
 
 ```md
-## Purpose
-One or two sentences explaining what this map routes to.
-
-## Routing
-- [[notes/target-note]] — short description. Read when: condition.
+- [[path/name]] — short description. Read when: condition.
 ```
 
-Maps should primarily point to other maps, atomic notes, or people notes. They may point to records when a work/event summary is useful and to sources only when evidence is directly useful.
+Description + `Read when:` must be sufficient to decide whether to load the target.
 
-Maps should not route to control-plane files under `.agentic-memory/`. Control-plane files are loaded through `AGENTS.md` and `.agentic-memory/LLMS.md`.
+## Maps vs projects
 
-## Top-level maps
+- Map (`maps/`, `type: map`): high-level concept/category/domain framing and routes. Explain why linked files belong together; do not duplicate them.
+- Project (`projects/`, `type: project`): project-specific map plus durable effort state: lifecycle, current state, goals, decisions/rationale, open loops, next context, subproject routing.
 
-`MEMORY.md` should link only to top-level maps that help route common or important future work.
+If a project/group mainly organizes reusable knowledge rather than active effort state, route through or convert toward a map.
 
-Link a map from `MEMORY.md` when it is broadly relevant, active, frequently used, or a high-level route to several submaps, notes, people notes, records, or sources.
+## `MEMORY.md`
 
-Omit a map from `MEMORY.md` when it is narrow, draft, rare, temporary, or only useful after loading a parent map.
+Route only to top-level maps and active/important projects: recurring work, umbrella efforts, important candidates, or completed projects with reusable decisions/patterns. Do not list every file.
 
-## Map depth
+Keep depth shallow: preferred `MEMORY → map/project → note`; acceptable `MEMORY → map → map/project → note`; review deeper chains during Reflection.
 
-Maps may reference other maps, but keep depth shallow:
+## Semantic links
 
-- preferred: `MEMORY.md → map → note`
-- acceptable: `MEMORY.md → map → map → note`
-- depth 3 map chains are allowed only for large domains and should be reviewed
-- depth greater than 3 requires an explicit local deviation in `.agentic-memory/LLMS.md`
-
-Reflection should flag chains deeper than 2 map hops.
-
-## Atomic note structure
-
-Atomic notes should include a clear title, one-line thesis or summary, and semantic links.
-
-A `## Use when` section is optional. Add it when applicability is non-obvious, broad, frequently reused, or frequently misused. Routine routing guidance belongs in memory-map links.
-
-## Atomic note semantic links
-
-Atomic notes use semantic links in frontmatter as top-level properties:
+Notes and projects use top-level frontmatter lists:
 
 ```yaml
 comes_from: []
@@ -86,82 +48,15 @@ competes_with: []
 
 Meanings:
 
-- `comes_from` — origins, causes, parent ideas, broader categories.
-- `similar_to` — sibling ideas, analogies, alternate framings.
-- `leads_to` — applications, consequences, child ideas, next concepts.
-- `competes_with` — tensions, opposites, tradeoffs, alternatives.
+- `comes_from`: origins, parents, causes, umbrellas, source domains.
+- `similar_to`: siblings, analogies, related domains.
+- `leads_to`: applications, consequences, subprojects, downstream tracks.
+- `competes_with`: alternatives, tensions, tradeoffs, rejected approaches.
 
-Use Obsidian-compatible list formatting. Non-empty semantic-link lists should be block lists with quoted internal links:
+Atomic-note semantic links usually target notes; projects may target projects, maps, or notes. Use quoted wikilinks in non-empty frontmatter lists.
 
-```yaml
-similar_to:
-  - "[[notes/related-note]]"
-```
+Body semantic-link callouts are optional when links need explanation. `Read when:` is required for routes and recommended for semantic links that guide loading.
 
-Atomic notes also include body explanations in a Markdown callout:
+## Graph quality flags
 
-```md
-> [!info] Semantic links
->
-> **Comes from**:
->
-> - [[notes/source-idea]] — explanation. Read when: condition.
->
-> **Similar to**:
->
-> - [[notes/sibling-idea]] — explanation. Read when: condition.
->
-> **Leads to**:
->
-> - [[notes/downstream-idea]] — explanation. Read when: condition.
->
-> **Competes with**:
->
-> - [[notes/alternative-idea]] — explanation. Read when: condition.
-```
-
-`Read when:` is required in memory maps and recommended for atomic-note links that guide future loading.
-
-## People notes
-
-People notes live in `people/` and use `type: person`. They capture durable context about a specific person, not an atomic idea.
-
-Create a people note only when the person is meaningfully relevant to durable memory, projects, collaborations, preferences, or recurring context.
-
-Do not create person notes for names that appear only incidentally in raw sources, competitor pages, citations, articles, or historical captures.
-
-People notes should use this general structure:
-
-```md
-# Person Name
-
-## Context
-
-## Preferences and communication style
-
-## Projects and associations
-
-## Important facts
-
-## Open questions
-
-## Related
-```
-
-Use visible uncertainty markers. Do not infer sensitive traits or private facts without explicit evidence.
-
-## Maturity target
-
-Atomic notes should mature toward `evergreen` and ideally have 3+ meaningful semantic links.
-
-Other maturity signals:
-
-- one reusable idea
-- understandable independently
-- within token budget
-- source-aware when claims matter
-- stable enough to reuse
-- non-duplicative
-- actionable for future agents
-
-Weakly connected notes are graph debt and should be revisited during Reflection.
+During review, flag orphan notes, content-dump maps, over-deep map chains, projects that became maps, duplicated routes, and project-local insights that should be promoted to `notes/` or `USER.md`.

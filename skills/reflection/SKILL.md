@@ -1,6 +1,6 @@
 ---
 name: agentic-memory-reflection
-version: 0.1.0
+version: 0.3.0
 description: Dispatch to the local Agentic Memory Reflection instructions for a vault.
 ---
 
@@ -16,9 +16,9 @@ This skill is intentionally thin. Reflection rules are version-specific and live
 2. Confirm the vault has:
    - `AGENTS.md`
    - `MEMORY.md`
-   - `.agentic-memory/LLMS.md`
+   - `.agentic-memory/LLM-vault-local.md`
    - `.agentic-memory/instructions/reflection.md`
-3. Read `.agentic-memory/LLMS.md`.
+3. Read `.agentic-memory/LLM-vault-local.md`.
 4. Read `.agentic-memory/instructions/reflection.md`.
 5. Follow the local Reflection instructions exactly.
 
