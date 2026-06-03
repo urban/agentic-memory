@@ -34,7 +34,8 @@ The control plane lives in a hidden folder:
 
 ```text
 .agentic-memory/
-├── LLMS.md
+├── LLM-vault-local.md
+├── LLM-outside-vault.md
 ├── adapters/
 │   └── MEMORY_ADAPTER.md
 ├── instructions/
@@ -53,16 +54,16 @@ The control plane lives in a hidden folder:
     └── user.md
 ```
 
-The control plane stores the local version contract, version-specific agent instructions, scaffolds agents can use when creating new memory files, and adapter snippets humans can copy into harness-specific entry points such as Pi `APPEND_SYSTEM.md`, user-level `AGENTS.md` / `CLAUDE.md`, or repo-level `AGENTS.md` / `CLAUDE.md`.
+The control plane stores mode-specific LLM contracts with the local version, version-specific agent instructions, scaffolds agents can use when creating new memory files, and adapter snippets humans can copy into harness-specific entry points such as Pi `APPEND_SYSTEM.md`, user-level `AGENTS.md` / `CLAUDE.md`, or repo-level `AGENTS.md` / `CLAUDE.md`.
 
 ## Agent entry points
 
 Agentic Memory has two supported agent entry points.
 
-1. **Vault-local entry point** — used when the current repo or directory is already an initialized Agentic Memory vault. The harness reads the root `AGENTS.md`; that file routes to `.agentic-memory/LLMS.md`; the vault control plane then routes content loading.
-2. **Outside-vault memory adapter entry point** — used when an agent is working outside the vault but should persist durable information to a central vault. A global or project-level adapter copied from `.agentic-memory/adapters/MEMORY_ADAPTER.md` points at the central vault by absolute path and keeps the current project task primary.
+1. **Vault-local entry point** — used when the current working directory is the root of an initialized Agentic Memory vault. The harness reads the root `AGENTS.md`; that file routes to `.agentic-memory/LLM-vault-local.md`; the vault-local contract then routes content loading.
+2. **Outside-vault memory adapter entry point** — used when an agent is working outside the vault but should persist durable information to a central vault. A global or project-level adapter copied from `.agentic-memory/adapters/MEMORY_ADAPTER.md` checks whether the current working directory contains `.agentic-memory/`; if not, it routes directly to the central vault's `.agentic-memory/LLM-outside-vault.md` and keeps the current project task primary.
 
-If both entry points are visible because a global memory adapter is active while the harness is inside the memory vault, the vault-local entry point wins. The adapter is redundant in that context and should not create a second cross-project memory flow.
+If both entry points are visible because a global memory adapter is active while the current working directory contains `.agentic-memory/`, the vault-local entry point wins. The adapter is redundant in that context and should not create a second cross-project memory flow.
 
 ## Core model
 
@@ -116,7 +117,8 @@ memory/
 ├── MEMORY.md
 ├── USER.md
 ├── .agentic-memory/
-│   ├── LLMS.md
+│   ├── LLM-vault-local.md
+│   ├── LLM-outside-vault.md
 │   ├── adapters/
 │   │   └── MEMORY_ADAPTER.md
 │   ├── instructions/
@@ -147,11 +149,11 @@ Content folders are flat by default. Use memory maps, project links, and semanti
 
 ## Progressive disclosure
 
-Entrypoint resolution happens before content loading. Once an agent has reached `.agentic-memory/LLMS.md` through either supported entry point, it should load memory in this order:
+Entrypoint resolution happens before content loading. Once an agent has reached the appropriate LLM contract file (`.agentic-memory/LLM-vault-local.md` or `.agentic-memory/LLM-outside-vault.md`), it should load memory in this order:
 
 1. `MEMORY.md`
 2. `USER.md`
-3. optional instruction files routed from `LLMS.md`
+3. optional instruction files routed from the active LLM contract
 4. relevant memory map or project file
 5. specific atomic notes, people notes, or related projects
 6. records, only when needed
@@ -175,7 +177,7 @@ Memory maps may reference other memory maps and projects, but depth should remai
 - preferred: `MEMORY.md → map/project → note`
 - acceptable: `MEMORY.md → map → map/project → note`
 - depth 3 map chains are allowed only for large domains and should be reviewed
-- depth greater than 3 requires an explicit local deviation in `.agentic-memory/LLMS.md`
+- depth greater than 3 requires an explicit local deviation in `.agentic-memory/LLM-vault-local.md`
 
 ## Project memory and promotion
 

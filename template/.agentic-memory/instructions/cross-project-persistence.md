@@ -11,7 +11,7 @@ Do not derail the task. Save at natural stopping points.
 
 ## Startup when memory is useful
 
-Assume the memory adapter has already resolved the central vault and `LLMS.md` has routed here. Read `MEMORY.md` and `USER.md` if they are not already loaded.
+Read `MEMORY.md` and `USER.md` if they are not already loaded.
 
 1. Identify the relevant project, umbrella project, or candidate.
 2. Load only needed maps/projects/notes/people/records/sources.

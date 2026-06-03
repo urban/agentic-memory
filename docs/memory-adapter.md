@@ -1,13 +1,15 @@
 # Memory Adapter
 
-`MEMORY_ADAPTER.md` is a copyable instruction snippet for connecting agents outside an Agentic Memory vault to that vault as persistent secondary memory. In this repository it lives at `template/.agentic-memory/adapters/MEMORY_ADAPTER.md`; after initializing a vault it lives at `.agentic-memory/adapters/MEMORY_ADAPTER.md` inside that vault.
+`MEMORY_ADAPTER.md` is a copyable router snippet for connecting agents outside an Agentic Memory vault to that vault as persistent secondary memory. In this repository it lives at `template/.agentic-memory/adapters/MEMORY_ADAPTER.md`; after initializing a vault it lives at `.agentic-memory/adapters/MEMORY_ADAPTER.md` inside that vault.
 
-It is different from the vault-local entry point:
+The adapter does not teach the whole memory system. It only decides which mode applies and points the agent to the correct LLM contract.
 
-- **Vault-local memory** starts when a harness is opened inside an initialized Agentic Memory vault. The harness reads the vault's root `AGENTS.md`, which routes to `.agentic-memory/LLMS.md`.
-- **Outside-vault memory persistence** starts when a harness is opened somewhere else and a global or project-level instruction file points at a central Agentic Memory vault by absolute path.
+## Two modes
 
-Use the memory adapter only for the second case. It should point the harness to the central vault entry points instead of duplicating the vault's full `.agentic-memory/` control plane.
+- **Vault-local memory** starts when the current working directory itself contains `.agentic-memory/`. The harness should follow that directory's local entry point, normally root `AGENTS.md`, which routes to `.agentic-memory/LLM-vault-local.md`.
+- **Outside-vault memory persistence** starts when the current working directory does not contain `.agentic-memory/` and a global or project-level instruction file points at a central Agentic Memory vault by absolute path. The adapter routes directly to `.agentic-memory/LLM-outside-vault.md` in that central vault.
+
+The adapter checks only the current working directory. It does not search ancestor directories.
 
 ## When to use it
 
@@ -22,30 +24,13 @@ Common installation targets:
 
 You do not need the memory adapter for agents already operating inside the memory vault. In that case, the vault's own `AGENTS.md` is the entry point.
 
-## Global adapter behavior
-
-A global memory adapter may be active in every repo, including the memory vault itself. To avoid confusion:
-
-- local project and vault instructions remain primary for the current task
-- the central vault is secondary memory when the current working directory is outside that vault
-- if the current working directory is the central vault, follow the vault-local `AGENTS.md` path and treat the adapter as redundant
-- do not create a separate project-memory flow merely because the global adapter is present
-
-This makes a global user-level `AGENTS.md`, `CLAUDE.md`, or `APPEND_SYSTEM.md` safe to use alongside a vault-local setup.
-
-## Local project adapter behavior
-
-A repo-level `AGENTS.md` or `CLAUDE.md` can include the memory adapter when the project itself is not an Agentic Memory vault but should persist durable context to one.
-
-In that setup, the project file should keep its normal project instructions and add the adapter as secondary-memory instructions. The current repo's task remains first; memory updates happen at natural stopping points.
-
 ## Setup
 
 1. Open `.agentic-memory/adapters/MEMORY_ADAPTER.md` in the initialized vault.
 2. Copy its full contents into the harness-specific entry point.
 3. Replace `/absolute/path/to/memory-vault` with the actual Agentic Memory vault path.
-4. Keep the adapter short. If it starts repeating rules from `.agentic-memory/instructions/`, replace that detail with a route to the vault file.
-5. Review the adapter as harness behavior, not ordinary project memory.
+4. Keep the adapter short. If it starts repeating rules from `.agentic-memory/instructions/`, replace that detail with a route to the appropriate LLM contract.
+5. Review the installed adapter as harness behavior, not ordinary project memory.
 
 ## Ownership boundary
 
@@ -56,7 +41,7 @@ A person or setup tool should create and review harness-specific adapter files. 
 After setup, an external agent can:
 
 1. complete the current project task first
-2. load the central vault only when memory is useful
-3. read the central vault entry points and core files through progressive disclosure
-4. follow `.agentic-memory/instructions/cross-project-persistence.md` for memory updates
+2. notice when the current working directory is already an Agentic Memory vault and stop using the adapter
+3. route outside-vault work to the central vault's `.agentic-memory/LLM-outside-vault.md`
+4. load the central vault only when memory is useful
 5. save only durable, high-signal context at natural stopping points

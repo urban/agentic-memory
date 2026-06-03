@@ -2,13 +2,9 @@
 version: 0.3.0
 ---
 
-# Agentic Memory v0.3.0
+# Agentic Memory
 
-Vault-local LLM contract. This file may be reached from the vault's root `AGENTS.md` or from an external memory adapter that points at this vault. Do not re-read entrypoint files just to satisfy a load order; continue with progressive disclosure.
-
-If a global memory adapter is active while the current working directory is this vault, the vault-local entry point is authoritative and the adapter is redundant.
-
-## Startup after this file
+## Startup
 
 1. Read `MEMORY.md`.
 2. Read `USER.md`.
@@ -16,12 +12,6 @@ If a global memory adapter is active while the current working directory is this
 4. Load the relevant map/project, then specific notes/people/records/sources only as needed.
 
 Never load whole folders by default.
-
-## Required shape
-
-Root: `AGENTS.md`, `MEMORY.md`, `USER.md`, `.agentic-memory/`, `maps/`, `projects/`, `notes/`, `people/`, `sources/`, `records/`.
-
-Control plane: `.agentic-memory/LLMS.md`, `adapters/MEMORY_ADAPTER.md`, `instructions/{writing-memory,linking-and-maps,cross-project-persistence,reflection}.md`, `templates/{map,project,note,person,record,reflection-record,source,user}.md`.
 
 ## Roles
 
@@ -39,7 +29,6 @@ Control plane: `.agentic-memory/LLMS.md`, `adapters/MEMORY_ADAPTER.md`, `instruc
 
 - `instructions/writing-memory.md`: read before creating/editing memory content.
 - `instructions/linking-and-maps.md`: read before adding routes, semantic links, maps, or project navigation.
-- `instructions/cross-project-persistence.md`: read when this vault is secondary memory for another project.
 - `instructions/reflection.md`: read when maintaining graph health, compacting, or reviewing promotion.
 
 ## Non-negotiables

@@ -130,7 +130,7 @@ Acceptable:
 MEMORY.md → map → map/project → note
 ```
 
-Depth 3 map chains are allowed only for large domains and should be reviewed. Depth greater than 3 requires an explicit local deviation in `.agentic-memory/LLMS.md`.
+Depth 3 map chains are allowed only for large domains and should be reviewed. Depth greater than 3 requires an explicit local deviation in `.agentic-memory/LLM-vault-local.md`.
 
 Reflection should flag:
 

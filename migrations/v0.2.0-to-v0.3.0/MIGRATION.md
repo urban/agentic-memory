@@ -6,21 +6,23 @@ It is intentionally written as an instruction file that can be given to an LLM a
 
 ## Purpose
 
-Version `0.3.0` adds first-class project memory, root-level user memory, and cross-project persistence instructions.
+Version `0.3.0` adds first-class project memory, root-level user memory, cross-project persistence instructions, and separate LLM contracts for vault-local and outside-vault use.
 
 The migration changes:
 
-1. `version: 0.2.0` → `version: 0.3.0` in `.agentic-memory/LLMS.md`.
-2. `USER.md` is added at the vault root with `type: user`.
-3. `projects/` is added for `type: project` files.
-4. `.agentic-memory/templates/user.md` and `.agentic-memory/templates/project.md` are added.
-5. `.agentic-memory/instructions/cross-project-persistence.md` is added.
-6. `.agentic-memory/adapters/MEMORY_ADAPTER.md` provides a human-installed memory adapter snippet for harness-specific entry points.
-7. The managed type set expands to `core|user|map|project|note|person|source|record`.
-8. `MEMORY.md` gains a dedicated Projects section when useful.
-9. Maps are clarified as high-level conceptual/domain framing supported by notes and projects.
-10. Project files become project-specific memory maps plus durable state.
-11. Repeated project observations should be promoted into atomic notes or `USER.md`.
+1. Replace the existing `.agentic-memory/` control-plane directory with the v0.3.0 template control plane.
+2. Replace the old shared v0.2 LLM contract with `.agentic-memory/LLM-vault-local.md` and `.agentic-memory/LLM-outside-vault.md`.
+3. Update root `AGENTS.md` so vault-local agents read `.agentic-memory/LLM-vault-local.md`.
+4. Add `USER.md` at the vault root with `type: user`.
+5. Add `projects/` for `type: project` files.
+6. Add `.agentic-memory/templates/user.md` and `.agentic-memory/templates/project.md`.
+7. Add `.agentic-memory/instructions/cross-project-persistence.md`.
+8. Add `.agentic-memory/adapters/MEMORY_ADAPTER.md` as a human-installed adapter snippet for outside-vault harness entry points.
+9. Expand the managed type set to `core|user|map|project|note|person|source|record`.
+10. Add a dedicated Projects section to `MEMORY.md` when useful.
+11. Clarify maps as high-level conceptual/domain framing supported by notes and projects.
+12. Treat project files as project-specific memory maps plus durable state.
+13. Promote repeated project observations into atomic notes or `USER.md` when they become reusable.
 
 ## Required target structure
 
@@ -31,7 +33,8 @@ AGENTS.md
 MEMORY.md
 USER.md
 .agentic-memory/
-├── LLMS.md
+├── LLM-vault-local.md
+├── LLM-outside-vault.md
 ├── adapters/
 │   └── MEMORY_ADAPTER.md
 ├── instructions/
@@ -58,11 +61,12 @@ records/
 
 ## Safety rules
 
-- Preserve human-authored meaning.
-- Preserve `created` dates.
-- Update `updated` dates when materially changing managed files.
+- Preserve human-authored memory content and meaning.
+- Preserve `created` dates on managed memory files.
+- Update `updated` dates when materially changing managed memory files.
 - Keep source material distinct from synthesis.
-- Do not delete files without explicit human approval.
+- This migration explicitly replaces the old `.agentic-memory/` control plane with the v0.3.0 control plane; do not treat that replacement as permission to delete managed memory content.
+- Do not delete managed memory files without explicit human approval.
 - Do not commit automatically.
 - Do not infer user preferences from one-off behavior without marking them as `Observed` or `Inferred`.
 - Do not store facts in project memory when they can be cheaply re-read from source files.
@@ -76,70 +80,71 @@ Confirm the vault root contains:
 ```text
 AGENTS.md
 MEMORY.md
-.agentic-memory/LLMS.md
+.agentic-memory/
 ```
 
 Read:
 
 1. `AGENTS.md`
-2. `.agentic-memory/LLMS.md`
+2. the existing v0.2 shared LLM contract, if present
 3. `MEMORY.md`
-4. `.agentic-memory/instructions/writing-memory.md`
-5. `.agentic-memory/instructions/linking-and-maps.md`
+4. `USER.md`, if present
+5. `.agentic-memory/instructions/writing-memory.md`, if present
+6. `.agentic-memory/instructions/linking-and-maps.md`, if present
 
 Check `git status --short` before editing when practical.
 
-### 2. Update the control plane
+If the existing control plane contains local deviations, summarize them before replacement and preserve only the parts that are still compatible with the v0.3.0 contract.
 
-Update `.agentic-memory/LLMS.md`:
+### 2. Replace the control plane
 
-- set frontmatter `version: 0.3.0`
-- add `USER.md`, `projects/`, project/user terms, project/user loading rules, and `cross-project-persistence.md` instruction routing
-- update managed type rules to include `user` and `project`
+Replace the target vault's existing `.agentic-memory/` directory with the v0.3.0 template `.agentic-memory/` directory.
 
-Update `.agentic-memory/instructions/writing-memory.md`:
-
-- add `USER.md` and `projects/` layer-choice guidance
-- add project rules
-- add `USER.md` rules
-- add promotion criteria for repeated project observations
-
-Update `.agentic-memory/instructions/linking-and-maps.md`:
-
-- add `[[USER]]` and `[[projects/name]]` link conventions
-- clarify maps as high-level framing surfaces
-- define maps versus projects
-- add project semantic-link guidance
-
-Update `.agentic-memory/instructions/reflection.md`:
-
-- add project review
-- add `USER.md` review
-- add promotion review
-- update lift + decompose guidance for overloaded projects
-
-Add `.agentic-memory/instructions/cross-project-persistence.md`.
-
-### 3. Add templates and adapter
-
-Add templates:
+The replacement control plane must include:
 
 ```text
+.agentic-memory/LLM-vault-local.md
+.agentic-memory/LLM-outside-vault.md
+.agentic-memory/adapters/MEMORY_ADAPTER.md
+.agentic-memory/instructions/writing-memory.md
+.agentic-memory/instructions/linking-and-maps.md
+.agentic-memory/instructions/cross-project-persistence.md
+.agentic-memory/instructions/reflection.md
+.agentic-memory/templates/map.md
 .agentic-memory/templates/project.md
+.agentic-memory/templates/note.md
+.agentic-memory/templates/person.md
+.agentic-memory/templates/record.md
+.agentic-memory/templates/reflection-record.md
+.agentic-memory/templates/source.md
 .agentic-memory/templates/user.md
 ```
 
-Update the map and note templates if needed to mention project routing and promotion.
+Both LLM contract files must declare:
 
-Add adapter:
-
-```text
-.agentic-memory/adapters/MEMORY_ADAPTER.md
+```yaml
+---
+version: 0.3.0
+---
 ```
 
-`.agentic-memory/adapters/MEMORY_ADAPTER.md` is the generic snippet to adapt into harness-specific files such as Pi `APPEND_SYSTEM.md`, Claude `CLAUDE.md`, or repo-level `AGENTS.md`; installed adapter files are harness instructions, not ordinary memory content.
+The old shared LLM contract file must not remain in the target vault after the replacement.
 
-### 4. Add root user memory
+Update root `AGENTS.md` so it routes vault-local agents to:
+
+```text
+.agentic-memory/LLM-vault-local.md
+```
+
+The adapter snippet should remain short and should route outside-vault agents to:
+
+```text
+/absolute/path/to/memory-vault/.agentic-memory/LLM-outside-vault.md
+```
+
+The adapter should check only whether the current working directory contains `.agentic-memory/`; it should not search ancestor directories.
+
+### 3. Add root user memory
 
 Create `USER.md` if missing:
 
@@ -177,7 +182,7 @@ Recommended sections:
 
 Keep `USER.md` lean. Move detailed patterns into atomic notes and link them.
 
-### 5. Add projects directory
+### 4. Add projects directory
 
 Create:
 
@@ -187,7 +192,7 @@ projects/
 
 Add `.gitkeep` if the directory is empty.
 
-### 6. Update `MEMORY.md`
+### 5. Update `MEMORY.md`
 
 Add a dedicated Projects section when the vault has active, recurring, umbrella, or important project-candidate routes.
 
@@ -201,7 +206,7 @@ Example:
 
 Do not list every project if a parent project or map is a better route.
 
-### 7. Identify initial project candidates
+### 6. Identify initial project candidates
 
 Review existing maps, notes, records, and recent durable context for recurring efforts that deserve project files.
 
@@ -228,7 +233,7 @@ competes_with: []
 ---
 ```
 
-### 8. Promote repeated observations conservatively
+### 7. Promote repeated observations conservatively
 
 Look for repeated project observations that should become atomic notes or `USER.md` entries.
 
@@ -243,7 +248,7 @@ Promote only when the observation is:
 
 If unsure, leave the observation in a project file as `Observed` or `Inferred` and note the open question.
 
-### 9. Create a migration record
+### 8. Create a migration record
 
 For substantial migrations, create:
 
@@ -265,13 +270,16 @@ Capture:
 
 ## Verification checklist
 
-- `.agentic-memory/LLMS.md` declares `version: 0.3.0`.
+- `.agentic-memory/LLM-vault-local.md` declares `version: 0.3.0`.
+- `.agentic-memory/LLM-outside-vault.md` declares `version: 0.3.0`.
+- The old shared LLM contract file is absent.
+- `AGENTS.md` routes to `.agentic-memory/LLM-vault-local.md`.
 - `USER.md` exists and uses `type: user`.
 - `projects/` exists.
 - `.agentic-memory/templates/project.md` exists.
 - `.agentic-memory/templates/user.md` exists.
 - `.agentic-memory/instructions/cross-project-persistence.md` exists.
-- `.agentic-memory/adapters/MEMORY_ADAPTER.md` exists.
+- `.agentic-memory/adapters/MEMORY_ADAPTER.md` exists and routes to `.agentic-memory/LLM-outside-vault.md`.
 - Managed type guidance includes `user` and `project`.
 - Link guidance includes `[[USER]]` and `[[projects/name]]`.
 - `MEMORY.md` has a Projects section when useful.

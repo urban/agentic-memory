@@ -6,13 +6,14 @@ This document defines the Agentic Memory filesystem and metadata contract.
 
 Agentic Memory uses one lock-step version field.
 
-In a vault, the version is declared in:
+In a vault, the version is declared in both LLM contract files:
 
 ```text
-.agentic-memory/LLMS.md
+.agentic-memory/LLM-vault-local.md
+.agentic-memory/LLM-outside-vault.md
 ```
 
-Use:
+Both files use the same value:
 
 ```yaml
 ---
@@ -28,7 +29,8 @@ Skills and future tooling should use the same version value. Agentic Memory does
 AGENTS.md
 MEMORY.md
 USER.md
-.agentic-memory/LLMS.md
+.agentic-memory/LLM-vault-local.md
+.agentic-memory/LLM-outside-vault.md
 .agentic-memory/adapters/MEMORY_ADAPTER.md
 .agentic-memory/instructions/writing-memory.md
 .agentic-memory/instructions/linking-and-maps.md
@@ -71,7 +73,7 @@ Meanings:
 
 Do not add semantic categories like `preference`, `decision`, or `concept` to `type`. Use links, maps, headings, and optional tags instead. `project` is a managed role because recurring efforts need lifecycle state and project-specific routing that maps and records do not provide.
 
-Control-plane files under `.agentic-memory/` are not managed memory files and do not require Agentic Memory `type` frontmatter. This includes `LLMS.md`, adapter snippets, instruction files, and templates.
+Control-plane files under `.agentic-memory/` are not managed memory files and do not require Agentic Memory `type` frontmatter. This includes LLM contract files, adapter snippets, instruction files, and templates.
 
 ## Status values
 

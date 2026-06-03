@@ -2,9 +2,9 @@
 
 Cross-project persistence is the common outside-vault Agentic Memory workflow: agents working outside a central memory vault use that vault as persistent secondary memory.
 
-A global or project-level memory adapter points the harness at the vault by absolute path. The agent's primary responsibility is still the current task in the current project. Its secondary responsibility is to preserve durable, high-signal memory that will help future sessions and future projects.
+A global or project-level memory adapter points the harness at the vault by absolute path, checks whether the current working directory contains `.agentic-memory/`, and routes outside-vault sessions to `.agentic-memory/LLM-outside-vault.md` in the central vault. The agent's primary responsibility is still the current task in the current project. Its secondary responsibility is to preserve durable, high-signal memory that will help future sessions and future projects.
 
-When the harness is already inside the memory vault, this mode is not needed; use the vault-local `AGENTS.md` entry point instead.
+When the current working directory contains `.agentic-memory/`, this mode is not needed; use the vault-local `AGENTS.md` entry point instead.
 
 ## Purpose
 

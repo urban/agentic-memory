@@ -19,7 +19,7 @@ Use Agentic Memory when you want agents to remember useful context across sessio
 An Agentic Memory vault has two planes:
 
 - **Memory content**: `MEMORY.md`, `USER.md`, `maps/`, `projects/`, `notes/`, `people/`, `sources/`, and `records/`.
-- **LLM control plane**: `.agentic-memory/`, which contains the vault version, concise agent instructions, templates, and adapter snippets.
+- **LLM control plane**: `.agentic-memory/`, which contains mode-specific LLM contracts with the vault version, concise agent instructions, templates, and adapter snippets.
 
 Humans browse and edit the content plane. Agents reach the control plane through one of the entry points below, then load memory in stages: root memory, lean user context, then only the relevant map, project, note, person, record, or source.
 
@@ -29,17 +29,17 @@ Agentic Memory supports two main agent use cases.
 
 ### 1. Vault-local memory
 
-Use this when the current repo or directory is already an initialized Agentic Memory vault: it has `.agentic-memory/`, root memory files, content folders, `AGENTS.md`, and `USER.md`.
+Use this when the current working directory is the root of an initialized Agentic Memory vault: it has `.agentic-memory/`, root memory files, content folders, `AGENTS.md`, and `USER.md`.
 
-A coding harness that starts in this repo should automatically read the root `AGENTS.md`. That file is the entry point; it routes the agent to `.agentic-memory/LLMS.md`, which then routes to `MEMORY.md`, `USER.md`, optional instruction files, and only the relevant memory content. The memory adapter is not needed for this mode.
+A coding harness that starts in this directory should automatically read the root `AGENTS.md`. That file is the entry point; it routes the agent to `.agentic-memory/LLM-vault-local.md`, which then routes to `MEMORY.md`, `USER.md`, optional instruction files, and only the relevant memory content. The memory adapter is not needed for this mode.
 
 ### 2. Outside-vault memory persistence
 
 Use this when an agent is working outside the Agentic Memory vault but should also preserve durable information in that vault.
 
-After initializing a vault, copy/adapt its `.agentic-memory/adapters/MEMORY_ADAPTER.md` into a harness entry point such as a user-level `AGENTS.md`, `CLAUDE.md`, Pi `APPEND_SYSTEM.md`, or a local project equivalent. The adapter points at the central vault by absolute path, keeps the current project task primary, and uses the vault as secondary memory only when it is useful.
+After initializing a vault, copy/adapt its `.agentic-memory/adapters/MEMORY_ADAPTER.md` into a harness entry point such as a user-level `AGENTS.md`, `CLAUDE.md`, Pi `APPEND_SYSTEM.md`, or a local project equivalent. The adapter checks whether the current working directory itself contains `.agentic-memory/`; if not, it routes directly to the central vault's `.agentic-memory/LLM-outside-vault.md`, keeps the current project task primary, and uses the vault as secondary memory only when it is useful.
 
-If a global memory adapter is active while the harness is started inside the memory vault itself, the vault-local entry point wins. The adapter is redundant in that context and should not cause a second cross-project memory flow.
+If a global memory adapter is active while the harness starts with a current working directory that contains `.agentic-memory/`, the vault-local entry point wins. The adapter is redundant in that context and should not cause a second cross-project memory flow.
 
 Other patterns, such as Reflection, migration, human browsing in Obsidian, or multiple harnesses sharing one vault, are variants of these two agent entry points rather than separate startup paths.
 

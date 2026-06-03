@@ -1,7 +1,7 @@
 ---
 name: agentic-memory-v0.2.0-to-v0.3.0
 version: 0.3.0
-description: Migrate an Agentic Memory vault from v0.2.0 to v0.3.0 by adding USER.md, projects/, project/user templates, cross-project persistence instructions, and the memory adapter.
+description: Migrate an Agentic Memory vault from v0.2.0 to v0.3.0 by replacing the control plane, adding USER.md, projects/, project/user templates, cross-project persistence instructions, and the memory adapter.
 ---
 
 # Agentic Memory v0.2.0 to v0.3.0 Migration Skill
@@ -12,17 +12,21 @@ Use this skill when the user asks to migrate an Agentic Memory vault from `0.2.0
 
 Be conservative and reviewable.
 
-Do not delete files, rewrite human meaning, infer stable user preferences from one-off behavior, or commit automatically. Preserve source/synthesis boundaries and preserve `created` dates.
+Do not rewrite human memory meaning, infer stable user preferences from one-off behavior, delete managed memory content, or commit automatically. Preserve source/synthesis boundaries and preserve `created` dates.
+
+This migration is allowed to replace the target vault's old `.agentic-memory/` control-plane directory with the v0.3.0 template control plane.
 
 ## Procedure
 
 1. Read `migrations/v0.2.0-to-v0.3.0/MIGRATION.md` completely.
 2. Confirm the target vault root.
-3. Read the target vault's `AGENTS.md`, `.agentic-memory/LLMS.md`, `MEMORY.md`, and `USER.md` if present.
+3. Read the target vault's `AGENTS.md`, existing v0.2 shared LLM contract if present, `MEMORY.md`, and `USER.md` if present.
 4. Check `git status --short`.
 5. Follow the migration guide exactly:
-   - bump `.agentic-memory/LLMS.md` to `version: 0.3.0`
-   - update control-plane instructions and templates
+   - replace `.agentic-memory/` with the v0.3.0 template control plane
+   - ensure `.agentic-memory/LLM-vault-local.md` and `.agentic-memory/LLM-outside-vault.md` both declare `version: 0.3.0`
+   - ensure the old shared LLM contract file is absent
+   - update `AGENTS.md` to route to `.agentic-memory/LLM-vault-local.md`
    - add `USER.md`
    - add `projects/`
    - add `type: user` and `type: project` guidance
