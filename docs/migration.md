@@ -16,7 +16,7 @@ Its frontmatter contains the lock-step Agentic Memory version:
 
 ```yaml
 ---
-version: 0.2.0
+version: 0.3.0
 ---
 ```
 
@@ -57,4 +57,6 @@ A migration may include:
 
 ## Current migration
 
-The current schema-level migration is `migrations/v0.1.0-to-v0.2.0/MIGRATION.md`.
+The current schema-level migration is `migrations/v0.2.0-to-v0.3.0/MIGRATION.md`.
+
+The previous schema-level migration was `migrations/v0.1.0-to-v0.2.0/MIGRATION.md`.

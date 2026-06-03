@@ -6,7 +6,7 @@ type: map
 status: draft
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
-summary: "One-line routing summary."
+summary: "One-line framing and routing summary."
 aliases:
   - "Title"
 ---
@@ -15,9 +15,10 @@ aliases:
 
 ## Purpose
 
-One or two sentences explaining what this memory map routes to.
+One or two sentences explaining what concept, category, or domain this memory map frames and routes to. Include enough context to explain why the linked notes and projects belong together.
 
 ## Routing
 
 - [[notes/target-note]] — short description. Read when: condition.
+- [[projects/target-project]] — short description. Read when: condition.
 ```

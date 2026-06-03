@@ -10,7 +10,7 @@ This repository is not itself an Agentic Memory vault. It defines the system and
 
 Agentic Memory separates a memory vault into two planes:
 
-- **Memory content**: `MEMORY.md`, `maps/`, `notes/`, `people/`, `sources/`, and `records/`.
+- **Memory content**: `MEMORY.md`, `USER.md`, `maps/`, `projects/`, `notes/`, `people/`, `sources/`, and `records/`.
 - **LLM control plane**: `.agentic-memory/`, which contains the local version contract, agent instructions, and file templates.
 
 The memory content stays readable in Obsidian. The hidden control plane tells agents how to operate the vault.
@@ -27,9 +27,9 @@ template/                  # clean Agentic Memory vault template
 
 ## Starter vault vs examples
 
-`template/` is intentionally clean. Its `maps/`, `notes/`, `people/`, `sources/`, and `records/` folders start empty so a new memory system does not inherit seed content.
+`template/` is intentionally clean. Its `maps/`, `projects/`, `notes/`, `people/`, `sources/`, and `records/` folders start empty so a new memory system does not inherit seed content. `USER.md` starts as a lean scaffold for owner-specific memory.
 
-`examples/basic/` contains a small reference content plane showing how memory maps and atomic notes can look. It intentionally omits `.agentic-memory/`; combine it with `template/.agentic-memory/` to make a runnable vault.
+`examples/basic/` contains a small reference content plane showing how user memory, project memory, memory maps, and atomic notes can look. It intentionally omits `.agentic-memory/`; combine it with `template/.agentic-memory/` to make a runnable vault.
 
 ## Tooling status
 
@@ -40,6 +40,7 @@ Agentic Memory is intended to have a Bun-powered `agentic-memory` CLI with comma
 - [Architecture](docs/architecture.md) — conceptual model and filesystem shape.
 - [Schema](docs/schema.md) — required metadata, file roles, budgets, and naming rules.
 - [Operating model](docs/operating-model.md) — how agents load, write, and maintain memory.
-- [Linking and maps](docs/linking-and-maps.md) — memory-map and semantic-linking rules.
+- [Linking and maps](docs/linking-and-maps.md) — memory-map, project-routing, and semantic-linking rules.
+- [Cross-project persistence](docs/cross-project-persistence.md) — proactive project/user memory capture across agent sessions.
 - [Reflection workflow](docs/reflection-workflow.md) — graph health, compaction, and session-feedback loop.
 - [Migration](docs/migration.md) — migration philosophy and versioned migration structure.

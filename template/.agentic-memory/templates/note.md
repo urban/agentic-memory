@@ -20,7 +20,7 @@ competes_with: []
 
 # Title
 
-One durable idea, written concisely.
+One durable idea, preference, pattern, heuristic, decision, or concept, written concisely.
 
 ## Use when
 

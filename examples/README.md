@@ -1,6 +1,6 @@
 # Examples
 
-Examples show Agentic Memory content-plane structure and linking patterns.
+Examples show Agentic Memory content-plane structure, project/user memory, and linking patterns.
 
 They intentionally omit the `.agentic-memory/` control plane. The control plane lives in the starter template at `template/.agentic-memory/`.
 

@@ -17,7 +17,7 @@ sources: []
 
 ## Context
 
-Who this person is and why they matter to durable memory.
+Who this person is and why they matter to durable memory. Use `USER.md` for the vault owner / primary user instead of creating a person note.
 
 ## Preferences and communication style
 

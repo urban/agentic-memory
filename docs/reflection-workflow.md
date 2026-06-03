@@ -2,7 +2,7 @@
 
 Reflection is the maintenance loop that keeps Agentic Memory useful over time.
 
-It covers what some memory systems call reflection, compaction, dreaming, consolidation, linting, or graph health checking.
+It covers what some memory systems call reflection, compaction, dreaming, consolidation, linting, graph health checking, or promotion of repeated observations into reusable memory.
 
 ## Purpose
 
@@ -19,6 +19,8 @@ Run Reflection when:
 
 - `MEMORY.md` or maps are getting too large
 - agents repeatedly fail to find useful context
+- project files are accumulating reusable insights that should be promoted
+- `USER.md` is getting bulky, stale, or overconfident
 - atomic notes are weakly connected or duplicated
 - people notes are missing, noisy, duplicated, or speculative
 - many notes are still `draft` or `seedling`
@@ -48,22 +50,24 @@ Rules:
 - Reflection may inspect external session traces when the user provides them.
 - Durable summaries of session usage may be saved only when useful.
 - If saved as evidence, session-usage summaries belong in `sources/`.
-- Interpretation derived from summaries belongs in `notes/`, `people/`, `maps/`, `MEMORY.md`, or `records/`.
+- Interpretation derived from summaries belongs in `notes/`, `USER.md`, `projects/`, `people/`, `maps/`, `MEMORY.md`, or `records/`.
 
 ## Typical outcomes
 
 Reflection may produce:
 
-- improved map routing links
-- new or stronger semantic links between notes
+- improved map and project routing links
+- project-to-note promotion proposals
+- `USER.md` compaction or confidence-label cleanup
+- new or stronger semantic links between notes and projects
 - proposed people-note additions or cleanup
 - proposed note merges, splits, or pruning
-- a proposed lift + decompose plan for overloaded notes
+- a proposed lift + decompose plan for overloaded notes or projects
 - token-budget warnings
 - stale or weak memory warnings
 - a Reflection record in `records/`
 
-High-impact changes require human approval. Examples include deletion, archiving, splitting, merging, materially rewriting `MEMORY.md`, changing instructions, or altering human-authored meaning.
+High-impact changes require human approval. Examples include deletion, archiving, splitting, merging, materially rewriting `MEMORY.md` or `USER.md`, changing instructions, or altering human-authored meaning.
 
 ## Git workflow
 
