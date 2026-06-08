@@ -17,7 +17,7 @@ Both files use the same value:
 
 ```yaml
 ---
-version: 0.3.0
+version: 0.4.0
 ---
 ```
 
@@ -35,6 +35,7 @@ USER.md
 .agentic-memory/instructions/writing-memory.md
 .agentic-memory/instructions/linking-and-maps.md
 .agentic-memory/instructions/cross-project-persistence.md
+.agentic-memory/instructions/session-capture.md
 .agentic-memory/instructions/reflection.md
 .agentic-memory/templates/map.md
 .agentic-memory/templates/project.md
@@ -243,13 +244,13 @@ Recommended body sections:
 
 ## Purpose
 
-## Current state
+## Resume context
 
 ## Active goals
 
-## Key decisions and rationale
+## Project timeline
 
-## User observations and working patterns
+## Decision log
 
 ## Open questions
 
@@ -260,7 +261,9 @@ Recommended body sections:
 ## Semantic links
 ```
 
-Project files should avoid duplicating facts that can be cheaply derived from source code, repository files, or obvious current project state. Dated work history belongs in `records/`.
+`## Resume context` should capture the smallest durable project state a future session needs before resuming. `## Project timeline` should record meaningful dated milestones, not day-by-day task churn. `## Decision log` should capture consequential decisions with concise rationale and links when useful.
+
+Project files should avoid duplicating facts that can be cheaply derived from source code, repository files, or obvious current project state. They should not become issue trackers or daily status logs. Dense chronology belongs in `records/` when it is worth preserving.
 
 ## Atomic note frontmatter
 

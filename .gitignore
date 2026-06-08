@@ -1,6 +1,11 @@
 .DS_Store
-.dotai/
 node_modules/
-dist/
-coverage/
-tmp/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+.DS_Store
+.agents/skills
+
+# Repos for AI reference
+/.dotai/repos/

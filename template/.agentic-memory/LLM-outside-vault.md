@@ -1,5 +1,5 @@
 ---
-version: 0.3.0
+version: 0.4.0
 ---
 
 # Agentic Memory
@@ -16,6 +16,15 @@ Resolve all relative paths below against the Central Agentic Memory vault that c
 6. Load only the relevant map/project, then specific notes/people/records/sources as needed.
 
 Never load whole folders by default.
+
+## Memory Steward capture mode
+
+When the prompt explicitly says you are running in Memory Steward capture mode and includes a structured Capture Payload, read `instructions/session-capture.md` before editing memory. In that mode:
+
+- the Capture Payload is the authoritative session boundary
+- the local scratchpad is temporary extension state, not vault content by itself
+- project files should favor resume context, project timeline, and decision log updates over task-log accumulation
+- you must return strict JSON only matching the Capture Result schema
 
 ## Secondary-memory stance
 

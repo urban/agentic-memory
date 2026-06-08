@@ -24,22 +24,22 @@ competes_with: []
 
 What durable recurring effort this project represents and why it matters.
 
-## Current state
+## Resume context
 
-High-level state that future sessions need and cannot cheaply infer from source files.
+High-signal state future sessions need before resuming. Keep this concise and biased toward what is not cheaply inferable from source files.
 
 ## Active goals
 
 - Goal or objective.
 
-## Key decisions and rationale
+## Project timeline
+
+- YYYY-MM-DD: Meaningful milestone, state change, or outcome.
+
+## Decision log
 
 - Decision: ...
   Rationale: ...
-
-## User observations and working patterns
-
-- Explicit/Repeated/Observed/Inferred: Preference or pattern, with context and links when useful.
 
 ## Open questions
 

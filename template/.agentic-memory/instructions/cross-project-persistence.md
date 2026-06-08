@@ -24,6 +24,8 @@ Prefer context not cheaply re-read from the current repo: goals, durable state, 
 
 Skip routine implementation facts, file lists, task logs, raw chat logs, duplicate summaries, and one-off observations framed as stable preferences.
 
+If you are invoked in Memory Steward capture mode with a structured Capture Payload, read `session-capture.md` before making any durable edits. In that mode, the payload is the authoritative session summary and the scratchpad is temporary local extension state rather than vault content.
+
 ## Save location
 
 - `projects/`: recurring-effort state and routing.

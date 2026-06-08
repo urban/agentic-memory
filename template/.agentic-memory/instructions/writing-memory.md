@@ -57,13 +57,19 @@ Confidence labels: `Explicit` (user said), `Repeated` (across projects/many sess
 
 Create/update a project only for durable recurring efforts, active/completed/archived efforts worth recalling, umbrella efforts, or likely-to-recur candidates.
 
-Capture durable state, goals, decisions/rationale, open loops, next useful context, routing, and project-local observations that may later be promoted. Do not store source-code summaries, task logs, every status update, or duplicated cross-project patterns.
+Project files should keep three required durable sections healthy:
+
+- `## Resume context`: concise state needed to resume well.
+- `## Project timeline`: dated milestones and meaningful state transitions.
+- `## Decision log`: consequential decisions and short rationale.
+
+Capture durable state, goals, decisions/rationale, open loops, next useful context, routing, and project-local observations that may later be promoted. Do not store source-code summaries, ticket-level task checklists, every status update, or duplicated cross-project patterns. Project files are routing surfaces and durable state summaries, not issue trackers.
 
 ## Promotion
 
 Project memory is staging. Promote to `notes/` or `USER.md` when an observation is repeated, useful beyond one project, not cheaply re-derived, expressible as one reusable pattern/rationale/workflow/preference, stable enough or labeled uncertain, and better represented once than duplicated.
 
-After promotion: update/create the destination, link originating projects to it, and compact safe duplicate wording.
+After promotion: update/create the destination, link originating projects to it, and compact safe duplicate wording so project files stay DRY.
 
 ## People, sources, records
 
