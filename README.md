@@ -45,12 +45,25 @@ Other patterns, such as Reflection, migration, human browsing in Obsidian, or mu
 
 ## Quick start
 
-1. Copy `template/` to the place where you want a new memory vault.
-2. Open the new vault's `MEMORY.md` and add only top-level routes that future agents should see early.
-3. Open `USER.md` and add stable owner context, preferences, and glossary terms. Keep it lean.
-4. Add maps, projects, notes, people, sources, and records as durable memory emerges.
-5. For vault-local use, start the coding harness in the initialized vault/repo and let it read root `AGENTS.md`.
-6. For outside-vault use, copy/adapt `.agentic-memory/adapters/MEMORY_ADAPTER.md` from the initialized vault into the relevant global or project harness entry point and replace `/absolute/path/to/memory-vault` with the real path.
+1. **Create your vault.** Copy `template/` to a permanent local folder that you control:
+
+   ```sh
+   cp -R template ~/agentic-memory
+   cd ~/agentic-memory
+   git init
+   ```
+
+   Git is optional, but recommended because agents will update plain Markdown and you can review every memory change as a diff.
+
+2. **Add the first routing memory.** Open `MEMORY.md` and add only the top-level context future agents should see early: active projects, major domains, and links to maps or project files you expect to create. Keep this file small.
+
+3. **Add stable owner context.** Open `USER.md` and add durable facts about the vault owner, long-lived preferences, communication style, and glossary terms. Keep transient tasks out of this file.
+
+4. **Start using the vault with an agent.** Pick one of the two supported entry points:
+   - **Vault-local use:** start your coding harness with the vault as the current working directory. The harness should read the root `AGENTS.md`, which routes it into `.agentic-memory/LLM-vault-local.md` and then to the right memory files.
+   - **Outside-vault use:** copy `.agentic-memory/adapters/MEMORY_ADAPTER.md` from your new vault into the relevant user-level or project-level harness entry point, such as `AGENTS.md`, `CLAUDE.md`, Pi `APPEND_SYSTEM.md`, or another harness-specific instruction file. Replace `/absolute/path/to/memory-vault` with your vault's real absolute path. After that, agents working in other repositories can use the vault for durable memory while keeping the current project instructions primary.
+
+5. **Let memory grow through use.** During work, ask the agent to create or update maps, projects, notes, people, sources, and records only when the information is durable enough to help future sessions. Review the Markdown changes, commit useful memory, and prune or revise anything that should not persist.
 
 `template/` is intentionally clean: its content folders start empty and `USER.md` is only a scaffold, so a new vault does not inherit example memory. For a concrete reference graph, inspect `examples/basic/`. The example intentionally omits `.agentic-memory/`; pair it with the template control plane if you want to operate it as a full vault.
 
