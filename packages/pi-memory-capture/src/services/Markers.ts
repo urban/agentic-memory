@@ -122,9 +122,16 @@ export class Markers extends Context.Service<
                     const observedIndex = branch.findIndex(
                       (entry) => entry.id === latestAdvancingMarker.marker.lastObservedEntryId,
                     );
-                    return observedIndex === -1
-                      ? branch.findIndex(isCapturableMessageEntry)
-                      : observedIndex + 1;
+                    if (observedIndex === -1) {
+                      return branch.findIndex(isCapturableMessageEntry);
+                    }
+
+                    const markerIndex = branch.findIndex(
+                      (entry) => entry.id === latestAdvancingMarker.entry.id,
+                    );
+                    return markerIndex === -1
+                      ? observedIndex + 1
+                      : Math.max(observedIndex + 1, markerIndex + 1);
                   })();
 
             const observedEntries = startIndex === -1 ? [] : branch.slice(startIndex);

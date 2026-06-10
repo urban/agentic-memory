@@ -61,6 +61,7 @@ export const ProjectConfig = Schema.Struct({
   version: Schema.Literal(1),
   vaultPath: Schema.String,
   projectLink: Schema.String,
+  projectRoot: Schema.optional(Schema.String),
 }).annotate({
   identifier: "ProjectConfig",
 });

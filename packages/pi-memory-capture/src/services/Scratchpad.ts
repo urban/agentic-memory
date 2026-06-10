@@ -48,13 +48,30 @@ export class ScratchpadStore extends Context.Service<
           } satisfies ScratchpadLoadResult;
         }
 
-        const contents = yield* fs
-          .readFileString(filepath)
-          .pipe(Effect.catch(() => Effect.succeed("")));
+        const readResult = yield* fs.readFileString(filepath).pipe(
+          Effect.match({
+            onFailure: (error) => ({
+              _tag: "read_failed" as const,
+              message: `Failed to read scratchpad file; using an empty one: ${error.message}`,
+            }),
+            onSuccess: (contents) => ({
+              _tag: "contents" as const,
+              contents,
+            }),
+          }),
+        );
+        if (readResult._tag === "read_failed") {
+          return {
+            scratchpad: emptyScratchpad(projectLink, updatedAt),
+            warnings: [readResult.message],
+          } satisfies ScratchpadLoadResult;
+        }
+
+        const contents = readResult.contents;
         if (contents.trim().length === 0) {
           return {
             scratchpad: emptyScratchpad(projectLink, updatedAt),
-            warnings: [],
+            warnings: ["Ignoring blank scratchpad and using an empty one."],
           } satisfies ScratchpadLoadResult;
         }
 

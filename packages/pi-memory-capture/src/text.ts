@@ -29,6 +29,7 @@ export const redactSecrets = (value: string): string =>
       /-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?-----END [^-]*PRIVATE KEY-----/g,
       "[REDACTED PRIVATE KEY BLOCK]",
     )
+    .replace(/\bgithub_pat_[A-Za-z0-9_]+\b/g, "[REDACTED_GITHUB_TOKEN]")
     .replace(/\bgh[pousr]_[A-Za-z0-9_]+\b/g, "[REDACTED_GITHUB_TOKEN]")
     .replace(/\bsk-ant-[A-Za-z0-9_-]{10,}\b/g, "[REDACTED_API_KEY]")
     .replace(/\bsk-[A-Za-z0-9_-]{20,}\b/g, "[REDACTED_API_KEY]");

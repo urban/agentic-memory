@@ -21,6 +21,14 @@ hello
     expect(sanitized.endsWith("hello")).toBe(true);
   });
 
+  it("redacts GitHub fine-grained personal access tokens", () => {
+    const token = "github_pat_11AA22BB33CC44DD55EE66FF77GG88HH99II00JJ11";
+    const sanitized = sanitizeVisibleText(`token=${token}`);
+
+    expect(sanitized).toContain("[REDACTED_GITHUB_TOKEN]");
+    expect(sanitized).not.toContain(token);
+  });
+
   it("truncates oversized messages with the capture suffix", () => {
     const truncated = truncateMessageText("x".repeat(7_000));
 
@@ -40,6 +48,28 @@ updated: 2026-01-01
 ## Current
 
 - Work in progress.
+`,
+      "[[projects/capture-extension]]",
+      "capture-extension",
+      "2026-06-05",
+    );
+
+    expect(updated).toContain("updated: 2026-06-05");
+    expect(updated).toContain("## Projects");
+    expect(updated).toContain("- [[projects/capture-extension]] — capture-extension.");
+  });
+
+  it("adds a projects route even when the project link already appears outside the projects section", () => {
+    const updated = ensureProjectRouteInMemory(
+      `---
+updated: 2026-01-01
+---
+
+# Memory
+
+## Current
+
+- Continue [[projects/capture-extension]] this week.
 `,
       "[[projects/capture-extension]]",
       "capture-extension",

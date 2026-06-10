@@ -67,6 +67,11 @@ export interface EnvironmentOverrides {
 const outsideVaultContractPath = (path: Path.Path, vaultPath: string): string =>
   path.join(vaultPath, ".agentic-memory", "LLM-outside-vault.md");
 
+const normalizeBoundPath = (path: Path.Path, value: string): string => {
+  const normalized = path.normalize(value);
+  return normalized.length > 1 ? normalized.replace(/\/+$/u, "") : normalized;
+};
+
 const optionalEnvironmentVariable = Effect.fn("Config.optionalEnvironmentVariable")(
   function* (name: string) {
     const value = yield* EffectConfig.string(name).pipe(EffectConfig.option);
@@ -230,6 +235,19 @@ export class Config extends Context.Service<
           };
         }
 
+        const projectRoot = decodedResult.config.projectRoot;
+        if (
+          projectRoot === undefined ||
+          normalizeBoundPath(path, projectRoot) !== normalizeBoundPath(path, cwd)
+        ) {
+          return {
+            _tag: "invalid",
+            paths,
+            message:
+              "Local capture config is not bound to this checkout. Re-run /memory-capture-init.",
+          };
+        }
+
         return yield* validateInputs(
           vaultOverride ?? decodedResult.config.vaultPath,
           decodedResult.config.projectLink,
@@ -297,7 +315,10 @@ export class Config extends Context.Service<
           ),
         );
 
-        const configContents = yield* encodeProjectConfigJson(config).pipe(
+        const configContents = yield* encodeProjectConfigJson({
+          ...config,
+          projectRoot: normalizeBoundPath(path, cwd),
+        }).pipe(
           Effect.mapError(
             (cause) =>
               new ConfigServiceError({
@@ -307,20 +328,47 @@ export class Config extends Context.Service<
           ),
         );
 
+        const scratchpadExists = yield* fs.exists(paths.scratchpadFile).pipe(
+          Effect.mapError(
+            (cause) =>
+              new ConfigServiceError({
+                message: `Failed to inspect scratchpad file: ${paths.scratchpadFile}`,
+                cause,
+              }),
+          ),
+        );
+        if (scratchpadExists) {
+          const scratchpadInfo = yield* fs.stat(paths.scratchpadFile).pipe(
+            Effect.mapError(
+              (cause) =>
+                new ConfigServiceError({
+                  message: `Failed to inspect scratchpad file: ${paths.scratchpadFile}`,
+                  cause,
+                }),
+            ),
+          );
+          if (scratchpadInfo.type !== "File") {
+            return yield* new ConfigServiceError({
+              message: `Scratchpad path must be a file: ${paths.scratchpadFile}`,
+            });
+          }
+        } else {
+          yield* fs.writeFileString(paths.scratchpadFile, `${scratchpadContents}\n`).pipe(
+            Effect.mapError(
+              (cause) =>
+                new ConfigServiceError({
+                  message: `Failed to write scratchpad file: ${paths.scratchpadFile}`,
+                  cause,
+                }),
+            ),
+          );
+        }
+
         yield* fs.writeFileString(paths.configFile, `${configContents}\n`).pipe(
           Effect.mapError(
             (cause) =>
               new ConfigServiceError({
                 message: `Failed to write config file: ${paths.configFile}`,
-                cause,
-              }),
-          ),
-        );
-        yield* fs.writeFileString(paths.scratchpadFile, `${scratchpadContents}\n`).pipe(
-          Effect.mapError(
-            (cause) =>
-              new ConfigServiceError({
-                message: `Failed to write scratchpad file: ${paths.scratchpadFile}`,
                 cause,
               }),
           ),
@@ -350,9 +398,15 @@ export class Config extends Context.Service<
         }
 
         const templatePath = path.join(vaultPath, ".agentic-memory", "templates", "project.md");
-        const templateExists = yield* fs
-          .exists(templatePath)
-          .pipe(Effect.catchTag("PlatformError", () => Effect.succeed(false)));
+        const templateExists = yield* fs.exists(templatePath).pipe(
+          Effect.mapError(
+            (cause) =>
+              new ConfigServiceError({
+                message: `Failed to inspect project template: ${templatePath}`,
+                cause,
+              }),
+          ),
+        );
         const projectLabel = projectLabelFromLink(projectLink);
         const templateDocument = templateExists
           ? yield* fs.readFileString(templatePath).pipe(
@@ -437,9 +491,18 @@ export class Config extends Context.Service<
         gitDir: string,
       ): Effect.fn.Return<boolean, ConfigServiceError> {
         const excludePath = path.join(gitDir, "info", "exclude");
-        const existing = yield* fs
-          .readFileString(excludePath)
-          .pipe(Effect.catchTag("PlatformError", () => Effect.succeed("")));
+        const existing = yield* fs.readFileString(excludePath).pipe(
+          Effect.catchTag("PlatformError", (error) =>
+            error.reason._tag === "NotFound" ? Effect.succeed("") : Effect.fail(error),
+          ),
+          Effect.mapError(
+            (cause) =>
+              new ConfigServiceError({
+                message: `Failed to read git exclude file: ${excludePath}`,
+                cause,
+              }),
+          ),
+        );
 
         if (existing.split("\n").some((line) => line.trim() === GIT_EXCLUDE_ENTRY)) {
           return false;

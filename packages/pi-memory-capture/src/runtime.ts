@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import * as BunServices from "@effect/platform-bun/BunServices";
-import { Clock, Effect, Layer, ManagedRuntime } from "effect";
+import { Clock, Effect, Layer, ManagedRuntime, Semaphore } from "effect";
 import { MARKER_VERSION, PACKAGE_VERSION } from "./constants.ts";
 import { formatIsoFromMillis } from "./project.ts";
 import { emptyScratchpad } from "./scratchpad.ts";
@@ -35,7 +35,6 @@ export interface StatusResult {
 }
 
 type CaptureSessionManager = ExtensionContext["sessionManager"];
-
 export interface CaptureCommandInput {
   readonly cwd: string;
   readonly sessionManager: CaptureSessionManager;
@@ -46,6 +45,19 @@ export interface CaptureCommandInput {
 }
 
 const notificationSummary = (summary: string): string => clipSummary(summary);
+
+const captureSemaphores = new Map<string, Semaphore.Semaphore>();
+
+const captureSemaphoreFor = (cwd: string): Semaphore.Semaphore => {
+  const existing = captureSemaphores.get(cwd);
+  if (existing !== undefined) {
+    return existing;
+  }
+
+  const created = Semaphore.makeUnsafe(1);
+  captureSemaphores.set(cwd, created);
+  return created;
+};
 
 const checkpointTimeout = (checkpoint: CaptureCheckpointType): number => {
   switch (checkpoint) {
@@ -210,171 +222,192 @@ export const runCapturePass = (
   never,
   Config | Markers | ScratchpadStore | Preprocessor | MemorySteward
 > =>
-  Effect.gen(function* () {
-    const config = yield* Config;
-    const markers = yield* Markers;
-    const scratchpadStore = yield* ScratchpadStore;
-    const preprocessor = yield* Preprocessor;
-    const steward = yield* MemorySteward;
-    const time = yield* nowValues;
-    const currentConfig = yield* config.load(input.cwd);
+  captureSemaphoreFor(input.cwd)
+    .withPermit(
+      Effect.gen(function* () {
+        const config = yield* Config;
+        const markers = yield* Markers;
+        const scratchpadStore = yield* ScratchpadStore;
+        const preprocessor = yield* Preprocessor;
+        const steward = yield* MemorySteward;
+        const time = yield* nowValues;
+        const currentConfig = yield* config.load(input.cwd);
 
-    if (currentConfig._tag !== "valid") {
-      return input.mode === "automatic"
-        ? ({
-            status: "ignored",
-            summary:
-              currentConfig._tag === "missing" ? "Capture not initialized" : currentConfig.message,
+        if (currentConfig._tag !== "valid") {
+          return input.mode === "automatic"
+            ? ({
+                status: "ignored",
+                summary:
+                  currentConfig._tag === "missing"
+                    ? "Capture not initialized"
+                    : currentConfig.message,
+                warnings: [],
+                changedFiles: [],
+                marker: undefined,
+              } satisfies CaptureExecution)
+            : ({
+                status: "skipped",
+                summary:
+                  currentConfig._tag === "missing"
+                    ? "Memory capture is not initialized for this project."
+                    : currentConfig.message,
+                warnings: [],
+                changedFiles: [],
+                marker: undefined,
+              } satisfies CaptureExecution);
+        }
+
+        const observation = yield* markers.selectObservation(input.sessionManager.getBranch());
+        if (observation.observedEntries.length === 0) {
+          return {
+            status: "no_new_entries",
+            summary: "No new entries to capture.",
             warnings: [],
             changedFiles: [],
             marker: undefined,
-          } satisfies CaptureExecution)
-        : ({
+          } satisfies CaptureExecution;
+        }
+
+        const scratchpad = yield* scratchpadStore.load(
+          currentConfig.paths.scratchpadFile,
+          currentConfig.config.projectLink,
+          time.isoTimestamp,
+        );
+        const payloadResult = yield* preprocessor.buildPayload(
+          input.checkpoint,
+          currentConfig.config.projectLink,
+          observation.observedEntries,
+          scratchpad.scratchpad,
+        );
+
+        if (payloadResult._tag === "NoMessages") {
+          return {
             status: "skipped",
-            summary:
-              currentConfig._tag === "missing"
-                ? "Memory capture is not initialized for this project."
-                : currentConfig.message,
-            warnings: [],
+            summary: "Observed entries contained no capturable visible text.",
+            warnings: [...scratchpad.warnings, ...payloadResult.warnings],
             changedFiles: [],
-            marker: undefined,
-          } satisfies CaptureExecution);
-    }
+            marker: makeSkippedMarker(
+              input.checkpoint,
+              "Observed entries contained no capturable visible text.",
+              time.isoTimestamp,
+              observation.observedEntries,
+            ),
+          } satisfies CaptureExecution;
+        }
 
-    const observation = yield* markers.selectObservation(input.sessionManager.getBranch());
-    if (observation.observedEntries.length === 0) {
-      return {
-        status: "no_new_entries",
-        summary: "No new entries to capture.",
-        warnings: [],
-        changedFiles: [],
-        marker: undefined,
-      } satisfies CaptureExecution;
-    }
+        const stewardResult = yield* steward
+          .run({
+            vaultPath: currentConfig.config.vaultPath,
+            payload: payloadResult.payload,
+            payloadWarnings: payloadResult.warnings,
+            timeoutMillis: input.timeoutMillis,
+          })
+          .pipe(
+            Effect.match({
+              onFailure: (error) => ({
+                _tag: "failed" as const,
+                message: error.message,
+              }),
+              onSuccess: (result) => ({
+                _tag: "result" as const,
+                result,
+              }),
+            }),
+          );
 
-    const scratchpad = yield* scratchpadStore.load(
-      currentConfig.paths.scratchpadFile,
-      currentConfig.config.projectLink,
-      time.isoTimestamp,
-    );
-    const payloadResult = yield* preprocessor.buildPayload(
-      input.checkpoint,
-      currentConfig.config.projectLink,
-      observation.observedEntries,
-      scratchpad.scratchpad,
-    );
+        if (stewardResult._tag === "failed") {
+          return {
+            status: "failed",
+            summary: stewardResult.message,
+            warnings: scratchpad.warnings,
+            changedFiles: [],
+            marker: makeFailureMarker(
+              input.checkpoint,
+              stewardResult.message,
+              time.isoTimestamp,
+              observation.observedEntries,
+            ),
+          } satisfies CaptureExecution;
+        }
 
-    if (payloadResult._tag === "NoMessages") {
-      return {
-        status: "skipped",
-        summary: "Observed entries contained no capturable visible text.",
-        warnings: [...scratchpad.warnings, ...payloadResult.warnings],
-        changedFiles: [],
-        marker: makeSkippedMarker(
-          input.checkpoint,
-          "Observed entries contained no capturable visible text.",
-          time.isoTimestamp,
-          observation.observedEntries,
-        ),
-      } satisfies CaptureExecution;
-    }
+        const scratchpadWarnings =
+          stewardResult.result.scratchpad === undefined
+            ? []
+            : stewardResult.result.scratchpad.projectLink !== currentConfig.config.projectLink
+              ? [
+                  "Memory Steward returned a scratchpad for a different project; the previous local scratchpad was kept.",
+                ]
+              : yield* scratchpadStore
+                  .write(
+                    currentConfig.paths.scratchpadFile,
+                    stewardResult.result.scratchpad,
+                    time.isoTimestamp,
+                  )
+                  .pipe(
+                    Effect.match({
+                      onFailure: (error) => [
+                        `Failed to write the local scratchpad; previous local scratchpad was kept: ${error.message}`,
+                      ],
+                      onSuccess: () => [],
+                    }),
+                  );
 
-    const stewardResult = yield* steward
-      .run({
-        vaultPath: currentConfig.config.vaultPath,
-        payload: payloadResult.payload,
-        payloadWarnings: payloadResult.warnings,
-        timeoutMillis: input.timeoutMillis,
-      })
-      .pipe(
-        Effect.match({
-          onFailure: (error) => ({
-            _tag: "failed" as const,
-            message: error.message,
-          }),
-          onSuccess: (result) => ({
-            _tag: "result" as const,
-            result,
-          }),
-        }),
-      );
+        const warnings = [
+          ...scratchpad.warnings,
+          ...payloadResult.warnings,
+          ...stewardResult.result.warnings,
+          ...scratchpadWarnings,
+        ];
 
-    if (stewardResult._tag === "failed") {
-      return {
-        status: "failed",
-        summary: stewardResult.message,
-        warnings: scratchpad.warnings,
-        changedFiles: [],
-        marker: makeFailureMarker(
-          input.checkpoint,
-          stewardResult.message,
-          time.isoTimestamp,
-          observation.observedEntries,
-        ),
-      } satisfies CaptureExecution;
-    }
+        if (
+          stewardResult.result.status === "captured" ||
+          stewardResult.result.status === "no_changes"
+        ) {
+          return {
+            status: stewardResult.result.status,
+            summary: stewardResult.result.summary,
+            warnings,
+            changedFiles: stewardResult.result.filesChanged,
+            marker: makeAdvancingMarker(
+              input.checkpoint,
+              stewardResult.result.status,
+              time.isoTimestamp,
+              stewardResult.result.summary,
+              payloadResult.payload.observation,
+            ),
+          } satisfies CaptureExecution;
+        }
 
-    const scratchpadWarnings =
-      stewardResult.result.scratchpad === undefined
-        ? []
-        : stewardResult.result.scratchpad.projectLink !== currentConfig.config.projectLink
-          ? [
-              "Memory Steward returned a scratchpad for a different project; the previous local scratchpad was kept.",
-            ]
-          : yield* scratchpadStore
-              .write(
-                currentConfig.paths.scratchpadFile,
-                stewardResult.result.scratchpad,
-                time.isoTimestamp,
-              )
-              .pipe(
-                Effect.match({
-                  onFailure: (error) => [
-                    `Failed to write the local scratchpad; previous local scratchpad was kept: ${error.message}`,
-                  ],
-                  onSuccess: () => [],
-                }),
-              );
+        if (stewardResult.result.status === "failed") {
+          return {
+            status: "failed",
+            summary: stewardResult.result.summary,
+            warnings,
+            changedFiles: stewardResult.result.filesChanged,
+            marker: makeFailureMarker(
+              input.checkpoint,
+              stewardResult.result.summary,
+              time.isoTimestamp,
+              observation.observedEntries,
+            ),
+          } satisfies CaptureExecution;
+        }
 
-    const warnings = [
-      ...scratchpad.warnings,
-      ...payloadResult.warnings,
-      ...stewardResult.result.warnings,
-      ...scratchpadWarnings,
-    ];
-
-    if (
-      stewardResult.result.status === "captured" ||
-      stewardResult.result.status === "no_changes"
-    ) {
-      return {
-        status: stewardResult.result.status,
-        summary: stewardResult.result.summary,
-        warnings,
-        changedFiles: stewardResult.result.filesChanged,
-        marker: makeAdvancingMarker(
-          input.checkpoint,
-          stewardResult.result.status,
-          time.isoTimestamp,
-          stewardResult.result.summary,
-          payloadResult.payload.observation,
-        ),
-      } satisfies CaptureExecution;
-    }
-
-    return {
-      status: stewardResult.result.status,
-      summary: stewardResult.result.summary,
-      warnings,
-      changedFiles: stewardResult.result.filesChanged,
-      marker: makeSkippedMarker(
-        input.checkpoint,
-        stewardResult.result.summary,
-        time.isoTimestamp,
-        observation.observedEntries,
-      ),
-    } satisfies CaptureExecution;
-  }).pipe(Effect.withSpan("MemoryCapture.runCapturePass"));
+        return {
+          status: stewardResult.result.status,
+          summary: stewardResult.result.summary,
+          warnings,
+          changedFiles: stewardResult.result.filesChanged,
+          marker: makeSkippedMarker(
+            input.checkpoint,
+            stewardResult.result.summary,
+            time.isoTimestamp,
+            observation.observedEntries,
+          ),
+        } satisfies CaptureExecution;
+      }),
+    )
+    .pipe(Effect.withSpan("MemoryCapture.runCapturePass"));
 
 export const timeoutForCheckpoint = (checkpoint: CaptureCheckpointType) =>
   checkpointTimeout(checkpoint);

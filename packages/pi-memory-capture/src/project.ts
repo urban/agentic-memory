@@ -85,10 +85,6 @@ export const ensureProjectRouteInMemory = (
   projectLabel: string,
   updatedDate: string,
 ) => {
-  if (content.includes(projectLink)) {
-    return content;
-  }
-
   const routeLine = `- ${projectLink} — ${projectLabel}.`;
   const { prefix, body } = splitFrontmatter(content);
   const lines = body.split("\n");
