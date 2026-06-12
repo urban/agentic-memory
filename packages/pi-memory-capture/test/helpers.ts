@@ -4,7 +4,6 @@ import type { AssistantMessage, TextContent, ToolCall, UserMessage } from "@eare
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
-import type { CaptureMarker } from "../src/schema.ts";
 
 const timestamp = "2026-06-05T12:00:00.000Z";
 
@@ -70,7 +69,7 @@ export const makeAssistantEntry = (
 
 export const makeCustomMarkerEntry = (
   id: string,
-  marker: CaptureMarker,
+  marker: unknown,
   parentId: string | null = null,
 ): CustomEntry<unknown> => ({
   type: "custom",

@@ -1,24 +1,32 @@
 import type { ExecOptions, ExecResult } from "@earendil-works/pi-coding-agent";
-import { Context, Effect, FileSystem, Layer, Option, Schema } from "effect";
-import { STEWARD_TOOLS } from "../constants.ts";
+import { Cause, Context, Effect, FileSystem, Layer, Option, Schema } from "effect";
+import { RETRY_ATTEMPTS, RETRY_BACKOFF_MILLIS } from "../constants.ts";
 import {
-  decodeCaptureResultEnvelopeJson,
-  decodeScratchpadOption,
+  decodeStewardResultEnvelopeJson,
   encodeCapturePayloadJson,
   type CapturePayload,
-  type CaptureResultStatus,
-  type Scratchpad,
+  type StewardResultStatus,
 } from "../schema.ts";
 import { buildCapturePrompt } from "../text.ts";
-import { Config } from "./Config.ts";
+import { CaptureConfig } from "./CaptureConfig.ts";
 
-export interface StewardRunResult {
-  readonly status: CaptureResultStatus;
-  readonly summary: string;
+export interface StewardObservationResult {
+  readonly status: StewardResultStatus;
+  readonly summary: string | undefined;
   readonly filesChanged: ReadonlyArray<string>;
   readonly warnings: ReadonlyArray<string>;
-  readonly scratchpad: Scratchpad | undefined;
 }
+
+export type StewardRunResult =
+  | {
+      readonly _tag: "Succeeded";
+      readonly result: StewardObservationResult;
+      readonly retryFailureReasons: ReadonlyArray<string>;
+    }
+  | {
+      readonly _tag: "Failed";
+      readonly retryFailureReasons: ReadonlyArray<string>;
+    };
 
 const AssistantMessageEndEvent = Schema.Struct({
   type: Schema.Literal("message_end"),
@@ -103,6 +111,31 @@ export class StewardExecutor extends Context.Service<
   }
 >()("@urban/pi-memory-capture/services/MemorySteward/StewardExecutor") {}
 
+const normalizeFailureReason = (message: string): string => {
+  const baseWords = message
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .filter((word) => word.length > 0);
+  const paddedWords = [
+    ...baseWords,
+    "during",
+    "isolated",
+    "Memory",
+    "Steward",
+    "capture",
+    "send",
+    "attempt",
+    "cycle",
+    "today",
+    "now",
+  ];
+  return paddedWords.slice(0, 15).join(" ");
+};
+
+const backoffForAttemptIndex = (attemptIndex: number): number =>
+  RETRY_BACKOFF_MILLIS[attemptIndex - 1] ?? 0;
+
 export class MemorySteward extends Context.Service<
   MemorySteward,
   {
@@ -111,7 +144,7 @@ export class MemorySteward extends Context.Service<
       readonly payload: CapturePayload;
       readonly payloadWarnings: ReadonlyArray<string>;
       readonly timeoutMillis: number;
-    }) => Effect.Effect<StewardRunResult, MemoryStewardError>;
+    }) => Effect.Effect<StewardRunResult>;
   }
 >()("@urban/pi-memory-capture/services/MemorySteward") {
   static readonly layer = Layer.effect(
@@ -119,15 +152,15 @@ export class MemorySteward extends Context.Service<
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const executor = yield* StewardExecutor;
-      const config = yield* Config;
+      const config = yield* CaptureConfig;
       const { piBinary } = yield* config.environmentOverrides;
 
-      const run = Effect.fn("MemorySteward.run")(function* (input: {
+      const runOnce = Effect.fn("MemorySteward.runOnce")(function* (input: {
         readonly vaultPath: string;
         readonly payload: CapturePayload;
         readonly payloadWarnings: ReadonlyArray<string>;
         readonly timeoutMillis: number;
-      }): Effect.fn.Return<StewardRunResult, MemoryStewardError> {
+      }): Effect.fn.Return<StewardObservationResult, MemoryStewardError> {
         return yield* Effect.scoped(
           Effect.gen(function* () {
             const { vaultPath, payload, payloadWarnings, timeoutMillis } = input;
@@ -161,8 +194,6 @@ export class MemorySteward extends Context.Service<
                 "--no-context-files",
                 "--no-extensions",
                 "--no-skills",
-                "--tools",
-                STEWARD_TOOLS,
                 "--append-system-prompt",
                 appendSystemPrompt,
                 "-p",
@@ -177,14 +208,14 @@ export class MemorySteward extends Context.Service<
 
             if (result.killed) {
               return yield* new MemoryStewardError({
-                message: `Memory Steward process timed out after ${timeoutMillis}ms`,
+                message: `Timed out waiting for steward final JSON after child process launch`,
                 cause: result,
               });
             }
 
             if (result.code !== 0) {
               return yield* new MemoryStewardError({
-                message: `Memory Steward exited with code ${result.code}`,
+                message: `Steward process exited with non-zero status before emitting final JSON`,
                 cause: {
                   stderr: result.stderr,
                   stdout: result.stdout,
@@ -195,7 +226,7 @@ export class MemorySteward extends Context.Service<
             const assistantText = extractAssistantText(result.stdout);
             if (assistantText.trim().length === 0) {
               return yield* new MemoryStewardError({
-                message: "Memory Steward did not emit a final assistant JSON message",
+                message: "Steward returned EOF before final assistant JSON response was emitted",
                 cause: {
                   stderr: result.stderr,
                   stdout: result.stdout,
@@ -203,48 +234,60 @@ export class MemorySteward extends Context.Service<
               });
             }
 
-            const envelope = yield* decodeCaptureResultEnvelopeJson(assistantText).pipe(
+            const envelope = yield* decodeStewardResultEnvelopeJson(assistantText).pipe(
               Effect.mapError(
                 (cause) =>
                   new MemoryStewardError({
-                    message: "Memory Steward returned invalid Capture Result JSON",
+                    message: "Steward returned invalid final JSON for capture result schema",
                     cause,
                   }),
               ),
             );
 
-            const scratchpadResult =
-              envelope.scratchpad === undefined
-                ? {
-                    scratchpad: undefined,
-                    warnings: [],
-                  }
-                : Option.match(decodeScratchpadOption(envelope.scratchpad), {
-                    onNone: () => ({
-                      scratchpad: undefined,
-                      warnings: [
-                        "Memory Steward returned an invalid scratchpad; the previous local scratchpad was kept.",
-                      ],
-                    }),
-                    onSome: (scratchpad) => ({
-                      scratchpad,
-                      warnings: [],
-                    }),
-                  });
-
             return {
               status: envelope.status,
               summary: envelope.summary,
               filesChanged: envelope.filesChanged ?? [],
-              warnings: [...(envelope.warnings ?? []), ...scratchpadResult.warnings],
-              scratchpad: scratchpadResult.scratchpad,
+              warnings: envelope.warnings ?? [],
             };
           }),
         );
       });
 
+      const runWithRetries = Effect.fn("MemorySteward.runWithRetries")(function* (input: {
+        readonly vaultPath: string;
+        readonly payload: CapturePayload;
+        readonly payloadWarnings: ReadonlyArray<string>;
+        readonly timeoutMillis: number;
+      }): Effect.fn.Return<StewardRunResult> {
+        const retryFailureReasons: string[] = [];
+        let attemptIndex = 0;
+
+        while (attemptIndex < RETRY_ATTEMPTS) {
+          const result = yield* runOnce(input).pipe(Effect.exit);
+          if (result._tag === "Success") {
+            return {
+              _tag: "Succeeded",
+              result: result.value,
+              retryFailureReasons,
+            };
+          }
+
+          retryFailureReasons.push(normalizeFailureReason(Cause.pretty(result.cause)));
+          attemptIndex += 1;
+          if (attemptIndex < RETRY_ATTEMPTS) {
+            yield* Effect.sleep(backoffForAttemptIndex(attemptIndex));
+          }
+        }
+
+        return {
+          _tag: "Failed",
+          retryFailureReasons,
+        };
+      });
+
       return MemorySteward.of({
-        run,
+        run: runWithRetries,
       });
     }),
   );

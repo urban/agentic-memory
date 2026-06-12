@@ -4,46 +4,58 @@ import type {
   SessionMessageEntry,
 } from "@earendil-works/pi-coding-agent";
 import { Context, Effect, Layer, Option } from "effect";
+import { CUSTOM_ENTRY_TYPE } from "../constants.ts";
 import {
-  type AdvancingCaptureMarker,
   type CaptureMarker,
   decodeCaptureMarkerOption,
-  type NonAdvancingCaptureMarker,
+  type ObservationResultMarker,
+  type ScheduleResultMarker,
 } from "../schema.ts";
-import { CUSTOM_ENTRY_TYPE } from "../constants.ts";
 
 export interface MarkerEntry<TMarker extends CaptureMarker> {
   readonly entry: CustomEntry<unknown>;
   readonly marker: TMarker;
 }
 
+export interface MarkerBranchState {
+  readonly latestCapturedObservation: MarkerEntry<ObservationResultMarker> | undefined;
+  readonly latestSchedule: MarkerEntry<ScheduleResultMarker> | undefined;
+  readonly decodeWarnings: ReadonlyArray<string>;
+}
+
 export interface ObservationSelection {
-  readonly latestAdvancingMarker: MarkerEntry<AdvancingCaptureMarker> | undefined;
   readonly observedEntries: ReadonlyArray<SessionEntry>;
   readonly capturableMessages: ReadonlyArray<SessionMessageEntry>;
+  readonly state: MarkerBranchState;
 }
 
 const isCustomMarkerEntry = (entry: SessionEntry): entry is CustomEntry<unknown> =>
   entry.type === "custom" && entry.customType === CUSTOM_ENTRY_TYPE;
 
-const isCapturableMessageEntry = (entry: SessionEntry): entry is SessionMessageEntry =>
+export const isCapturableMessageEntry = (entry: SessionEntry): entry is SessionMessageEntry =>
   entry.type === "message" && (entry.message.role === "user" || entry.message.role === "assistant");
+
+export const isCompletedAssistantTurn = (entry: SessionEntry): entry is SessionMessageEntry =>
+  entry.type === "message" && entry.message.role === "assistant";
 
 const decodeMarkerEntry = (
   entry: CustomEntry<unknown>,
 ): Option.Option<MarkerEntry<CaptureMarker>> =>
   Option.map(decodeCaptureMarkerOption(entry.data), (marker) => ({ entry, marker }));
 
-const isAdvancingMarker = (marker: CaptureMarker): marker is AdvancingCaptureMarker =>
-  marker.status === "captured" || marker.status === "no_changes";
+const isObservationMarker = (marker: CaptureMarker): marker is ObservationResultMarker =>
+  marker.kind === "observation_result";
 
-const isNonAdvancingMarker = (marker: CaptureMarker): marker is NonAdvancingCaptureMarker =>
-  marker.status === "failed" || marker.status === "skipped";
+const isCapturedObservationMarker = (marker: CaptureMarker): marker is ObservationResultMarker =>
+  marker.kind === "observation_result" && marker.observationStatus === "captured";
 
-const latestAdvancingMarkerFromBranch = (
-  branch: ReadonlyArray<SessionEntry>,
-): MarkerEntry<AdvancingCaptureMarker> | undefined => {
-  let latest: MarkerEntry<AdvancingCaptureMarker> | undefined;
+const isScheduleMarker = (marker: CaptureMarker): marker is ScheduleResultMarker =>
+  marker.kind === "schedule_result";
+
+const scanBranchState = (branch: ReadonlyArray<SessionEntry>): MarkerBranchState => {
+  let latestCapturedObservation: MarkerEntry<ObservationResultMarker> | undefined;
+  let latestSchedule: MarkerEntry<ScheduleResultMarker> | undefined;
+  const decodeWarnings: string[] = [];
 
   for (const entry of branch) {
     if (!isCustomMarkerEntry(entry)) {
@@ -51,32 +63,44 @@ const latestAdvancingMarkerFromBranch = (
     }
 
     const decoded = decodeMarkerEntry(entry);
-    if (Option.isSome(decoded) && isAdvancingMarker(decoded.value.marker)) {
-      latest = {
+    if (Option.isNone(decoded)) {
+      decodeWarnings.push(`Ignoring invalid memory capture marker ${entry.id}`);
+      continue;
+    }
+
+    if (isCapturedObservationMarker(decoded.value.marker)) {
+      latestCapturedObservation = {
+        entry,
+        marker: decoded.value.marker,
+      };
+    }
+    if (isScheduleMarker(decoded.value.marker)) {
+      latestSchedule = {
         entry,
         marker: decoded.value.marker,
       };
     }
   }
 
-  return latest;
+  return {
+    latestCapturedObservation,
+    latestSchedule,
+    decodeWarnings,
+  };
 };
 
-const latestFailureMarkerFromBranch = (
+const latestObservationResultFromBranch = (
   branch: ReadonlyArray<SessionEntry>,
-  afterEntryId: string | undefined,
-): MarkerEntry<NonAdvancingCaptureMarker> | undefined => {
-  const afterIndex =
-    afterEntryId === undefined ? -1 : branch.findIndex((entry) => entry.id === afterEntryId);
-  let latest: MarkerEntry<NonAdvancingCaptureMarker> | undefined;
+): MarkerEntry<ObservationResultMarker> | undefined => {
+  let latest: MarkerEntry<ObservationResultMarker> | undefined;
 
-  for (const entry of branch.slice(afterIndex + 1)) {
+  for (const entry of branch) {
     if (!isCustomMarkerEntry(entry)) {
       continue;
     }
 
     const decoded = decodeMarkerEntry(entry);
-    if (Option.isSome(decoded) && isNonAdvancingMarker(decoded.value.marker)) {
+    if (Option.isSome(decoded) && isObservationMarker(decoded.value.marker)) {
       latest = {
         entry,
         marker: decoded.value.marker,
@@ -87,64 +111,65 @@ const latestFailureMarkerFromBranch = (
   return latest;
 };
 
+const startIndexAfterEntry = (branch: ReadonlyArray<SessionEntry>, entryId: string | undefined) => {
+  if (entryId === undefined) {
+    return 0;
+  }
+  const index = branch.findIndex((entry) => entry.id === entryId);
+  return index === -1 ? 0 : index + 1;
+};
+
+const countAssistantTurnsAfter = (
+  branch: ReadonlyArray<SessionEntry>,
+  entryId: string | undefined,
+): number =>
+  branch.slice(startIndexAfterEntry(branch, entryId)).filter(isCompletedAssistantTurn).length;
+
+const selectObservationFromBranch = (branch: ReadonlyArray<SessionEntry>): ObservationSelection => {
+  const state = scanBranchState(branch);
+  const startIndex = startIndexAfterEntry(branch, state.latestCapturedObservation?.entry.id);
+  const observedEntries = branch.slice(startIndex);
+
+  return {
+    observedEntries,
+    capturableMessages: observedEntries.filter(isCapturableMessageEntry),
+    state,
+  };
+};
+
 export class Markers extends Context.Service<
   Markers,
   {
-    readonly latestAdvancingMarker: (
+    readonly branchState: (branch: ReadonlyArray<SessionEntry>) => Effect.Effect<MarkerBranchState>;
+    readonly latestObservationResult: (
       branch: ReadonlyArray<SessionEntry>,
-    ) => Effect.Effect<MarkerEntry<AdvancingCaptureMarker> | undefined>;
-    readonly latestFailureMarker: (
-      branch: ReadonlyArray<SessionEntry>,
-      afterEntryId: string | undefined,
-    ) => Effect.Effect<MarkerEntry<NonAdvancingCaptureMarker> | undefined>;
+    ) => Effect.Effect<MarkerEntry<ObservationResultMarker> | undefined>;
     readonly selectObservation: (
       branch: ReadonlyArray<SessionEntry>,
     ) => Effect.Effect<ObservationSelection>;
+    readonly completedAssistantTurnsAfterSchedule: (
+      branch: ReadonlyArray<SessionEntry>,
+    ) => Effect.Effect<number>;
   }
 >()("@urban/pi-memory-capture/services/Markers") {
   static readonly layer = Layer.succeed(
     Markers,
     Markers.of({
-      latestAdvancingMarker: Effect.fn("Markers.latestAdvancingMarker")((branch) =>
-        Effect.succeed(latestAdvancingMarkerFromBranch(branch)),
+      branchState: Effect.fn("Markers.branchState")((branch) =>
+        Effect.succeed(scanBranchState(branch)),
       ),
-      latestFailureMarker: Effect.fn("Markers.latestFailureMarker")((branch, afterEntryId) =>
-        Effect.succeed(latestFailureMarkerFromBranch(branch, afterEntryId)),
+      latestObservationResult: Effect.fn("Markers.latestObservationResult")((branch) =>
+        Effect.succeed(latestObservationResultFromBranch(branch)),
       ),
       selectObservation: Effect.fn("Markers.selectObservation")((branch) =>
-        Effect.succeed(
-          (() => {
-            const latestAdvancingMarker = latestAdvancingMarkerFromBranch(branch);
-            const startIndex =
-              latestAdvancingMarker === undefined
-                ? branch.findIndex(isCapturableMessageEntry)
-                : (() => {
-                    const observedIndex = branch.findIndex(
-                      (entry) => entry.id === latestAdvancingMarker.marker.lastObservedEntryId,
-                    );
-                    if (observedIndex === -1) {
-                      return branch.findIndex(isCapturableMessageEntry);
-                    }
-
-                    const markerIndex = branch.findIndex(
-                      (entry) => entry.id === latestAdvancingMarker.entry.id,
-                    );
-                    return markerIndex === -1
-                      ? observedIndex + 1
-                      : Math.max(observedIndex + 1, markerIndex + 1);
-                  })();
-
-            const observedEntries = startIndex === -1 ? [] : branch.slice(startIndex);
-            const capturableMessages = observedEntries.filter(isCapturableMessageEntry);
-
-            return {
-              latestAdvancingMarker,
-              observedEntries,
-              capturableMessages,
-            } satisfies ObservationSelection;
-          })(),
-        ),
+        Effect.succeed(selectObservationFromBranch(branch)),
       ),
+      completedAssistantTurnsAfterSchedule: Effect.fn(
+        "Markers.completedAssistantTurnsAfterSchedule",
+      )((branch) => {
+        const state = scanBranchState(branch);
+        return Effect.succeed(countAssistantTurnsAfter(branch, state.latestSchedule?.entry.id));
+      }),
     }),
   );
 }

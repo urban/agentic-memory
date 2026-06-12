@@ -4,31 +4,42 @@ import { Effect, Layer, ManagedRuntime } from "effect";
 // @effect-diagnostics-next-line nodeBuiltinImport:off
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { applyInitialization } from "../../src/initialization.ts";
-import { loadStatus } from "../../src/runtime.ts";
-import { encodeProjectConfigJson, encodeScratchpadJson } from "../../src/schema.ts";
-import { Config } from "../../src/services/Config.ts";
+import { encodeProjectConfigJson, type ResolvedProjectConfig } from "../../src/schema.ts";
+import { CaptureConfig } from "../../src/services/CaptureConfig.ts";
+import { Git } from "../../src/services/Git.ts";
 import { Markers } from "../../src/services/Markers.ts";
-import { ScratchpadStore } from "../../src/services/Scratchpad.ts";
+import { VaultProjects } from "../../src/services/VaultProjects.ts";
+import { applyInitialization } from "../../src/workflows/initialization.ts";
+import { loadStatus } from "../../src/workflows/status.ts";
 import {
   createTempDirectory,
-  makeSessionManager,
+  makeCustomMarkerEntry,
   removeTempDirectory,
   writeFile,
 } from "../helpers.ts";
 
-const runtimeLayer = Layer.mergeAll(Config.layer, Markers.layer, ScratchpadStore.layer).pipe(
-  Layer.provide(Layer.mergeAll(BunFileSystem.layer, BunPath.layer)),
-);
+const captureConfigLayer = CaptureConfig.layer.pipe(Layer.provideMerge(VaultProjects.layer));
+const runtimeLayer = Layer.mergeAll(
+  VaultProjects.layer,
+  captureConfigLayer,
+  Layer.succeed(
+    Git,
+    Git.of({
+      resolveGitDir: () => Effect.void.pipe(Effect.as(undefined)),
+      ensureInfoExcludeEntry: () => Effect.succeed(false),
+    }),
+  ),
+  Markers.layer,
+).pipe(Layer.provide(Layer.mergeAll(BunFileSystem.layer, BunPath.layer)));
 
 describe("initialization status flow", () => {
-  it("preserves pending scratchpad candidates when initialization reruns for the same project", () => {
+  it("writes link config and status reports latest branch-local markers", () => {
     const root = createTempDirectory("pi-memory-init-status-");
     const cwd = join(root, "project");
-    const localDirectory = join(cwd, ".pi", "agentic-memory-capture");
+    const localDirectory = join(cwd, ".agentic-memory-link");
     const vault = join(root, "vault");
-    const config = {
-      version: 1 as const,
+    const config: ResolvedProjectConfig = {
+      version: 1,
       vaultPath: vault,
       projectLink: "[[projects/capture-extension]]",
     };
@@ -51,38 +62,50 @@ updated: 2026-01-01
       join(localDirectory, "config.json"),
       `${Effect.runSync(encodeProjectConfigJson(config))}\n`,
     );
-    writeFile(
-      join(localDirectory, "scratchpad.json"),
-      `${Effect.runSync(
-        encodeScratchpadJson({
-          version: 1,
-          projectLink: config.projectLink,
-          updatedAt: "2026-06-05T12:00:00.000Z",
-          pendingCandidates: [
-            {
-              id: "candidate-1",
-              kind: "project_decision",
-              summary: "Preserve the project decision log.",
-              evidenceCount: 2,
-              firstSeenAt: "2026-06-05T12:00:00.000Z",
-              lastSeenAt: "2026-06-05T12:00:00.000Z",
-              confidence: "high",
-              nextAction: "promote",
-              reasonNotPromoted: "",
-            },
-          ],
-        }),
-      )}\n`,
-    );
+    const branch = [
+      makeCustomMarkerEntry("o1", {
+        markerVersion: 1,
+        kind: "observation_result",
+        attemptId: "attempt-1",
+        timestamp: "2026-06-05T12:00:00.000Z",
+        triggerKind: "agent_end",
+        observation: {
+          fromEntryId: "u1",
+          toEntryId: "a1",
+          entryCount: 2,
+          messageCount: 2,
+        },
+        observationStatus: "captured",
+        summary: "Record capture setup",
+      }),
+      makeCustomMarkerEntry("s1", {
+        markerVersion: 1,
+        kind: "schedule_result",
+        attemptId: "attempt-1",
+        timestamp: "2026-06-05T12:00:00.000Z",
+        triggerKind: "agent_end",
+        observation: {
+          fromEntryId: "u1",
+          toEntryId: "a1",
+          entryCount: 2,
+          messageCount: 2,
+        },
+        sendStatus: "succeeded",
+        retryFailureReasons: [],
+      }),
+    ];
     const runtime = ManagedRuntime.make(runtimeLayer);
 
     return runtime
       .runPromise(
         Effect.gen(function* () {
-          yield* applyInitialization(cwd, config, undefined);
-          const status = yield* loadStatus(cwd, makeSessionManager([]));
+          yield* applyInitialization(cwd, config);
+          const status = yield* loadStatus(cwd, branch);
 
-          expect(status.pendingCandidateSummaries).toEqual(["Preserve the project decision log."]);
+          expect(status.config._tag).toBe("valid");
+          expect(status.latestObservationStatus).toBe("captured");
+          expect(status.latestObservationSummary).toBe("Record capture setup");
+          expect(status.latestScheduleStatus).toBe("succeeded");
         }),
       )
       .finally(() =>

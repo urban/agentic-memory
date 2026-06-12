@@ -1,11 +1,11 @@
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { Effect } from "effect";
-import { loadStatus } from "./runtime.ts";
+import { loadStatus } from "./workflows/status.ts";
 
 export const runStatusCommand = Effect.fn("MemoryCapture.runStatusCommand")(function* (
   ctx: ExtensionCommandContext,
 ) {
-  const status = yield* loadStatus(ctx.cwd, ctx.sessionManager);
+  const status = yield* loadStatus(ctx.cwd, ctx.sessionManager.getBranch());
   const lines = [
     `config: ${status.config._tag}`,
     ...(status.config._tag === "valid"
@@ -14,13 +14,13 @@ export const runStatusCommand = Effect.fn("MemoryCapture.runStatusCommand")(func
         ? [status.config.message]
         : ["memory capture has not been initialized"]),
     `automatic capture: ${status.automaticCaptureEnabled ? "enabled" : "disabled"}`,
-    `latest success: ${status.latestAdvancingMarkerSummary ?? "none"}`,
-    `latest failure: ${status.latestFailureSummary ?? "none"}`,
-    `pending candidates: ${status.pendingCandidateSummaries.length}`,
+    `latest observation: ${status.latestObservationStatus ?? "none"}${
+      status.latestObservationSummary === undefined ? "" : ` — ${status.latestObservationSummary}`
+    }`,
+    `latest schedule: ${status.latestScheduleStatus ?? "none"}${
+      status.latestScheduleSummary === undefined ? "" : ` — ${status.latestScheduleSummary}`
+    }`,
   ];
-  if (status.pendingCandidateSummaries.length > 0) {
-    lines.push(...status.pendingCandidateSummaries.map((summary) => `- ${summary}`));
-  }
   if (status.warnings.length > 0) {
     lines.push(`warnings: ${status.warnings.join(" | ")}`);
   }

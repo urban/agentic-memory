@@ -10,12 +10,7 @@ import type { SessionEntry, SessionMessageEntry } from "@earendil-works/pi-codin
 import { Context, Effect, Layer } from "effect";
 import { MESSAGE_LIMIT, PAYLOAD_CHAR_LIMIT } from "../constants.ts";
 import { projectLabelFromLink } from "../project.ts";
-import {
-  type CaptureCheckpoint,
-  type CapturePayload,
-  type PayloadMessage,
-  type Scratchpad,
-} from "../schema.ts";
+import { type CapturePayload, type PayloadMessage, type TriggerKind } from "../schema.ts";
 import { clipSummary, sanitizeVisibleText, truncateMessageText } from "../text.ts";
 
 type UserVisibleBlock = TextContent | ImageContent;
@@ -66,12 +61,10 @@ const toPayloadMessage = (entry: SessionMessageEntry): PayloadMessage | undefine
       return undefined;
     }
 
-    const truncated = truncateMessageText(sanitized);
     return {
       entryId: entry.id,
       role: "user",
-      text: truncated.text,
-      truncated: truncated.truncated,
+      text: truncateMessageText(sanitized).text,
     };
   }
 
@@ -79,18 +72,15 @@ const toPayloadMessage = (entry: SessionMessageEntry): PayloadMessage | undefine
     return undefined;
   }
 
-  const extracted = extractAssistantText(entry.message);
-  const sanitized = sanitizeVisibleText(extracted);
+  const sanitized = sanitizeVisibleText(extractAssistantText(entry.message));
   if (sanitized.length === 0) {
     return undefined;
   }
 
-  const truncated = truncateMessageText(sanitized);
   return {
     entryId: entry.id,
     role: "assistant",
-    text: truncated.text,
-    truncated: truncated.truncated,
+    text: truncateMessageText(sanitized).text,
   };
 };
 
@@ -98,10 +88,9 @@ export class Preprocessor extends Context.Service<
   Preprocessor,
   {
     readonly buildPayload: (
-      checkpoint: CaptureCheckpoint,
+      triggerKind: TriggerKind,
       projectLink: string,
       observedEntries: ReadonlyArray<SessionEntry>,
-      scratchpad: Scratchpad,
     ) => Effect.Effect<BuildPayloadResult>;
   }
 >()("@urban/pi-memory-capture/services/Preprocessor") {
@@ -109,7 +98,7 @@ export class Preprocessor extends Context.Service<
     Preprocessor,
     Preprocessor.of({
       buildPayload: Effect.fn("Preprocessor.buildPayload")(
-        (checkpoint, projectLink, observedEntries, scratchpad) =>
+        (triggerKind, projectLink, observedEntries) =>
           Effect.succeed(
             (() => {
               const messages: PayloadMessage[] = [];
@@ -147,35 +136,39 @@ export class Preprocessor extends Context.Service<
                 payloadChars += payloadMessage.text.length;
               }
 
-              if (messages.length === 0) {
+              const firstObservedId = observedEntries[0]?.id ?? messages[0]?.entryId;
+              const lastObservedId =
+                observedEntries[observedEntries.length - 1]?.id ??
+                messages[messages.length - 1]?.entryId;
+
+              if (
+                messages.length === 0 ||
+                firstObservedId === undefined ||
+                lastObservedId === undefined
+              ) {
                 return {
                   _tag: "NoMessages",
                   warnings,
                 } satisfies BuildPayloadResult;
               }
 
-              const firstObserved = observedEntries[0];
-              const lastObserved = observedEntries[observedEntries.length - 1];
-
-              const payload: CapturePayload = {
-                version: 1,
-                checkpoint,
-                project: {
-                  projectLink,
-                  projectLabel: clipSummary(projectLabelFromLink(projectLink)),
-                },
-                observation: {
-                  fromEntryId: firstObserved?.id ?? messages[0].entryId,
-                  toEntryId: lastObserved?.id ?? messages[messages.length - 1].entryId,
-                  entryCount: observedEntries.length,
-                },
-                messages,
-                scratchpad,
-              };
-
               return {
                 _tag: "Payload",
-                payload,
+                payload: {
+                  version: 1,
+                  triggerKind,
+                  project: {
+                    projectLink,
+                    projectLabel: clipSummary(projectLabelFromLink(projectLink)),
+                  },
+                  observation: {
+                    fromEntryId: firstObservedId,
+                    toEntryId: lastObservedId,
+                    entryCount: observedEntries.length,
+                    messageCount: messages.length,
+                  },
+                  messages,
+                },
                 warnings,
               } satisfies BuildPayloadResult;
             })(),

@@ -1,27 +1,7 @@
 import type { ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Clock, Effect, Stream } from "effect";
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
-import { formatIsoDateFromMillis, formatIsoFromMillis } from "./project.ts";
-import { emptyScratchpad } from "./scratchpad.ts";
-import { encodeScratchpadJson, type ResolvedProjectConfig } from "./schema.ts";
-import { Config } from "./services/Config.ts";
-
-export interface InitializationResult {
-  readonly config: ResolvedProjectConfig;
-  readonly projectCreated: boolean;
-  readonly routeAdded: boolean;
-  readonly gitExcludeUpdated: boolean;
-}
-
-const nowValues = Clock.clockWith((clock) =>
-  Effect.sync(() => {
-    const millis = clock.currentTimeMillisUnsafe();
-    return {
-      isoTimestamp: formatIsoFromMillis(millis),
-      isoDate: formatIsoDateFromMillis(millis),
-    };
-  }),
-);
+import { Effect } from "effect";
+import { CaptureConfig } from "./services/CaptureConfig.ts";
+import { applyInitialization, planInitialization } from "./workflows/initialization.ts";
 
 const parseInitCommandArgs = (args: string) => {
   const trimmed = args.trim();
@@ -54,50 +34,12 @@ const parseInitCommandArgs = (args: string) => {
 };
 
 const promptForMissingValue = (ctx: ExtensionCommandContext, title: string, placeholder: string) =>
-  ctx.hasUI ? Effect.promise(() => ctx.ui.input(title, placeholder)) : Effect.undefined;
+  ctx.hasUI
+    ? Effect.promise(() => ctx.ui.input(title, placeholder))
+    : Effect.void.pipe(Effect.as(undefined));
 
 const confirmDialog = (ctx: ExtensionCommandContext, title: string, description: string) =>
   ctx.hasUI ? Effect.promise(() => ctx.ui.confirm(title, description)) : Effect.succeed(false);
-
-const resolveGitDir = Effect.fn("initialization.resolveGitDir")(function* (cwd: string) {
-  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-  const command = ChildProcess.make("git", ["rev-parse", "--git-dir"], {
-    cwd,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-
-  return yield* Effect.scoped(
-    Effect.gen(function* () {
-      const handle = yield* spawner.spawn(command);
-      const result = yield* Effect.all(
-        {
-          stdout: handle.stdout.pipe(Stream.decodeText(), Stream.mkString),
-          stderr: handle.stderr.pipe(Stream.decodeText(), Stream.mkString),
-          exitCode: handle.exitCode,
-        },
-        { concurrency: 3 },
-      );
-
-      if (result.exitCode !== ChildProcessSpawner.ExitCode(0)) {
-        return undefined;
-      }
-
-      const gitDir = result.stdout.trim();
-      if (gitDir.length === 0) {
-        return undefined;
-      }
-
-      return gitDir.startsWith("/") ? gitDir : `${cwd}/${gitDir}`;
-    }),
-  ).pipe(
-    Effect.timeoutOrElse({
-      duration: 5_000,
-      orElse: () => Effect.undefined,
-    }),
-    Effect.catch(() => Effect.undefined),
-  );
-});
 
 const notifyError = (ctx: ExtensionContext, message: string) => {
   if (ctx.hasUI) {
@@ -105,43 +47,13 @@ const notifyError = (ctx: ExtensionContext, message: string) => {
   }
 };
 
-export const applyInitialization = Effect.fn("MemoryCapture.applyInitialization")(function* (
-  cwd: string,
-  configValue: ResolvedProjectConfig,
-  gitDir: string | undefined,
-) {
-  const config = yield* Config;
-  const time = yield* nowValues;
-  const empty = emptyScratchpad(configValue.projectLink, time.isoTimestamp);
-  const scratchpadContents = yield* encodeScratchpadJson(empty).pipe(Effect.orDie);
-  const projectCreated = yield* config.ensureProjectFile(
-    configValue.vaultPath,
-    configValue.projectLink,
-    time.isoDate,
-  );
-  const routeAdded = yield* config.ensureMemoryRoute(
-    configValue.vaultPath,
-    configValue.projectLink,
-    time.isoDate,
-  );
-  yield* config.ensureLocalFiles(cwd, configValue, scratchpadContents);
-  const gitExcludeUpdated =
-    gitDir === undefined ? false : yield* config.ensureGitExcludeEntry(gitDir);
-
-  return {
-    config: configValue,
-    projectCreated,
-    routeAdded,
-    gitExcludeUpdated,
-  };
-});
-
 export const runInitCommand = Effect.fn("MemoryCapture.runInitCommand")(function* (
   args: string,
   ctx: ExtensionCommandContext,
 ) {
+  const cwd = ctx.cwd;
   const parsedArgs = parseInitCommandArgs(args);
-  const config = yield* Config;
+  const config = yield* CaptureConfig;
   const { vaultOverride } = yield* config.environmentOverrides;
 
   const vaultPath =
@@ -163,14 +75,13 @@ export const runInitCommand = Effect.fn("MemoryCapture.runInitCommand")(function
     return;
   }
 
-  const existingConfig = yield* config.load(ctx.cwd);
-  const validated = yield* config.validateInputs(vaultPath.trim(), projectLink.trim());
+  const plan = yield* planInitialization({
+    cwd,
+    vaultPath,
+    projectLink,
+  });
 
-  if (
-    existingConfig._tag === "valid" &&
-    (existingConfig.config.vaultPath !== validated.vaultPath ||
-      existingConfig.config.projectLink !== validated.projectLink)
-  ) {
+  if (plan.overwriteConflict !== undefined) {
     if (!ctx.hasUI) {
       yield* Effect.sync(() =>
         notifyError(
@@ -184,7 +95,7 @@ export const runInitCommand = Effect.fn("MemoryCapture.runInitCommand")(function
     const overwrite = yield* confirmDialog(
       ctx,
       "Overwrite existing config?",
-      `Current: ${existingConfig.config.vaultPath} ${existingConfig.config.projectLink}\nNext: ${validated.vaultPath} ${validated.projectLink}`,
+      `Current: ${plan.overwriteConflict.current.vaultPath} ${plan.overwriteConflict.current.projectLink}\nNext: ${plan.overwriteConflict.next.vaultPath} ${plan.overwriteConflict.next.projectLink}`,
     );
     if (!overwrite) {
       yield* Effect.sync(() => ctx.ui.notify("Initialization cancelled.", "info"));
@@ -192,8 +103,7 @@ export const runInitCommand = Effect.fn("MemoryCapture.runInitCommand")(function
     }
   }
 
-  const projectExists = yield* config.projectExists(validated.vaultPath, validated.projectLink);
-  if (!projectExists) {
+  if (plan.projectMissing) {
     if (!ctx.hasUI) {
       yield* Effect.sync(() =>
         notifyError(
@@ -207,7 +117,7 @@ export const runInitCommand = Effect.fn("MemoryCapture.runInitCommand")(function
     const createProject = yield* confirmDialog(
       ctx,
       "Create project file?",
-      `Create ${validated.projectLink} in ${validated.vaultPath}?`,
+      `Create ${plan.config.projectLink} in ${plan.config.vaultPath}?`,
     );
     if (!createProject) {
       yield* Effect.sync(() => ctx.ui.notify("Initialization cancelled.", "info"));
@@ -215,8 +125,7 @@ export const runInitCommand = Effect.fn("MemoryCapture.runInitCommand")(function
     }
   }
 
-  const gitDir = yield* resolveGitDir(ctx.cwd);
-  const result = yield* applyInitialization(ctx.cwd, validated, gitDir);
+  const result = yield* applyInitialization(cwd, plan.config);
 
   yield* Effect.sync(() => {
     if (ctx.hasUI) {

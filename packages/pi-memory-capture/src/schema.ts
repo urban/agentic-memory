@@ -1,99 +1,88 @@
 import { Schema } from "effect";
-import { MARKER_VERSION, PACKAGE_VERSION } from "./constants.ts";
-
-const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+import { MARKER_VERSION } from "./constants.ts";
 
 export const NotificationLevel = Schema.Literals(["info", "warning", "error"]).annotate({
   identifier: "NotificationLevel",
 });
 export type NotificationLevel = typeof NotificationLevel.Type;
 
-export const CaptureCheckpoint = Schema.Literals([
-  "manual",
-  "session_before_compact",
-  "session_shutdown",
+export const TriggerKind = Schema.Literals([
+  "agent_end",
   "session_before_tree",
-  "session_before_fork",
-  "session_before_clone",
+  "session_shutdown",
 ]).annotate({
-  identifier: "CaptureCheckpoint",
+  identifier: "TriggerKind",
 });
-export type CaptureCheckpoint = typeof CaptureCheckpoint.Type;
+export type TriggerKind = typeof TriggerKind.Type;
 
-export const CaptureResultStatus = Schema.Literals([
-  "captured",
-  "no_changes",
-  "skipped",
-  "failed",
-]).annotate({
-  identifier: "CaptureResultStatus",
+export const AttemptId = Schema.String.pipe(Schema.brand("AttemptId")).annotate({
+  identifier: "AttemptId",
 });
-export type CaptureResultStatus = typeof CaptureResultStatus.Type;
+export type AttemptId = typeof AttemptId.Type;
 
-export const CandidateKind = Schema.Literals([
-  "resume_context",
-  "project_timeline",
-  "project_decision",
-  "reusable_note",
-  "user_preference",
-  "open_question",
-]).annotate({
-  identifier: "CandidateKind",
+export const ProjectLink = Schema.String.check(
+  Schema.isPattern(/^\[\[projects\/[a-z0-9][a-z0-9-]*\]\]$/, {
+    message: "Expected [[projects/<slug>]]",
+  }),
+).annotate({
+  identifier: "ProjectLink",
 });
-export type CandidateKind = typeof CandidateKind.Type;
+export type ProjectLink = typeof ProjectLink.Type;
 
-export const CandidateConfidence = Schema.Literals(["low", "medium", "high"]).annotate({
-  identifier: "CandidateConfidence",
+export const UtcIsoTimestamp = Schema.String.check(
+  Schema.isPattern(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/, {
+    message: "Expected ISO 8601 UTC timestamp ending in Z",
+  }),
+).annotate({
+  identifier: "UtcIsoTimestamp",
 });
-export type CandidateConfidence = typeof CandidateConfidence.Type;
+export type UtcIsoTimestamp = typeof UtcIsoTimestamp.Type;
 
-export const CandidateNextAction = Schema.Literals([
-  "wait",
-  "promote",
-  "discard",
-  "clarify",
-]).annotate({
-  identifier: "CandidateNextAction",
-});
-export type CandidateNextAction = typeof CandidateNextAction.Type;
+export const MarkerSummary = Schema.String.check(Schema.isMinLength(1))
+  .check(Schema.isMaxLength(50))
+  .check(
+    Schema.isPattern(/^[A-Z]/, {
+      message: "Summary must start with a capital letter",
+    }),
+  )
+  .check(
+    Schema.isPattern(/[^.]$/, {
+      message: "Summary must not end with a period",
+    }),
+  )
+  .annotate({
+    identifier: "MarkerSummary",
+  });
+export type MarkerSummary = typeof MarkerSummary.Type;
 
-export const ProjectConfig = Schema.Struct({
+export const ResolvedProjectConfig = Schema.Struct({
   version: Schema.Literal(1),
   vaultPath: Schema.String,
-  projectLink: Schema.String,
-  projectRoot: Schema.optional(Schema.String),
+  projectLink: ProjectLink,
 }).annotate({
-  identifier: "ProjectConfig",
+  identifier: "ResolvedProjectConfig",
 });
-export type ProjectConfig = typeof ProjectConfig.Type;
+export type ResolvedProjectConfig = typeof ResolvedProjectConfig.Type;
 
-export const ScratchpadCandidate = Schema.Struct({
-  id: Schema.String,
-  kind: CandidateKind,
-  summary: Schema.String,
-  evidenceCount: Schema.Number,
-  firstSeenAt: Schema.String,
-  lastSeenAt: Schema.String,
-  confidence: CandidateConfidence,
-  nextAction: CandidateNextAction,
-  reasonNotPromoted: Schema.String,
+export const LocalPaths = Schema.Struct({
+  directory: Schema.String,
+  configFile: Schema.String,
 }).annotate({
-  identifier: "ScratchpadCandidate",
+  identifier: "LocalPaths",
 });
-export type ScratchpadCandidate = typeof ScratchpadCandidate.Type;
+export type LocalPaths = typeof LocalPaths.Type;
 
-export const Scratchpad = Schema.Struct({
-  version: Schema.Literal(1),
-  projectLink: Schema.String,
-  updatedAt: Schema.String,
-  pendingCandidates: Schema.Array(ScratchpadCandidate),
+export const LoadConfigResult = Schema.TaggedUnion({
+  missing: { paths: LocalPaths },
+  invalid: { paths: LocalPaths, message: Schema.String },
+  valid: { paths: LocalPaths, config: ResolvedProjectConfig },
 }).annotate({
-  identifier: "Scratchpad",
+  identifier: "LoadConfigResult",
 });
-export type Scratchpad = typeof Scratchpad.Type;
+export type LoadConfigResult = typeof LoadConfigResult.Type;
 
 export const PayloadProject = Schema.Struct({
-  projectLink: Schema.String,
+  projectLink: ProjectLink,
   projectLabel: Schema.String,
 }).annotate({
   identifier: "PayloadProject",
@@ -104,6 +93,7 @@ export const PayloadObservation = Schema.Struct({
   fromEntryId: Schema.String,
   toEntryId: Schema.String,
   entryCount: Schema.Number,
+  messageCount: Schema.Number,
 }).annotate({
   identifier: "PayloadObservation",
 });
@@ -113,7 +103,6 @@ export const PayloadMessage = Schema.Struct({
   entryId: Schema.String,
   role: Schema.Literals(["user", "assistant"]),
   text: Schema.String,
-  truncated: Schema.Boolean,
 }).annotate({
   identifier: "PayloadMessage",
 });
@@ -121,107 +110,102 @@ export type PayloadMessage = typeof PayloadMessage.Type;
 
 export const CapturePayload = Schema.Struct({
   version: Schema.Literal(1),
-  checkpoint: CaptureCheckpoint,
+  triggerKind: TriggerKind,
   project: PayloadProject,
   observation: PayloadObservation,
   messages: Schema.Array(PayloadMessage),
-  scratchpad: Scratchpad,
 }).annotate({
   identifier: "CapturePayload",
 });
 export type CapturePayload = typeof CapturePayload.Type;
 
-export const CaptureResult = Schema.Struct({
-  status: CaptureResultStatus,
-  summary: Schema.String,
-  filesChanged: Schema.optional(Schema.Array(Schema.String)),
-  warnings: Schema.optional(Schema.Array(Schema.String)),
-  scratchpad: Schema.optional(Scratchpad),
-}).annotate({
-  identifier: "CaptureResult",
+export const StewardResultStatus = Schema.Literals(["captured", "no_changes"]).annotate({
+  identifier: "StewardResultStatus",
 });
-export type CaptureResult = typeof CaptureResult.Type;
+export type StewardResultStatus = typeof StewardResultStatus.Type;
 
-export const CaptureResultEnvelope = Schema.Struct({
-  status: CaptureResultStatus,
-  summary: Schema.String,
-  filesChanged: Schema.optional(Schema.Array(Schema.String)),
-  warnings: Schema.optional(Schema.Array(Schema.String)),
-  scratchpad: Schema.optional(Schema.Unknown),
-}).annotate({
-  identifier: "CaptureResultEnvelope",
-});
-export type CaptureResultEnvelope = typeof CaptureResultEnvelope.Type;
-
-const PackageVersion = Schema.String.pipe(
-  Schema.check(
-    Schema.isPattern(new RegExp(`^${escapeRegExp(PACKAGE_VERSION)}$`), {
-      message: `Expected package version ${PACKAGE_VERSION}`,
-    }),
-  ),
-).annotate({
-  identifier: "PackageVersion",
-});
-
-export const AdvancingCaptureMarker = Schema.Struct({
-  version: PackageVersion,
-  markerVersion: Schema.Literal(MARKER_VERSION),
-  status: Schema.Literals(["captured", "no_changes"]),
-  checkpoint: CaptureCheckpoint,
-  lastObservedEntryId: Schema.String,
-  observation: PayloadObservation,
-  timestamp: Schema.String,
-  summary: Schema.optional(Schema.String),
-}).annotate({
-  identifier: "AdvancingCaptureMarker",
-});
-export type AdvancingCaptureMarker = typeof AdvancingCaptureMarker.Type;
-
-export const NonAdvancingCaptureMarker = Schema.Struct({
-  version: PackageVersion,
-  markerVersion: Schema.Literal(MARKER_VERSION),
-  status: Schema.Literals(["skipped", "failed"]),
-  checkpoint: CaptureCheckpoint,
-  reason: Schema.String,
-  attemptedObservation: Schema.optional(PayloadObservation),
-  timestamp: Schema.String,
-}).annotate({
-  identifier: "NonAdvancingCaptureMarker",
-});
-export type NonAdvancingCaptureMarker = typeof NonAdvancingCaptureMarker.Type;
-
-export const CaptureMarker = Schema.Union([
-  AdvancingCaptureMarker,
-  NonAdvancingCaptureMarker,
+export const StewardResultEnvelope = Schema.Union([
+  Schema.Struct({
+    status: Schema.Literal("captured"),
+    summary: MarkerSummary,
+    filesChanged: Schema.optional(Schema.Array(Schema.String)),
+    warnings: Schema.optional(Schema.Array(Schema.String)),
+  }),
+  Schema.Struct({
+    status: Schema.Literal("no_changes"),
+    summary: Schema.optional(MarkerSummary),
+    filesChanged: Schema.optional(Schema.Array(Schema.String)),
+    warnings: Schema.optional(Schema.Array(Schema.String)),
+  }),
 ]).annotate({
-  identifier: "CaptureMarker",
+  identifier: "StewardResultEnvelope",
 });
+export type StewardResultEnvelope = typeof StewardResultEnvelope.Type;
+
+export const MarkerEnvelope = Schema.Struct({
+  markerVersion: Schema.Literal(MARKER_VERSION),
+  attemptId: AttemptId,
+  timestamp: UtcIsoTimestamp,
+  triggerKind: TriggerKind,
+  observation: PayloadObservation,
+}).annotate({
+  identifier: "MarkerEnvelope",
+});
+export type MarkerEnvelope = typeof MarkerEnvelope.Type;
+
+export const ObservationResultCapturedMarker = Schema.Struct({
+  ...MarkerEnvelope.fields,
+  kind: Schema.Literal("observation_result"),
+  observationStatus: Schema.Literal("captured"),
+  summary: MarkerSummary,
+}).annotate({
+  identifier: "ObservationResultCapturedMarker",
+});
+export type ObservationResultCapturedMarker = typeof ObservationResultCapturedMarker.Type;
+
+export const ObservationResultNoChangesMarker = Schema.Struct({
+  ...MarkerEnvelope.fields,
+  kind: Schema.Literal("observation_result"),
+  observationStatus: Schema.Literal("no_changes"),
+  summary: Schema.optional(MarkerSummary),
+}).annotate({
+  identifier: "ObservationResultNoChangesMarker",
+});
+export type ObservationResultNoChangesMarker = typeof ObservationResultNoChangesMarker.Type;
+
+export const ObservationResultMarker = Schema.Union([
+  ObservationResultCapturedMarker,
+  ObservationResultNoChangesMarker,
+]).annotate({
+  identifier: "ObservationResultMarker",
+});
+export type ObservationResultMarker = typeof ObservationResultMarker.Type;
+
+export const ScheduleResultMarker = Schema.Struct({
+  ...MarkerEnvelope.fields,
+  kind: Schema.Literal("schedule_result"),
+  sendStatus: Schema.Literals(["succeeded", "failed"]),
+  retryFailureReasons: Schema.Array(Schema.String),
+}).annotate({
+  identifier: "ScheduleResultMarker",
+});
+export type ScheduleResultMarker = typeof ScheduleResultMarker.Type;
+
+export const CaptureMarker = Schema.Union([ObservationResultMarker, ScheduleResultMarker]).annotate(
+  {
+    identifier: "CaptureMarker",
+  },
+);
 export type CaptureMarker = typeof CaptureMarker.Type;
 
-export const ProjectConfigJson = Schema.fromJsonString(ProjectConfig);
-export const ScratchpadJson = Schema.fromJsonString(Scratchpad);
+export const ProjectConfigJson = Schema.fromJsonString(ResolvedProjectConfig);
 export const CapturePayloadJson = Schema.fromJsonString(CapturePayload);
-export const CaptureResultJson = Schema.fromJsonString(CaptureResult);
-export const CaptureResultEnvelopeJson = Schema.fromJsonString(CaptureResultEnvelope);
+export const StewardResultEnvelopeJson = Schema.fromJsonString(StewardResultEnvelope);
 
 export const decodeProjectConfigJson = Schema.decodeUnknownEffect(ProjectConfigJson);
 export const encodeProjectConfigJson = Schema.encodeUnknownEffect(ProjectConfigJson);
-export const decodeScratchpadJson = Schema.decodeUnknownEffect(ScratchpadJson);
-export const encodeScratchpadJson = Schema.encodeUnknownEffect(ScratchpadJson);
 export const encodeCapturePayloadJson = Schema.encodeUnknownEffect(CapturePayloadJson);
-export const decodeCaptureResultJson = Schema.decodeUnknownEffect(CaptureResultJson);
-export const decodeCaptureResultEnvelopeJson =
-  Schema.decodeUnknownEffect(CaptureResultEnvelopeJson);
+export const decodeStewardResultEnvelopeJson =
+  Schema.decodeUnknownEffect(StewardResultEnvelopeJson);
 export const decodeCaptureMarkerOption = Schema.decodeUnknownOption(CaptureMarker);
-export const decodeScratchpadOption = Schema.decodeUnknownOption(Scratchpad);
-
-export interface ResolvedProjectConfig {
-  readonly version: 1;
-  readonly vaultPath: string;
-  readonly projectLink: string;
-}
-
-export interface ObservationWindow {
-  readonly observedEntries: ReadonlyArray<{ readonly id: string }>;
-  readonly latestAdvancingMarker: AdvancingCaptureMarker | undefined;
-}
+export const decodeAttemptId = Schema.decodeUnknownEffect(AttemptId);

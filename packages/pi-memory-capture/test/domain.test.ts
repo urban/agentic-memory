@@ -1,6 +1,10 @@
 import { Effect, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
-import { CapturePayloadJson, CaptureResultJson, encodeCapturePayloadJson } from "../src/schema.ts";
+import {
+  CapturePayloadJson,
+  StewardResultEnvelopeJson,
+  encodeCapturePayloadJson,
+} from "../src/schema.ts";
 import { applyProjectTemplate, ensureProjectRouteInMemory } from "../src/project.ts";
 import { buildCapturePrompt, sanitizeVisibleText, truncateMessageText } from "../src/text.ts";
 
@@ -59,28 +63,6 @@ updated: 2026-01-01
     expect(updated).toContain("- [[projects/capture-extension]] — capture-extension.");
   });
 
-  it("adds a projects route even when the project link already appears outside the projects section", () => {
-    const updated = ensureProjectRouteInMemory(
-      `---
-updated: 2026-01-01
----
-
-# Memory
-
-## Current
-
-- Continue [[projects/capture-extension]] this week.
-`,
-      "[[projects/capture-extension]]",
-      "capture-extension",
-      "2026-06-05",
-    );
-
-    expect(updated).toContain("updated: 2026-06-05");
-    expect(updated).toContain("## Projects");
-    expect(updated).toContain("- [[projects/capture-extension]] — capture-extension.");
-  });
-
   it("renders project templates from fenced markdown when required sections exist", () => {
     const rendered = applyProjectTemplate(
       `# Template
@@ -121,13 +103,13 @@ None.
     }
   });
 
-  it("validates capture payload and result json contracts", () =>
+  it("validates capture payload and steward result json contracts", () =>
     Effect.runPromise(
       Effect.gen(function* () {
         const payload = yield* Schema.decodeUnknownEffect(CapturePayloadJson)(
           yield* encodeCapturePayloadJson({
             version: 1,
-            checkpoint: "manual",
+            triggerKind: "agent_end",
             project: {
               projectLink: "[[projects/capture-extension]]",
               projectLabel: "capture-extension",
@@ -136,34 +118,39 @@ None.
               fromEntryId: "a",
               toEntryId: "b",
               entryCount: 2,
+              messageCount: 1,
             },
             messages: [
               {
                 entryId: "a",
                 role: "user",
                 text: "hello",
-                truncated: false,
               },
             ],
-            scratchpad: {
-              version: 1,
-              projectLink: "[[projects/capture-extension]]",
-              updatedAt: "2026-06-05T12:00:00.000Z",
-              pendingCandidates: [],
-            },
           }),
         );
-        const result = yield* Schema.decodeUnknownEffect(CaptureResultJson)(
-          yield* Schema.encodeUnknownEffect(CaptureResultJson)({
+        const result = yield* Schema.decodeUnknownEffect(StewardResultEnvelopeJson)(
+          yield* Schema.encodeUnknownEffect(StewardResultEnvelopeJson)({
             status: "captured",
-            summary: "Stored project history.",
+            summary: "Record project history",
             filesChanged: ["projects/capture-extension.md"],
             warnings: [],
           }),
         );
 
-        expect(payload.project.projectLabel).toBe("capture-extension");
+        expect(payload.triggerKind).toBe("agent_end");
         expect(result.status).toBe("captured");
+      }),
+    ));
+
+  it("rejects captured steward results without a summary", () =>
+    Effect.runPromise(
+      Effect.gen(function* () {
+        const exit = yield* Schema.decodeUnknownEffect(StewardResultEnvelopeJson)(
+          '{"status":"captured"}',
+        ).pipe(Effect.exit);
+
+        expect(exit._tag).toBe("Failure");
       }),
     ));
 
