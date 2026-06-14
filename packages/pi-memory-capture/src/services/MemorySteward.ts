@@ -1,13 +1,7 @@
 import type { ExecOptions, ExecResult } from "@earendil-works/pi-coding-agent";
-import { Cause, Context, Effect, FileSystem, Layer, Option, Schema } from "effect";
-import { RETRY_ATTEMPTS, RETRY_BACKOFF_MILLIS } from "../constants.ts";
-import {
-  decodeStewardResultEnvelopeJson,
-  encodeCapturePayloadJson,
-  type CapturePayload,
-  type StewardResultStatus,
-} from "../schema.ts";
-import { buildCapturePrompt } from "../text.ts";
+import { Context, Effect, FileSystem, Layer, Schema } from "effect";
+import { encodeCapturePayloadJson, type CapturePayload } from "../schema.ts";
+import { decodeRunStewardResultJson, type StewardResultStatus } from "../schema.ts";
 import { CaptureConfig } from "./CaptureConfig.ts";
 
 export interface StewardObservationResult {
@@ -27,70 +21,6 @@ export type StewardRunResult =
       readonly _tag: "Failed";
       readonly retryFailureReasons: ReadonlyArray<string>;
     };
-
-const AssistantMessageEndEvent = Schema.Struct({
-  type: Schema.Literal("message_end"),
-  message: Schema.Struct({
-    role: Schema.Literal("assistant"),
-    content: Schema.Array(
-      Schema.Struct({
-        type: Schema.String,
-        text: Schema.optional(Schema.String),
-      }),
-    ),
-  }),
-}).annotate({
-  identifier: "AssistantMessageEndEvent",
-});
-
-const decodeAssistantMessageEndEvent = Schema.decodeUnknownOption(
-  Schema.fromJsonString(AssistantMessageEndEvent),
-);
-
-type AssistantMessageEndEvent = typeof AssistantMessageEndEvent.Type;
-
-const assistantTextFromEvent = (event: AssistantMessageEndEvent): string =>
-  event.message.content
-    .filter(
-      (
-        block,
-      ): block is {
-        readonly type: string;
-        readonly text: string;
-      } => block.type === "text" && typeof block.text === "string",
-    )
-    .map((block) => block.text)
-    .join("");
-
-export const extractAssistantText = (
-  output: string,
-  decodeLine: (
-    line: string,
-  ) => Option.Option<AssistantMessageEndEvent> = decodeAssistantMessageEndEvent,
-): string => {
-  let lineEnd = output.length;
-
-  while (lineEnd > 0) {
-    while (lineEnd > 0 && (output[lineEnd - 1] === "\n" || output[lineEnd - 1] === "\r")) {
-      lineEnd -= 1;
-    }
-
-    if (lineEnd === 0) {
-      return "";
-    }
-
-    const previousNewline = output.lastIndexOf("\n", lineEnd - 1);
-    const line = output.slice(previousNewline + 1, lineEnd);
-    const decoded = decodeLine(line);
-    if (Option.isSome(decoded)) {
-      return assistantTextFromEvent(decoded.value);
-    }
-
-    lineEnd = previousNewline;
-  }
-
-  return "";
-};
 
 export class MemoryStewardError extends Schema.TaggedErrorClass<MemoryStewardError>()(
   "MemoryStewardError",
@@ -120,27 +50,20 @@ const normalizeFailureReason = (message: string): string => {
   const paddedWords = [
     ...baseWords,
     "during",
-    "isolated",
-    "Memory",
-    "Steward",
+    "agentic-memory",
+    "CLI",
     "capture",
     "send",
     "attempt",
-    "cycle",
-    "today",
-    "now",
   ];
   return paddedWords.slice(0, 15).join(" ");
 };
-
-const backoffForAttemptIndex = (attemptIndex: number): number =>
-  RETRY_BACKOFF_MILLIS[attemptIndex - 1] ?? 0;
 
 export class MemorySteward extends Context.Service<
   MemorySteward,
   {
     readonly run: (input: {
-      readonly vaultPath: string;
+      readonly projectRoot: string;
       readonly payload: CapturePayload;
       readonly payloadWarnings: ReadonlyArray<string>;
       readonly timeoutMillis: number;
@@ -153,29 +76,18 @@ export class MemorySteward extends Context.Service<
       const fs = yield* FileSystem.FileSystem;
       const executor = yield* StewardExecutor;
       const config = yield* CaptureConfig;
-      const { piBinary } = yield* config.environmentOverrides;
+      const { cliBinary } = yield* config.environmentOverrides;
 
-      const runOnce = Effect.fn("MemorySteward.runOnce")(function* (input: {
-        readonly vaultPath: string;
+      const run = Effect.fn("MemorySteward.run")(function* (input: {
+        readonly projectRoot: string;
         readonly payload: CapturePayload;
         readonly payloadWarnings: ReadonlyArray<string>;
         readonly timeoutMillis: number;
-      }): Effect.fn.Return<StewardObservationResult, MemoryStewardError> {
-        return yield* Effect.scoped(
+      }): Effect.fn.Return<StewardRunResult> {
+        const result = yield* Effect.scoped(
           Effect.gen(function* () {
-            const { vaultPath, payload, payloadWarnings, timeoutMillis } = input;
             const signal = yield* Effect.abortSignal;
-            const appendSystemPromptPath = `${vaultPath}/.agentic-memory/LLM-outside-vault.md`;
-            const appendSystemPrompt = yield* fs.readFileString(appendSystemPromptPath).pipe(
-              Effect.mapError(
-                (cause) =>
-                  new MemoryStewardError({
-                    message: `Failed to read Memory Steward contract: ${appendSystemPromptPath}`,
-                    cause,
-                  }),
-              ),
-            );
-            const payloadJson = yield* encodeCapturePayloadJson(payload).pipe(
+            const payloadJson = yield* encodeCapturePayloadJson(input.payload).pipe(
               Effect.mapError(
                 (cause) =>
                   new MemoryStewardError({
@@ -184,110 +96,95 @@ export class MemorySteward extends Context.Service<
                   }),
               ),
             );
-            const prompt = buildCapturePrompt(payloadJson, payloadWarnings);
-            const result = yield* executor.exec(
-              piBinary ?? "pi",
-              [
-                "--mode",
-                "json",
-                "--no-session",
-                "--no-context-files",
-                "--no-extensions",
-                "--no-skills",
-                "--append-system-prompt",
-                appendSystemPrompt,
-                "-p",
-                prompt,
-              ],
-              {
-                cwd: vaultPath,
-                signal,
-                timeout: timeoutMillis,
-              },
+            const payloadPath = yield* Effect.acquireRelease(
+              fs.makeTempFile({ prefix: "agentic-memory-payload-", suffix: ".json" }).pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new MemoryStewardError({
+                      message: "Failed to create temporary capture payload file",
+                      cause,
+                    }),
+                ),
+              ),
+              (path) => fs.remove(path, { force: true }).pipe(Effect.catch(() => Effect.void)),
             );
-
-            if (result.killed) {
-              return yield* new MemoryStewardError({
-                message: `Timed out waiting for steward final JSON after child process launch`,
-                cause: result,
-              });
-            }
-
-            if (result.code !== 0) {
-              return yield* new MemoryStewardError({
-                message: `Steward process exited with non-zero status before emitting final JSON`,
-                cause: {
-                  stderr: result.stderr,
-                  stdout: result.stdout,
-                },
-              });
-            }
-
-            const assistantText = extractAssistantText(result.stdout);
-            if (assistantText.trim().length === 0) {
-              return yield* new MemoryStewardError({
-                message: "Steward returned EOF before final assistant JSON response was emitted",
-                cause: {
-                  stderr: result.stderr,
-                  stdout: result.stdout,
-                },
-              });
-            }
-
-            const envelope = yield* decodeStewardResultEnvelopeJson(assistantText).pipe(
+            yield* fs.writeFileString(payloadPath, payloadJson).pipe(
               Effect.mapError(
                 (cause) =>
                   new MemoryStewardError({
-                    message: "Steward returned invalid final JSON for capture result schema",
+                    message: `Failed to write temporary capture payload file: ${payloadPath}`,
                     cause,
                   }),
               ),
             );
-
-            return {
-              status: envelope.status,
-              summary: envelope.summary,
-              filesChanged: envelope.filesChanged ?? [],
-              warnings: envelope.warnings ?? [],
-            };
+            return yield* executor.exec(
+              cliBinary ?? "agentic-memory",
+              [
+                "run-steward",
+                "--payload",
+                payloadPath,
+                "--project-root",
+                input.projectRoot,
+                "--json",
+                "--timeout-ms",
+                String(input.timeoutMillis),
+              ],
+              {
+                cwd: input.projectRoot,
+                signal,
+                timeout: input.timeoutMillis + 5_000,
+              },
+            );
           }),
+        ).pipe(Effect.exit);
+
+        if (result._tag === "Failure") {
+          return {
+            _tag: "Failed",
+            retryFailureReasons: [normalizeFailureReason("Failed to execute agentic-memory CLI")],
+          };
+        }
+
+        const decoded = yield* decodeRunStewardResultJson(result.value.stdout.trim()).pipe(
+          Effect.exit,
         );
-      });
+        if (decoded._tag === "Failure") {
+          return {
+            _tag: "Failed",
+            retryFailureReasons: [normalizeFailureReason("Invalid JSON from agentic-memory CLI")],
+          };
+        }
 
-      const runWithRetries = Effect.fn("MemorySteward.runWithRetries")(function* (input: {
-        readonly vaultPath: string;
-        readonly payload: CapturePayload;
-        readonly payloadWarnings: ReadonlyArray<string>;
-        readonly timeoutMillis: number;
-      }): Effect.fn.Return<StewardRunResult> {
-        const retryFailureReasons: string[] = [];
-        let attemptIndex = 0;
+        if (decoded.value.status === "failed") {
+          return {
+            _tag: "Failed",
+            retryFailureReasons: decoded.value.retryFailureReasons,
+          };
+        }
 
-        while (attemptIndex < RETRY_ATTEMPTS) {
-          const result = yield* runOnce(input).pipe(Effect.exit);
-          if (result._tag === "Success") {
-            return {
-              _tag: "Succeeded",
-              result: result.value,
-              retryFailureReasons,
-            };
-          }
-
-          retryFailureReasons.push(normalizeFailureReason(Cause.pretty(result.cause)));
-          attemptIndex += 1;
-          if (attemptIndex < RETRY_ATTEMPTS) {
-            yield* Effect.sleep(backoffForAttemptIndex(attemptIndex));
-          }
+        if (result.value.killed || result.value.code !== 0) {
+          return {
+            _tag: "Failed",
+            retryFailureReasons: [
+              normalizeFailureReason("agentic-memory CLI exited unsuccessfully"),
+            ],
+          };
         }
 
         return {
-          _tag: "Failed",
-          retryFailureReasons,
+          _tag: "Succeeded",
+          result: {
+            status: decoded.value.result.status,
+            summary: decoded.value.result.summary,
+            filesChanged: decoded.value.result.filesChanged,
+            warnings: decoded.value.result.warnings,
+          },
+          retryFailureReasons: decoded.value.retryFailureReasons,
         };
       });
 
       return MemorySteward.of({
-        run: runWithRetries,
+        run,
       });
     }),
   );

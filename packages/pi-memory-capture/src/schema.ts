@@ -1,3 +1,25 @@
+import {
+  CapturePayload as CoreCapturePayload,
+  CapturePayloadJson as CoreCapturePayloadJson,
+  CapturePayloadMessage as CorePayloadMessage,
+  encodeCapturePayloadJson,
+} from "@urban/agentic-memory-core/capture/CapturePayload";
+import {
+  decodeLinkConfigJson,
+  encodeLinkConfigJson,
+  LinkConfig as CoreResolvedProjectConfig,
+  LocalLinkPaths as CoreLocalPaths,
+} from "@urban/agentic-memory-core/link/LinkConfig";
+import {
+  RunStewardResult as CoreRunStewardResult,
+  RunStewardResultJson as CoreRunStewardResultJson,
+} from "@urban/agentic-memory-core/steward/StewardExecution";
+import {
+  StewardResult as CoreStewardResultEnvelope,
+  StewardResultJson as CoreStewardResultEnvelopeJson,
+  StewardResultStatus as CoreStewardResultStatus,
+  decodeStewardResultJson as decodeStewardResultEnvelopeJson,
+} from "@urban/agentic-memory-core/steward/StewardResult";
 import { Schema } from "effect";
 import { MARKER_VERSION } from "./constants.ts";
 
@@ -19,15 +41,6 @@ export const AttemptId = Schema.String.pipe(Schema.brand("AttemptId")).annotate(
   identifier: "AttemptId",
 });
 export type AttemptId = typeof AttemptId.Type;
-
-export const ProjectLink = Schema.String.check(
-  Schema.isPattern(/^\[\[projects\/[a-z0-9][a-z0-9-]*\]\]$/, {
-    message: "Expected [[projects/<slug>]]",
-  }),
-).annotate({
-  identifier: "ProjectLink",
-});
-export type ProjectLink = typeof ProjectLink.Type;
 
 export const UtcIsoTimestamp = Schema.String.check(
   Schema.isPattern(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/, {
@@ -55,22 +68,23 @@ export const MarkerSummary = Schema.String.check(Schema.isMinLength(1))
   });
 export type MarkerSummary = typeof MarkerSummary.Type;
 
-export const ResolvedProjectConfig = Schema.Struct({
-  version: Schema.Literal(1),
-  vaultPath: Schema.String,
-  projectLink: ProjectLink,
-}).annotate({
-  identifier: "ResolvedProjectConfig",
-});
+export const CapturePayload = CoreCapturePayload;
+export const CapturePayloadJson = CoreCapturePayloadJson;
+export const PayloadMessage = CorePayloadMessage;
+export const ResolvedProjectConfig = CoreResolvedProjectConfig;
+export const LocalPaths = CoreLocalPaths;
+export type CapturePayload = typeof CapturePayload.Type;
+export type PayloadMessage = typeof PayloadMessage.Type;
 export type ResolvedProjectConfig = typeof ResolvedProjectConfig.Type;
-
-export const LocalPaths = Schema.Struct({
-  directory: Schema.String,
-  configFile: Schema.String,
-}).annotate({
-  identifier: "LocalPaths",
-});
 export type LocalPaths = typeof LocalPaths.Type;
+export const StewardResultEnvelope = CoreStewardResultEnvelope;
+export const StewardResultEnvelopeJson = CoreStewardResultEnvelopeJson;
+export const StewardResultStatus = CoreStewardResultStatus;
+export type StewardResultEnvelope = typeof StewardResultEnvelope.Type;
+export type StewardResultStatus = typeof StewardResultStatus.Type;
+export const RunStewardResult = CoreRunStewardResult;
+export const RunStewardResultJson = CoreRunStewardResultJson;
+export type RunStewardResult = typeof RunStewardResult.Type;
 
 export const LoadConfigResult = Schema.TaggedUnion({
   missing: { paths: LocalPaths },
@@ -81,14 +95,6 @@ export const LoadConfigResult = Schema.TaggedUnion({
 });
 export type LoadConfigResult = typeof LoadConfigResult.Type;
 
-export const PayloadProject = Schema.Struct({
-  projectLink: ProjectLink,
-  projectLabel: Schema.String,
-}).annotate({
-  identifier: "PayloadProject",
-});
-export type PayloadProject = typeof PayloadProject.Type;
-
 export const PayloadObservation = Schema.Struct({
   fromEntryId: Schema.String,
   toEntryId: Schema.String,
@@ -98,49 +104,6 @@ export const PayloadObservation = Schema.Struct({
   identifier: "PayloadObservation",
 });
 export type PayloadObservation = typeof PayloadObservation.Type;
-
-export const PayloadMessage = Schema.Struct({
-  entryId: Schema.String,
-  role: Schema.Literals(["user", "assistant"]),
-  text: Schema.String,
-}).annotate({
-  identifier: "PayloadMessage",
-});
-export type PayloadMessage = typeof PayloadMessage.Type;
-
-export const CapturePayload = Schema.Struct({
-  version: Schema.Literal(1),
-  triggerKind: TriggerKind,
-  project: PayloadProject,
-  observation: PayloadObservation,
-  messages: Schema.Array(PayloadMessage),
-}).annotate({
-  identifier: "CapturePayload",
-});
-export type CapturePayload = typeof CapturePayload.Type;
-
-export const StewardResultStatus = Schema.Literals(["captured", "no_changes"]).annotate({
-  identifier: "StewardResultStatus",
-});
-export type StewardResultStatus = typeof StewardResultStatus.Type;
-
-export const StewardResultEnvelope = Schema.Union([
-  Schema.Struct({
-    status: Schema.Literal("captured"),
-    summary: MarkerSummary,
-    filesChanged: Schema.optional(Schema.Array(Schema.String)),
-    warnings: Schema.optional(Schema.Array(Schema.String)),
-  }),
-  Schema.Struct({
-    status: Schema.Literal("no_changes"),
-    summary: Schema.optional(MarkerSummary),
-    filesChanged: Schema.optional(Schema.Array(Schema.String)),
-    warnings: Schema.optional(Schema.Array(Schema.String)),
-  }),
-]).annotate({
-  identifier: "StewardResultEnvelope",
-});
-export type StewardResultEnvelope = typeof StewardResultEnvelope.Type;
 
 export const MarkerEnvelope = Schema.Struct({
   markerVersion: Schema.Literal(MARKER_VERSION),
@@ -198,14 +161,9 @@ export const CaptureMarker = Schema.Union([ObservationResultMarker, ScheduleResu
 );
 export type CaptureMarker = typeof CaptureMarker.Type;
 
-export const ProjectConfigJson = Schema.fromJsonString(ResolvedProjectConfig);
-export const CapturePayloadJson = Schema.fromJsonString(CapturePayload);
-export const StewardResultEnvelopeJson = Schema.fromJsonString(StewardResultEnvelope);
-
-export const decodeProjectConfigJson = Schema.decodeUnknownEffect(ProjectConfigJson);
-export const encodeProjectConfigJson = Schema.encodeUnknownEffect(ProjectConfigJson);
-export const encodeCapturePayloadJson = Schema.encodeUnknownEffect(CapturePayloadJson);
-export const decodeStewardResultEnvelopeJson =
-  Schema.decodeUnknownEffect(StewardResultEnvelopeJson);
+export const decodeProjectConfigJson = decodeLinkConfigJson;
+export const encodeProjectConfigJson = encodeLinkConfigJson;
+export { encodeCapturePayloadJson, decodeStewardResultEnvelopeJson };
+export const decodeRunStewardResultJson = Schema.decodeUnknownEffect(RunStewardResultJson);
 export const decodeCaptureMarkerOption = Schema.decodeUnknownOption(CaptureMarker);
 export const decodeAttemptId = Schema.decodeUnknownEffect(AttemptId);

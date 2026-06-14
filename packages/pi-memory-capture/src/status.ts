@@ -9,7 +9,7 @@ export const runStatusCommand = Effect.fn("MemoryCapture.runStatusCommand")(func
   const lines = [
     `config: ${status.config._tag}`,
     ...(status.config._tag === "valid"
-      ? [`vault: ${status.config.config.vaultPath}`, `project: ${status.config.config.projectLink}`]
+      ? [`vault: ${status.config.config.vaultPath}`, `project: ${status.config.config.projectSlug}`]
       : status.config._tag === "invalid"
         ? [status.config.message]
         : ["memory capture has not been initialized"]),

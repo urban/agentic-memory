@@ -9,7 +9,7 @@ import { VaultProjects } from "../services/VaultProjects.ts";
 export interface InitializationInputs {
   readonly cwd: string;
   readonly vaultPath: string;
-  readonly projectLink: string;
+  readonly projectSlug: string;
 }
 
 export interface InitializationOverwriteConflict {
@@ -45,12 +45,12 @@ export const planInitialization = Effect.fn("MemoryCapture.planInitialization")(
   const validated = yield* vaultProjects.validateTarget({
     version: 1,
     vaultPath: input.vaultPath.trim(),
-    projectLink: input.projectLink.trim(),
+    projectSlug: input.projectSlug.trim(),
   });
   const overwriteConflict =
     LoadConfigResult.guards.valid(existingConfig) &&
     (existingConfig.config.vaultPath !== validated.vaultPath ||
-      existingConfig.config.projectLink !== validated.projectLink)
+      existingConfig.config.projectSlug !== validated.projectSlug)
       ? {
           current: existingConfig.config,
           next: validated,

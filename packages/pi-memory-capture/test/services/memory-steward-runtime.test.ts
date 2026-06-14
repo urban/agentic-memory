@@ -1,5 +1,6 @@
 import * as BunFileSystem from "@effect/platform-bun/BunFileSystem";
 import * as BunPath from "@effect/platform-bun/BunPath";
+import { extractAssistantText } from "@urban/agentic-memory-core/steward/PiProcessRunner";
 import { Effect, Fiber, Layer, ManagedRuntime, Option } from "effect";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 // @effect-diagnostics-next-line nodeBuiltinImport:off
@@ -8,7 +9,6 @@ import { describe, expect, it } from "vitest";
 import { CAPTURE_BATCH_SIZE, MARKER_VERSION } from "../../src/constants.ts";
 import { CaptureConfig } from "../../src/services/CaptureConfig.ts";
 import {
-  extractAssistantText,
   MemorySteward,
   StewardExecutor,
   type StewardRunResult,
@@ -34,25 +34,13 @@ import {
 
 const capturePayload: CapturePayload = {
   version: 1,
-  triggerKind: "agent_end",
-  project: {
-    projectLink: "[[projects/capture-extension]]",
-    projectLabel: "capture-extension",
-  },
-  observation: {
-    fromEntryId: "u1",
-    toEntryId: "a1",
-    entryCount: 2,
-    messageCount: 2,
-  },
+  projectSlug: "capture-extension",
   messages: [
     {
-      entryId: "u1",
       role: "user",
       text: "hello",
     },
     {
-      entryId: "a1",
       role: "assistant",
       text: "hi",
     },
@@ -60,13 +48,13 @@ const capturePayload: CapturePayload = {
 };
 
 type StewardRun = (input: {
-  readonly vaultPath: string;
+  readonly projectRoot: string;
   readonly payload: CapturePayload;
   readonly payloadWarnings: ReadonlyArray<string>;
   readonly timeoutMillis: number;
 }) => Effect.Effect<StewardRunResult>;
 
-const projectLink = "[[projects/capture-extension]]";
+const projectSlug = "capture-extension";
 
 const makeCaptureConfigService = (cwd: string, vaultPath: string) => {
   const paths: LocalPaths = {
@@ -76,7 +64,7 @@ const makeCaptureConfigService = (cwd: string, vaultPath: string) => {
   const config: ResolvedProjectConfig = {
     version: 1,
     vaultPath,
-    projectLink,
+    projectSlug,
   };
   const loadResult: LoadConfigResult = {
     _tag: "valid",
@@ -87,7 +75,7 @@ const makeCaptureConfigService = (cwd: string, vaultPath: string) => {
   return CaptureConfig.of({
     environmentOverrides: Effect.succeed({
       vaultOverride: undefined,
-      piBinary: undefined,
+      cliBinary: undefined,
     }),
     localPaths: () => Effect.succeed(paths),
     load: () => Effect.succeed(loadResult),
@@ -139,7 +127,7 @@ describe("MemorySteward", () => {
     ].join("\n");
     let decodedLines = 0;
 
-    const extracted = extractAssistantText(output, (line) => {
+    const extracted = extractAssistantText(output, (line: string) => {
       decodedLines += 1;
 
       return line === finalLine
@@ -157,17 +145,15 @@ describe("MemorySteward", () => {
     expect(decodedLines).toBe(1);
   });
 
-  it("constructs the isolated pi command and decodes strict final JSON", () => {
+  it("constructs the agentic-memory CLI command and decodes strict JSON", () => {
     const root = createTempDirectory("pi-memory-steward-");
-    const vault = join(root, "vault");
+    const projectRoot = join(root, "project");
     const seen: {
       command: string;
       args: ReadonlyArray<string>;
       cwd: string | undefined;
       timeout: number | undefined;
     }[] = [];
-
-    writeFile(join(vault, ".agentic-memory", "LLM-outside-vault.md"), "# contract");
 
     const layer = MemorySteward.layer.pipe(
       Layer.provide(captureConfigLayer),
@@ -189,22 +175,19 @@ describe("MemorySteward", () => {
                   killed: false,
                   // @effect-diagnostics-next-line preferSchemaOverJson:off
                   stdout: `${JSON.stringify({
-                    type: "message_end",
-                    message: {
-                      role: "assistant",
-                      content: [
-                        {
-                          type: "text",
-                          // @effect-diagnostics-next-line preferSchemaOverJson:off
-                          text: JSON.stringify({
-                            status: "captured",
-                            summary: "Record history",
-                            filesChanged: ["projects/capture-extension.md"],
-                            warnings: ["steward warning"],
-                          }),
-                        },
-                      ],
+                    status: "succeeded",
+                    result: {
+                      status: "captured",
+                      summary: "Record history",
+                      filesChanged: ["projects/capture-extension.md"],
+                      warnings: ["steward warning"],
                     },
+                    execution: {
+                      runner: "pi-process",
+                      attempts: 1,
+                    },
+                    retryFailureReasons: [],
+                    warnings: [],
                   })}\n`,
                 };
               }),
@@ -220,7 +203,7 @@ describe("MemorySteward", () => {
         Effect.gen(function* () {
           const steward = yield* MemorySteward;
           const result = yield* steward.run({
-            vaultPath: vault,
+            projectRoot,
             payload: capturePayload,
             payloadWarnings: ["payload warning"],
             timeoutMillis: 12_000,
@@ -232,17 +215,15 @@ describe("MemorySteward", () => {
             expect(result.result.filesChanged).toEqual(["projects/capture-extension.md"]);
             expect(result.result.warnings).toContain("steward warning");
           }
-          expect(seen[0]?.command).toBe("pi");
-          expect(seen[0]?.args).toContain("--mode");
-          expect(seen[0]?.args).toContain("json");
-          expect(seen[0]?.args).toContain("--no-session");
-          expect(seen[0]?.args).toContain("--no-context-files");
-          expect(seen[0]?.args).toContain("--no-extensions");
-          expect(seen[0]?.args).toContain("--no-skills");
-          expect(seen[0]?.args).toContain("--append-system-prompt");
-          expect(seen[0]?.args).toContain("# contract");
-          expect(seen[0]?.cwd).toBe(vault);
-          expect(seen[0]?.timeout).toBe(12_000);
+          expect(seen[0]?.command).toBe("agentic-memory");
+          expect(seen[0]?.args).toContain("run-steward");
+          expect(seen[0]?.args).toContain("--payload");
+          expect(seen[0]?.args).toContain("--project-root");
+          expect(seen[0]?.args).toContain(projectRoot);
+          expect(seen[0]?.args).toContain("--json");
+          expect(seen[0]?.args).toContain("--timeout-ms");
+          expect(seen[0]?.cwd).toBe(projectRoot);
+          expect(seen[0]?.timeout).toBe(17_000);
         }),
       )
       .finally(() =>
@@ -296,7 +277,7 @@ describe("MemorySteward", () => {
           const steward = yield* MemorySteward;
           const fiber = yield* Effect.forkChild(
             steward.run({
-              vaultPath: vault,
+              projectRoot: vault,
               payload: capturePayload,
               payloadWarnings: [],
               timeoutMillis: 12_000,
@@ -433,14 +414,14 @@ describe("runtime capture flow", () => {
       makeAssistantEntry("a1", [{ type: "text", text: "second answer" }], "u1"),
     ];
     const runtime = ManagedRuntime.make(
-      makeRuntimeLayer((input) =>
+      makeRuntimeLayer(() =>
         Effect.succeed({
           _tag: "Succeeded",
           result: {
             status: "captured",
             summary: "Record overlapped history",
             filesChanged: [],
-            warnings: [`from:${input.payload.observation.fromEntryId}`],
+            warnings: [],
           },
           retryFailureReasons: [],
         }),
@@ -459,7 +440,7 @@ describe("runtime capture flow", () => {
           });
 
           expect(execution.status).toBe("captured");
-          expect(execution.warnings).toContain("from:u0");
+          expect(execution.markers[0]?.observation.fromEntryId).toBe("u0");
         }),
       )
       .finally(() => runtime.dispose());

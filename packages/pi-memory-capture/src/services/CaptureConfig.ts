@@ -30,7 +30,7 @@ export class CaptureConfigServiceError extends Schema.TaggedErrorClass<CaptureCo
 
 export interface EnvironmentOverrides {
   readonly vaultOverride: string | undefined;
-  readonly piBinary: string | undefined;
+  readonly cliBinary: string | undefined;
 }
 
 const optionalEnvironmentVariable = Effect.fn("CaptureConfig.optionalEnvironmentVariable")(
@@ -62,7 +62,7 @@ export class CaptureConfig extends Context.Service<
 
       const environmentOverrides: Effect.Effect<EnvironmentOverrides> = Effect.all({
         vaultOverride: optionalEnvironmentVariable("AGENTIC_MEMORY_VAULT"),
-        piBinary: optionalEnvironmentVariable("PI_MEMORY_CAPTURE_PI_BIN"),
+        cliBinary: optionalEnvironmentVariable("AGENTIC_MEMORY_CLI_BIN"),
       }).pipe(Effect.withSpan("CaptureConfig.environmentOverrides"));
 
       const localPaths = Effect.fn("CaptureConfig.localPaths")((cwd: string) =>
@@ -135,7 +135,7 @@ export class CaptureConfig extends Context.Service<
           .validateTarget({
             version: 1,
             vaultPath: vaultOverride ?? decodedResult.config.vaultPath,
-            projectLink: decodedResult.config.projectLink,
+            projectSlug: decodedResult.config.projectSlug,
           })
           .pipe(
             Effect.match({

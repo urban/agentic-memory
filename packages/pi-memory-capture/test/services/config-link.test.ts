@@ -35,11 +35,15 @@ describe("CaptureConfig", () => {
     const vaultA = join(root, "vault-a");
     const vaultB = join(root, "vault-b");
 
-    writeFile(join(vaultA, ".agentic-memory", "LLM-outside-vault.md"), "# contract");
-    writeFile(join(vaultB, ".agentic-memory", "LLM-outside-vault.md"), "# contract");
+    for (const vault of [vaultA, vaultB]) {
+      writeFile(join(vault, ".agentic-memory", "LLM-outside-vault.md"), "# contract");
+      writeFile(join(vault, "MEMORY.md"), "# Memory\n");
+      writeFile(join(vault, "USER.md"), "# User\n");
+      writeFile(join(vault, "projects", ".gitkeep"), "");
+    }
     writeFile(
       join(localDirectory, "config.json"),
-      `{"version":1,"vaultPath":"${vaultA}","projectLink":"[[projects/capture-extension]]"}\n`,
+      `{"version":1,"vaultPath":"${vaultA}","projectSlug":"capture-extension"}\n`,
     );
 
     return CaptureConfigRuntime.runPromise(
@@ -51,7 +55,7 @@ describe("CaptureConfig", () => {
         if (loaded._tag === "valid") {
           expect(loaded.paths.directory.endsWith(".agentic-memory-link")).toBe(true);
           expect(loaded.config.vaultPath).toBe(vaultB);
-          expect(loaded.config.projectLink).toBe("[[projects/capture-extension]]");
+          expect(loaded.config.projectSlug).toBe("capture-extension");
         }
       }).pipe(
         Effect.provideService(
@@ -73,7 +77,7 @@ describe("CaptureConfig", () => {
 
     writeFile(
       join(localDirectory, "config.json"),
-      '{"version":1,"vaultPath":"/not-a-vault","projectLink":"[[notes/not-project]]"}\n',
+      '{"version":1,"vaultPath":"/not-a-vault","projectSlug":"[[notes/not-project]]"}\n',
     );
 
     return CaptureConfigRuntime.runPromise(
@@ -100,7 +104,7 @@ describe("CaptureConfig", () => {
         const paths = yield* config.ensureLocalFiles(cwd, {
           version: 1,
           vaultPath: vault,
-          projectLink: "[[projects/capture-extension]]",
+          projectSlug: "capture-extension",
         });
 
         expect(paths.directory.endsWith(".agentic-memory-link")).toBe(true);
@@ -136,7 +140,7 @@ updated: 2026-01-01
         const projectConfig: ResolvedProjectConfig = {
           version: 1,
           vaultPath: vault,
-          projectLink: "[[projects/capture-extension]]",
+          projectSlug: "capture-extension",
         };
         const created = yield* projects.ensureProjectFile(projectConfig, "2026-06-05");
         const routeAdded = yield* projects.ensureMemoryRoute(projectConfig, "2026-06-05");
@@ -186,7 +190,7 @@ updated: 2026-01-01
           const projectConfig: ResolvedProjectConfig = {
             version: 1,
             vaultPath: "/vault",
-            projectLink: "[[projects/capture-extension]]",
+            projectSlug: "capture-extension",
           };
           const result = yield* projects
             .ensureProjectFile(projectConfig, "2026-06-05")

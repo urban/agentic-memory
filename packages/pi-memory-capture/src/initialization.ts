@@ -1,4 +1,5 @@
 import type { ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { isProjectSlug } from "@urban/agentic-memory-core/link/ProjectSlug";
 import { Effect } from "effect";
 import { CaptureConfig } from "./services/CaptureConfig.ts";
 import { applyInitialization, planInitialization } from "./workflows/initialization.ts";
@@ -8,28 +9,27 @@ const parseInitCommandArgs = (args: string) => {
   if (trimmed.length === 0) {
     return {
       vaultPath: undefined,
-      projectLink: undefined,
+      projectSlug: undefined,
     };
   }
 
-  const projectLinkMatch = trimmed.match(/(\[\[projects\/[a-z0-9][a-z0-9-]*\]\])\s*$/);
-  if (projectLinkMatch?.[1] !== undefined) {
-    const projectLink = projectLinkMatch[1];
-    const vaultPath = trimmed.slice(0, projectLinkMatch.index).trim();
+  const parts = trimmed.split(/\s+/);
+  const maybeSlug = parts.at(-1);
+  if (maybeSlug !== undefined && isProjectSlug(maybeSlug) && parts.length > 1) {
     return {
-      vaultPath: vaultPath.length === 0 ? undefined : vaultPath,
-      projectLink,
+      vaultPath: parts.slice(0, -1).join(" "),
+      projectSlug: maybeSlug,
     };
   }
 
-  return trimmed.startsWith("[[projects/")
+  return isProjectSlug(trimmed) && !trimmed.startsWith("/")
     ? {
         vaultPath: undefined,
-        projectLink: trimmed,
+        projectSlug: trimmed,
       }
     : {
         vaultPath: trimmed,
-        projectLink: undefined,
+        projectSlug: undefined,
       };
 };
 
@@ -65,12 +65,12 @@ export const runInitCommand = Effect.fn("MemoryCapture.runInitCommand")(function
     return;
   }
 
-  const projectLink =
-    parsedArgs.projectLink ??
-    (yield* promptForMissingValue(ctx, "Project link", "[[projects/example-project]]"));
-  if (projectLink === undefined || projectLink.trim().length === 0) {
+  const projectSlug =
+    parsedArgs.projectSlug ??
+    (yield* promptForMissingValue(ctx, "Project slug", "example-project"));
+  if (projectSlug === undefined || projectSlug.trim().length === 0) {
     yield* Effect.sync(() =>
-      notifyError(ctx, "Project link is required for /memory-capture-init."),
+      notifyError(ctx, "Project slug is required for /memory-capture-init."),
     );
     return;
   }
@@ -78,7 +78,7 @@ export const runInitCommand = Effect.fn("MemoryCapture.runInitCommand")(function
   const plan = yield* planInitialization({
     cwd,
     vaultPath,
-    projectLink,
+    projectSlug,
   });
 
   if (plan.overwriteConflict !== undefined) {
@@ -95,7 +95,7 @@ export const runInitCommand = Effect.fn("MemoryCapture.runInitCommand")(function
     const overwrite = yield* confirmDialog(
       ctx,
       "Overwrite existing config?",
-      `Current: ${plan.overwriteConflict.current.vaultPath} ${plan.overwriteConflict.current.projectLink}\nNext: ${plan.overwriteConflict.next.vaultPath} ${plan.overwriteConflict.next.projectLink}`,
+      `Current: ${plan.overwriteConflict.current.vaultPath} ${plan.overwriteConflict.current.projectSlug}\nNext: ${plan.overwriteConflict.next.vaultPath} ${plan.overwriteConflict.next.projectSlug}`,
     );
     if (!overwrite) {
       yield* Effect.sync(() => ctx.ui.notify("Initialization cancelled.", "info"));
@@ -117,7 +117,7 @@ export const runInitCommand = Effect.fn("MemoryCapture.runInitCommand")(function
     const createProject = yield* confirmDialog(
       ctx,
       "Create project file?",
-      `Create ${plan.config.projectLink} in ${plan.config.vaultPath}?`,
+      `Create project ${plan.config.projectSlug} in ${plan.config.vaultPath}?`,
     );
     if (!createProject) {
       yield* Effect.sync(() => ctx.ui.notify("Initialization cancelled.", "info"));
@@ -132,7 +132,7 @@ export const runInitCommand = Effect.fn("MemoryCapture.runInitCommand")(function
       const lines = [
         "Agentic Memory capture initialized.",
         `vault: ${result.config.vaultPath}`,
-        `project: ${result.config.projectLink}`,
+        `project: ${result.config.projectSlug}`,
         result.projectCreated ? "project file: created" : "project file: reused",
         result.routeAdded ? "MEMORY.md route: added" : "MEMORY.md route: unchanged",
         result.gitExcludeUpdated ? ".git/info/exclude: updated" : ".git/info/exclude: unchanged",

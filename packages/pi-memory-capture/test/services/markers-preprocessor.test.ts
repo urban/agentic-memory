@@ -126,33 +126,29 @@ describe("Preprocessor", () => {
     PreprocessorRuntime.runPromise(
       Effect.gen(function* () {
         const preprocessor = yield* Preprocessor;
-        const result = yield* preprocessor.buildPayload(
-          "agent_end",
-          "[[projects/capture-extension]]",
-          [
-            makeCompactionEntry("c1", "u0", "ignored"),
-            makeBranchSummaryEntry("b1", "u0", "ignored"),
-            makeUserEntry("u1", [
-              { type: "text", text: `Token ${"sk-ant-1234567890abcdefghijklmnopqrstuvwxyz"}` },
-              { type: "image", data: "abc", mimeType: "image/png" },
-            ]),
-            makeAssistantEntry("a1", [
-              { type: "text", text: "Visible answer" },
-              { type: "thinking", thinking: "hidden chain of thought" },
-              { type: "toolCall", id: "tool-1", name: "read", arguments: {} },
-            ]),
-            makeCustomMarkerEntry("m1", {
-              markerVersion: MARKER_VERSION,
-              kind: "schedule_result",
-              attemptId: "attempt-1",
-              timestamp,
-              triggerKind: "agent_end",
-              observation,
-              sendStatus: "succeeded",
-              retryFailureReasons: [],
-            }),
-          ],
-        );
+        const result = yield* preprocessor.buildPayload("agent_end", "capture-extension", [
+          makeCompactionEntry("c1", "u0", "ignored"),
+          makeBranchSummaryEntry("b1", "u0", "ignored"),
+          makeUserEntry("u1", [
+            { type: "text", text: `Token ${"sk-ant-1234567890abcdefghijklmnopqrstuvwxyz"}` },
+            { type: "image", data: "abc", mimeType: "image/png" },
+          ]),
+          makeAssistantEntry("a1", [
+            { type: "text", text: "Visible answer" },
+            { type: "thinking", thinking: "hidden chain of thought" },
+            { type: "toolCall", id: "tool-1", name: "read", arguments: {} },
+          ]),
+          makeCustomMarkerEntry("m1", {
+            markerVersion: MARKER_VERSION,
+            kind: "schedule_result",
+            attemptId: "attempt-1",
+            timestamp,
+            triggerKind: "agent_end",
+            observation,
+            sendStatus: "succeeded",
+            retryFailureReasons: [],
+          }),
+        ]);
 
         expect(result._tag).toBe("Payload");
         if (result._tag === "Payload") {
@@ -160,7 +156,7 @@ describe("Preprocessor", () => {
           expect(result.payload.messages[0]?.text).toContain("[REDACTED_API_KEY]");
           expect(result.payload.messages[0]?.text).not.toContain("image/png");
           expect(result.payload.messages[1]?.text).toBe("Visible answer");
-          expect(result.payload.observation.messageCount).toBe(2);
+          expect(result.observation.messageCount).toBe(2);
         }
       }),
     ));
@@ -169,22 +165,18 @@ describe("Preprocessor", () => {
     PreprocessorRuntime.runPromise(
       Effect.gen(function* () {
         const preprocessor = yield* Preprocessor;
-        const result = yield* preprocessor.buildPayload(
-          "session_shutdown",
-          "[[projects/capture-extension]]",
-          [
-            makeCustomMarkerEntry("m1", {
-              markerVersion: MARKER_VERSION,
-              kind: "schedule_result",
-              attemptId: "attempt-1",
-              timestamp,
-              triggerKind: "agent_end",
-              observation,
-              sendStatus: "succeeded",
-              retryFailureReasons: [],
-            }),
-          ],
-        );
+        const result = yield* preprocessor.buildPayload("session_shutdown", "capture-extension", [
+          makeCustomMarkerEntry("m1", {
+            markerVersion: MARKER_VERSION,
+            kind: "schedule_result",
+            attemptId: "attempt-1",
+            timestamp,
+            triggerKind: "agent_end",
+            observation,
+            sendStatus: "succeeded",
+            retryFailureReasons: [],
+          }),
+        ]);
 
         expect(result._tag).toBe("NoMessages");
       }),

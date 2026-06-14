@@ -41,10 +41,11 @@ describe("initialization status flow", () => {
     const config: ResolvedProjectConfig = {
       version: 1,
       vaultPath: vault,
-      projectLink: "[[projects/capture-extension]]",
+      projectSlug: "capture-extension",
     };
 
     writeFile(join(vault, ".agentic-memory", "LLM-outside-vault.md"), "# contract");
+    writeFile(join(vault, "USER.md"), "# User\n");
     writeFile(
       join(vault, "MEMORY.md"),
       `---

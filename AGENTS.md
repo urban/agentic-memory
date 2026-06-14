@@ -28,6 +28,7 @@ for linting errors, formatting issues, type errors, and run test.
 - Always verify the exact API shape by checking signatures, parameter types, return types, setup patterns and test usage.
 - **Never compromise type safety**: No `any`, no non-null assertion operator (`!`), no type assertions (`as Type`)
 - **Make illegal states unrepresentable**: Model domain with ADTs/discriminated unions; parse inputs at boundaries into typed structures; if state can't exist, code can't mishandle it
+- **Never suppress deterministic feedback**: Do not disable, mute, or bypass Effect diagnostics or linting rules with inline comments, config exceptions, or command flags. Fix the underlying issue instead so validation remains deterministic.
 
 ## External Libraries
 

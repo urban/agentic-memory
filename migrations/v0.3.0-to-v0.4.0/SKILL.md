@@ -1,7 +1,7 @@
 ---
 name: agentic-memory-v0.3.0-to-v0.4.0
 version: 0.4.0
-description: Migrate an Agentic Memory vault from v0.3.0 to v0.4.0 by replacing the control plane, adding session-capture guidance, and normalizing project files around resume context, project timeline, and decision log sections.
+description: Migrate an Agentic Memory vault from v0.3.0 to v0.4.0 by replacing the control plane, adding session-capture guidance, normalizing project files, and refreshing unreleased project links to the projectSlug CLI contract.
 ---
 
 # Agentic Memory v0.3.0 to v0.4.0 Migration Skill
@@ -26,6 +26,8 @@ Do not rewrite human memory meaning, fabricate project timelines, delete managed
    - add `.agentic-memory/instructions/session-capture.md`
    - update writing/cross-project instructions
    - normalize project templates and durable project files around `Resume context`, `Project timeline`, and `Decision log`
+   - refresh any development-era `.agentic-memory-link/config.json` files with `agentic-memory link` so they use `projectSlug` instead of `projectLink`
+   - treat `agentic-memory run-steward` as the stable steward execution boundary for harness adapters
    - avoid turning project files into issue trackers
 6. Run the verification checklist in the migration guide.
 7. Summarize changed files, verification results, open questions, and Git status.

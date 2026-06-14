@@ -19,11 +19,56 @@
         "vitest": "4.1.6",
       },
     },
+    "packages/agentic-memory-cli": {
+      "name": "@urban/agentic-memory-cli",
+      "version": "0.4.0",
+      "bin": {
+        "agentic-memory": "./src/main.ts",
+      },
+      "dependencies": {
+        "@effect/platform-bun": "4.0.0-beta.65",
+        "@urban/agentic-memory-core": "workspace:*",
+        "effect": "4.0.0-beta.65",
+      },
+      "devDependencies": {
+        "@effect/language-service": "0.85.1",
+        "@effect/tsgo": "0.6.0",
+        "@effect/vitest": "4.0.0-beta.65",
+        "@types/bun": "1.3.13",
+        "@types/node": "25.6.2",
+        "@typescript/native-preview": "7.0.0-dev.20260511.1",
+        "oxfmt": "0.49.0",
+        "oxlint": "1.64.0",
+        "typescript": "latest",
+        "vitest": "4.1.6",
+      },
+    },
+    "packages/agentic-memory-core": {
+      "name": "@urban/agentic-memory-core",
+      "version": "0.4.0",
+      "dependencies": {
+        "@effect/platform-bun": "4.0.0-beta.65",
+        "effect": "4.0.0-beta.65",
+      },
+      "devDependencies": {
+        "@effect/language-service": "0.85.1",
+        "@effect/tsgo": "0.6.0",
+        "@effect/vitest": "4.0.0-beta.65",
+        "@types/bun": "1.3.13",
+        "@types/node": "25.6.2",
+        "@typescript/native-preview": "7.0.0-dev.20260511.1",
+        "oxfmt": "0.49.0",
+        "oxlint": "1.64.0",
+        "typescript": "latest",
+        "vitest": "4.1.6",
+      },
+    },
     "packages/pi-memory-capture": {
       "name": "@urban/pi-memory-capture",
       "version": "0.4.0",
       "dependencies": {
         "@effect/platform-bun": "4.0.0-beta.65",
+        "@urban/agentic-memory-core": "workspace:*",
         "effect": "4.0.0-beta.65",
       },
       "devDependencies": {
@@ -361,6 +406,10 @@
     "@typescript/native-preview-win32-arm64": ["@typescript/native-preview-win32-arm64@7.0.0-dev.20260511.1", "", { "os": "win32", "cpu": "arm64" }, "sha512-zgkoGiCpOrly5h8ghcuu6ZNSfrnRqtHoCq584Q92+s4D/j1MU3oKkGPvmkezp5Mj2v7ffR9AjU+lWRDkrfm6eA=="],
 
     "@typescript/native-preview-win32-x64": ["@typescript/native-preview-win32-x64@7.0.0-dev.20260511.1", "", { "os": "win32", "cpu": "x64" }, "sha512-SUm7iVYzKaflol+QwH0Ny5jZtco6PJduI+h/TEg0sgBJzVBa+9RN4I9+Xu9v+EJ1bci3XI7835IRdSP36lCgCw=="],
+
+    "@urban/agentic-memory-cli": ["@urban/agentic-memory-cli@workspace:packages/agentic-memory-cli"],
+
+    "@urban/agentic-memory-core": ["@urban/agentic-memory-core@workspace:packages/agentic-memory-core"],
 
     "@urban/pi-memory-capture": ["@urban/pi-memory-capture@workspace:packages/pi-memory-capture"],
 

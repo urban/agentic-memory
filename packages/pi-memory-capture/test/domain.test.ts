@@ -109,20 +109,9 @@ None.
         const payload = yield* Schema.decodeUnknownEffect(CapturePayloadJson)(
           yield* encodeCapturePayloadJson({
             version: 1,
-            triggerKind: "agent_end",
-            project: {
-              projectLink: "[[projects/capture-extension]]",
-              projectLabel: "capture-extension",
-            },
-            observation: {
-              fromEntryId: "a",
-              toEntryId: "b",
-              entryCount: 2,
-              messageCount: 1,
-            },
+            projectSlug: "capture-extension",
             messages: [
               {
-                entryId: "a",
                 role: "user",
                 text: "hello",
               },
@@ -138,7 +127,7 @@ None.
           }),
         );
 
-        expect(payload.triggerKind).toBe("agent_end");
+        expect(payload.projectSlug).toBe("capture-extension");
         expect(result.status).toBe("captured");
       }),
     ));

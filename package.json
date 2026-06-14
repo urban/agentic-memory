@@ -13,8 +13,8 @@
     "lint": "oxlint --fix && oxfmt",
     "prepare": "husky && effect-tsgo patch && effect-language-service patch",
     "setup:zed-effect-tsgo": "bash scripts/setup-zed-effect-tsgo.sh",
-    "test": "bun --filter=./packages/pi-memory-capture run test",
-    "typecheck": "bun --filter=./packages/pi-memory-capture run typecheck"
+    "test": "bun --filter='./packages/*' run test",
+    "typecheck": "bun --filter='./packages/*' run typecheck"
   },
   "dependencies": {},
   "devDependencies": {

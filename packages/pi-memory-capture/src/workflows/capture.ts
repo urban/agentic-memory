@@ -178,7 +178,7 @@ export const runCapturePass = (
         const selection = yield* markers.selectObservation(input.branch);
         const payloadResult = yield* preprocessor.buildPayload(
           input.triggerKind,
-          currentConfig.config.projectLink,
+          currentConfig.config.projectSlug,
           selection.observedEntries,
         );
 
@@ -195,7 +195,7 @@ export const runCapturePass = (
         const time = yield* nowValues;
         const attemptId = yield* makeAttemptId();
         const stewardResult = yield* steward.run({
-          vaultPath: currentConfig.config.vaultPath,
+          projectRoot: input.cwd,
           payload: payloadResult.payload,
           payloadWarnings: payloadResult.warnings,
           timeoutMillis: input.timeoutMillis,
@@ -212,7 +212,7 @@ export const runCapturePass = (
                 attemptId,
                 timestamp: time.isoTimestamp,
                 triggerKind: input.triggerKind,
-                observation: payloadResult.payload.observation,
+                observation: payloadResult.observation,
                 sendStatus: "failed",
                 retryFailureReasons: stewardResult.retryFailureReasons,
               }),
@@ -224,7 +224,7 @@ export const runCapturePass = (
           attemptId,
           timestamp: time.isoTimestamp,
           triggerKind: input.triggerKind,
-          observation: payloadResult.payload.observation,
+          observation: payloadResult.observation,
           status: stewardResult.result.status,
           summary: stewardResult.result.summary,
         });
@@ -232,7 +232,7 @@ export const runCapturePass = (
           attemptId,
           timestamp: time.isoTimestamp,
           triggerKind: input.triggerKind,
-          observation: payloadResult.payload.observation,
+          observation: payloadResult.observation,
           sendStatus: "succeeded",
           retryFailureReasons: stewardResult.retryFailureReasons,
         });

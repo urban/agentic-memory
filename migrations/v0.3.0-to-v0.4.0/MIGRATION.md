@@ -6,7 +6,7 @@ It is intentionally written as an instruction file that can be given to an LLM a
 
 ## Purpose
 
-Version `0.4.0` adds a project-oriented capture contract for outside-vault Memory Steward flows and tightens the expected shape of project memory.
+Version `0.4.0` adds a project-oriented capture contract for outside-vault Memory Steward flows, introduces the Agentic Memory CLI as the stable steward execution boundary, and tightens the expected shape of project memory.
 
 The migration changes:
 
@@ -16,6 +16,8 @@ The migration changes:
 4. Update `.agentic-memory/instructions/writing-memory.md` and `.agentic-memory/instructions/cross-project-persistence.md` for Memory Steward capture behavior.
 5. Update project templates and existing `projects/*.md` files so they use `## Resume context`, `## Project timeline`, and `## Decision log`.
 6. Clarify that project files are durable routing/state summaries, not issue trackers or daily work logs.
+7. Move unreleased project link config terminology from `projectLink` to `projectSlug`; recreate any existing `.agentic-memory-link/config.json` files with `agentic-memory link`.
+8. Treat `agentic-memory run-steward` as the stable steward execution boundary for harness adapters.
 
 ## Safety rules
 
@@ -25,6 +27,7 @@ The migration changes:
 - Do not rewrite project history into synthetic timelines; keep meaningful existing chronology and leave dense history in `records/`.
 - Do not delete managed memory files without explicit human approval.
 - Do not commit automatically.
+- Do not preserve or migrate unreleased `projectLink` link configs automatically; recreate them with the CLI when needed.
 
 ## Procedure
 
@@ -92,7 +95,37 @@ For each durable `projects/*.md` file:
 
 Do not force a full rewrite when a file already has equivalent sections; prefer minimal renames or targeted inserts.
 
-### 4. Update routes and records only when needed
+### 4. Refresh outside-vault project links when needed
+
+The unreleased Pi capture config shape used `projectLink`, for example:
+
+```json
+{
+  "version": 1,
+  "vaultPath": "/absolute/path/to/agentic-memory-vault",
+  "projectLink": "[[projects/example-project]]"
+}
+```
+
+The `0.4.0` CLI/core contract uses `projectSlug` instead:
+
+```json
+{
+  "version": 1,
+  "vaultPath": "/absolute/path/to/agentic-memory-vault",
+  "projectSlug": "example-project"
+}
+```
+
+Because `0.4.0` has not been released, do not build compatibility shims for the old config. For each external project that was initialized during development, rerun:
+
+```sh
+agentic-memory link --vault /absolute/path/to/agentic-memory-vault --project example-project
+```
+
+The `link` command should recreate `.agentic-memory-link/config.json`, ensure `projects/example-project.md` exists, and ensure `MEMORY.md` routes to `[[projects/example-project]]`.
+
+### 5. Update routes and records only when needed
 
 - Update `MEMORY.md` project routes only when the routing surface materially changes.
 - Create a migration record only for substantial vault migrations or when the human wants a durable upgrade record.
@@ -105,6 +138,8 @@ Do not force a full rewrite when a file already has equivalent sections; prefer 
 - Project templates include `Resume context`, `Project timeline`, and `Decision log`.
 - Existing durable project files use those sections or clearly equivalent minimal variants.
 - No project file was turned into a chat log or issue tracker during migration.
+- Any development-era `.agentic-memory-link/config.json` files have been recreated with `projectSlug` when still needed.
+- Outside-vault capture setup uses `agentic-memory link` and steward execution uses `agentic-memory run-steward`.
 
 ## Recommended closeout
 
