@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest";
-import { Cause, Console, Effect, Exit, FileSystem, ManagedRuntime, Runtime } from "effect";
+import { Cause, Console, Effect, Exit, FileSystem, ManagedRuntime, Path, Runtime } from "effect";
 import { afterAll } from "vitest";
 import { appLayer, runAgenticMemoryCommand } from "../src/cli.ts";
 
@@ -112,6 +112,38 @@ describe("agentic-memory cli", () => {
         assert.include(output.stdout, '"status":"unlinked"');
         assert.include(output.stdout, ".agentic-memory-link/config.json");
         assert.strictEqual(output.stderr, "");
+      }),
+    ),
+  );
+
+  it.effect("initializes vaults from the canonical template package", () =>
+    withCliRuntime(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const tempRoot = yield* fs.makeTempDirectoryScoped({ prefix: "agentic-memory-init-" });
+          const vaultPath = path.join(tempRoot, "vault");
+          const output = yield* runCapturedEffect(["init", vaultPath, "--json"]);
+          const memoryExists = yield* fs.exists(path.join(vaultPath, "MEMORY.md"));
+          const localContractExists = yield* fs.exists(
+            path.join(vaultPath, ".agentic-memory", "LLM-vault-local.md"),
+          );
+          const adapterExists = yield* fs.exists(
+            path.join(vaultPath, ".agentic-memory", "adapters", "MEMORY_ADAPTER.md"),
+          );
+
+          return { adapterExists, localContractExists, memoryExists, output };
+        }),
+      ),
+    ).pipe(
+      Effect.map(({ adapterExists, localContractExists, memoryExists, output }) => {
+        assert.strictEqual(output.exitCode, 0);
+        assert.include(output.stdout, '"status":"initialized"');
+        assert.strictEqual(output.stderr, "");
+        assert.isTrue(memoryExists);
+        assert.isTrue(localContractExists);
+        assert.isTrue(adapterExists);
       }),
     ),
   );

@@ -1,3 +1,4 @@
+import { bundledVaultTemplatePath } from "@urban/agentic-memory-vault-template/VaultTemplatePackage";
 import { Effect, FileSystem, Path, Schema, Stream } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
@@ -25,15 +26,6 @@ export interface InitVaultOptions {
   readonly initializeGit: boolean;
   readonly yes: boolean;
 }
-
-const bundledTemplatePath = Effect.fnUntraced(function* (): Effect.fn.Return<
-  string,
-  never,
-  Path.Path
-> {
-  const path = yield* Path.Path;
-  return path.join(import.meta.dir, "..", "..", "template");
-});
 
 const existsOrFalse = (pathValue: string) =>
   Effect.gen(function* () {
@@ -205,7 +197,15 @@ export const initVaultFromTemplate = Effect.fnUntraced(function* (
     );
   }
 
-  const templatePath = yield* bundledTemplatePath();
+  const templatePath = yield* bundledVaultTemplatePath().pipe(
+    Effect.mapError(
+      (cause) =>
+        new VaultTemplateError({
+          message: "Failed to resolve bundled Agentic Memory template path",
+          cause,
+        }),
+    ),
+  );
   yield* fs.copy(templatePath, options.targetPath, { overwrite: false }).pipe(
     Effect.mapError(
       (cause) =>

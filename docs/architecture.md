@@ -153,7 +153,7 @@ memory/
 
 Content folders are flat by default. Use memory maps, project links, and semantic links for structure instead of deep folder hierarchy.
 
-`template/` starts with empty `maps/`, `projects/`, `notes/`, `people/`, `sources/`, and `records/` folders plus a scaffolded `USER.md`. See `examples/basic/` for reference content.
+The canonical template at `packages/agentic-memory-vault-template/template/` starts with empty `maps/`, `projects/`, `notes/`, `people/`, `sources/`, and `records/` folders plus a scaffolded `USER.md`. See `examples/basic/` for reference content.
 
 ## Progressive disclosure
 

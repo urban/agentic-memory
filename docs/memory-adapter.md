@@ -1,6 +1,6 @@
 # Memory Adapter
 
-`MEMORY_ADAPTER.md` is a copyable router snippet for connecting agents outside an Agentic Memory vault to that vault as persistent secondary memory. In this repository it lives at `template/.agentic-memory/adapters/MEMORY_ADAPTER.md`; after initializing a vault it lives at `.agentic-memory/adapters/MEMORY_ADAPTER.md` inside that vault.
+`MEMORY_ADAPTER.md` is a copyable router snippet for connecting agents outside an Agentic Memory vault to that vault as persistent secondary memory. In this repository it lives at `packages/agentic-memory-vault-template/template/.agentic-memory/adapters/MEMORY_ADAPTER.md`; after initializing a vault it lives at `.agentic-memory/adapters/MEMORY_ADAPTER.md` inside that vault.
 
 The adapter does not teach the whole memory system. It only decides which mode applies and points the agent to the correct LLM contract.
 

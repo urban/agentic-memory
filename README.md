@@ -2,7 +2,7 @@
 
 Agentic Memory is a local-first memory system for AI agents. It gives agents a small, navigable Markdown vault for durable context without forcing them to load an entire note collection into the context window.
 
-This repository is not itself a memory vault. It defines the system, documents the operating model, and provides a clean starter vault under `template/`.
+This repository is not itself a memory vault. It defines the system, documents the operating model, and provides a clean starter vault from the `@urban/agentic-memory-vault-template` workspace package.
 
 ## Why use it
 
@@ -45,15 +45,14 @@ Other patterns, such as Reflection, migration, human browsing in Obsidian, or mu
 
 ## Quick start
 
-1. **Create your vault.** Copy `template/` to a permanent local folder that you control:
+1. **Create your vault.** Use the CLI to copy the canonical vault template to a permanent local folder that you control:
 
    ```sh
-   cp -R template ~/agentic-memory
-   cd ~/agentic-memory
-   git init
+   agentic-memory init /absolute/path/to/agentic-memory --git --yes
+   cd /absolute/path/to/agentic-memory
    ```
 
-   Git is optional, but recommended because agents will update plain Markdown and you can review every memory change as a diff.
+   Git is optional, but recommended because agents will update plain Markdown and you can review every memory change as a diff. From this source checkout, use `bun packages/agentic-memory-cli/src/main.ts init /absolute/path/to/agentic-memory --git --yes` if the CLI binary is not installed. The raw template lives at `packages/agentic-memory-vault-template/template/` for manual inspection or copying.
 
 2. **Add the first routing memory.** Open `MEMORY.md` and add only the top-level context future agents should see early: active projects, major domains, and links to maps or project files you expect to create. Keep this file small.
 
@@ -65,16 +64,16 @@ Other patterns, such as Reflection, migration, human browsing in Obsidian, or mu
 
 5. **Let memory grow through use.** During work, ask the agent to create or update maps, projects, notes, people, sources, and records only when the information is durable enough to help future sessions. Review the Markdown changes, commit useful memory, and prune or revise anything that should not persist.
 
-`template/` is intentionally clean: its content folders start empty and `USER.md` is only a scaffold, so a new vault does not inherit example memory. For a concrete reference graph, inspect `examples/basic/`. The example intentionally omits `.agentic-memory/`; pair it with the template control plane if you want to operate it as a full vault.
+The template package is intentionally clean: its content folders start empty and `USER.md` is only a scaffold, so a new vault does not inherit example memory. For a concrete reference graph, inspect `examples/basic/`. The example intentionally omits `.agentic-memory/`; pair it with the template control plane if you want to operate it as a full vault.
 
 ## Repository layout
 
 ```text
-docs/                      # human-facing guides and reference docs
-examples/basic/            # small example memory graph
-skills/reflection/         # companion skill dispatcher for Reflection
-migrations/                # versioned migration guides and migration skills
-template/                  # clean copyable Agentic Memory vault
+docs/                                      # human-facing guides and reference docs
+examples/basic/                            # small example memory graph
+skills/reflection/                         # companion skill dispatcher for Reflection
+migrations/                                # versioned migration guides and migration skills
+packages/agentic-memory-vault-template/    # canonical clean copyable Agentic Memory vault
 ```
 
 ## Guides
