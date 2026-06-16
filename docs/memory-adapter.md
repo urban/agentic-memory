@@ -24,6 +24,15 @@ Common installation targets:
 
 You do not need the memory adapter for agents already operating inside the memory vault. In that case, the vault's own `AGENTS.md` is the entry point.
 
+## Adapter versus project link config
+
+The memory adapter is not the same thing as the project-local link used by capture tooling.
+
+- `MEMORY_ADAPTER.md` changes startup routing for agents working outside the vault.
+- `.agentic-memory-link/config.json` binds one external project root to one vault path and `projectSlug`.
+
+Tools such as the Pi Memory Capture extension and `agentic-memory run-steward` use the local link config. They do not replace the adapter, and the adapter does not replace project-local capture setup.
+
 ## Setup
 
 1. Open `.agentic-memory/adapters/MEMORY_ADAPTER.md` in the initialized vault.

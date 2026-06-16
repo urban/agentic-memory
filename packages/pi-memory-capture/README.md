@@ -9,7 +9,7 @@ After you initialize a project, the extension:
 - captures periodically on `agent_end` after 10 completed assistant turns since the latest schedule marker
 - flushes remaining branch activity on `session_before_tree` and `session_shutdown`
 - captures only bounded visible user/assistant text from the current branch observation window
-- keeps only the project link at `.agentic-memory-link/config.json`
+- keeps only the project-local link config at `.agentic-memory-link/config.json`
 - invokes an isolated Memory Steward Pi process in the target vault with a fresh saved Pi diagnostic session
 - lets the Memory Steward update the smallest appropriate Agentic Memory files
 - stores minimal Pi custom-entry markers for observation outcomes and schedule cadence
@@ -78,7 +78,7 @@ pi install -l /absolute/path/to/agentic-memory/packages/pi-memory-capture
 In the target project, run:
 
 ```text
-/memory-capture-init /absolute/path/to/agentic-memory-vault [[projects/example-project]]
+/memory-capture-init /absolute/path/to/agentic-memory-vault example-project
 ```
 
 If arguments are omitted, the command prompts for them in interactive Pi. You may also set a default vault path:
@@ -87,11 +87,19 @@ If arguments are omitted, the command prompts for them in interactive Pi. You ma
 export AGENTIC_MEMORY_VAULT=/absolute/path/to/agentic-memory-vault
 ```
 
-Initialization validates the vault, writes `.agentic-memory-link/config.json`, may create the target project file after confirmation, ensures a route in `MEMORY.md`, and adds `.agentic-memory-link/` to `.git/info/exclude` when possible.
+Initialization validates the vault, writes `.agentic-memory-link/config.json` using the `projectSlug` contract, may create the target project file after confirmation, ensures a route in `MEMORY.md`, and adds `.agentic-memory-link/` to `.git/info/exclude` when possible.
+
+`[[projects/example-project]]` is still accepted for convenience, but the canonical `0.4.0` identifier is the bare slug `example-project`.
+
+If you want to create or refresh the same link non-interactively outside Pi, use:
+
+```bash
+agentic-memory link --vault /absolute/path/to/agentic-memory-vault --project example-project --project-root /absolute/path/to/project --yes
+```
 
 ## Commands
 
-- `/memory-capture-init [vaultPath] [projectLink]` — initialize or update capture config for the current project
+- `/memory-capture-init [vaultPath] [projectSlugOrLink]` — initialize or update capture config for the current project
 - `/memory-capture-status` — show config, latest observation marker, latest schedule marker, automatic-capture state, and marker warnings
 
 Automatic capture is timeout-bounded/fail-open so it should not cancel session operations.

@@ -66,6 +66,8 @@ Agentic Memory has two supported agent entry points.
 
 If both entry points are visible because a global memory adapter is active while the current working directory contains `.agentic-memory/`, the vault-local entry point wins. The adapter is redundant in that context and should not create a second cross-project memory flow.
 
+Some outside-vault integrations also keep a project-local `.agentic-memory-link/config.json` beside the active repo. That local file is not a third startup path and it is not part of the vault. It binds one external project root to one central vault path and `projectSlug` so capture tooling such as the Pi extension and `agentic-memory run-steward` can target the correct durable project memory.
+
 ## Core model
 
 Agentic Memory has eight practical content parts plus one local capture-state surface:

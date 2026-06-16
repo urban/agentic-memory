@@ -6,6 +6,40 @@ A global or project-level memory adapter points the harness at the vault by abso
 
 When the current working directory contains `.agentic-memory/`, this mode is not needed; use the vault-local `AGENTS.md` entry point instead.
 
+## Project-local links and CLI setup
+
+Some outside-vault workflows also keep a local project-to-vault link at:
+
+```text
+.agentic-memory-link/config.json
+```
+
+The `0.4.0` contract uses a bare `projectSlug`, not a wiki-link:
+
+```json
+{
+  "version": 1,
+  "vaultPath": "/absolute/path/to/agentic-memory-vault",
+  "projectSlug": "example-project"
+}
+```
+
+Create or refresh that local link with the CLI:
+
+```sh
+agentic-memory link --vault /absolute/path/to/agentic-memory-vault --project example-project --project-root /absolute/path/to/project --yes
+```
+
+This command also ensures `projects/example-project.md` exists in the vault, ensures `MEMORY.md` routes to `[[projects/example-project]]`, and attempts to add `.agentic-memory-link/` to `.git/info/exclude` in the external project.
+
+Inspect the resulting health with:
+
+```sh
+agentic-memory status --project-root /absolute/path/to/project --json
+```
+
+Humans and setup tools usually use `init`, `link`, and `status` directly. Harness integrations should treat `agentic-memory run-steward` as the stable steward execution boundary rather than calling internal core modules directly.
+
 ## Purpose
 
 Most agent sessions are project-oriented. A session should usually correspond to:
@@ -92,3 +126,14 @@ Typical updates:
 - update maps when routing changes
 
 Do not derail the current task for memory maintenance. Prefer small, reviewable, Git-auditable edits.
+
+## Pi capture extension
+
+The Pi Memory Capture extension is one concrete outside-vault integration built on the same local link contract.
+
+- It is opt-in per project and stays inert until `.agentic-memory-link/config.json` exists and is valid.
+- It captures bounded visible user/assistant text only, not raw transcripts, tool output, diffs, or hidden reasoning.
+- It runs periodic `agent_end` capture, and forced flushes on `session_before_tree` and `session_shutdown`.
+- It sends steward work through `agentic-memory run-steward`, which launches an isolated Pi Memory Steward process inside the vault.
+
+Use `/memory-capture-init /absolute/path/to/agentic-memory-vault example-project` inside Pi to create the link interactively. `[[projects/example-project]]` is still accepted there, but the canonical `0.4.0` identifier is the bare slug `example-project`.
