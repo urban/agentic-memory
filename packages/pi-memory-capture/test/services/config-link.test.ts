@@ -28,7 +28,7 @@ const VaultProjectsRuntime = ManagedRuntime.make(VaultProjectsTestLayer);
 const GitRuntime = ManagedRuntime.make(GitTestLayer);
 
 describe("CaptureConfig", () => {
-  it("loads valid .agentic-memory-link config and applies the vault override", () => {
+  it("loads valid .agentic-memory-link config without overriding its stored vault path", () => {
     const root = createTempDirectory("pi-memory-config-");
     const cwd = join(root, "project");
     const localDirectory = join(cwd, ".agentic-memory-link");
@@ -54,7 +54,7 @@ describe("CaptureConfig", () => {
         expect(loaded._tag).toBe("valid");
         if (loaded._tag === "valid") {
           expect(loaded.paths.directory.endsWith(".agentic-memory-link")).toBe(true);
-          expect(loaded.config.vaultPath).toBe(vaultB);
+          expect(loaded.config.vaultPath).toBe(vaultA);
           expect(loaded.config.projectSlug).toBe("capture-extension");
         }
       }).pipe(

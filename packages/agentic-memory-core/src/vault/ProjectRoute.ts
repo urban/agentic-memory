@@ -76,6 +76,25 @@ const insertSectionLines = (
   ...lines.slice(insertIndex),
 ];
 
+const projectRouteLine = (slug: ProjectSlug): string =>
+  `- ${projectWikiLinkFromSlug(slug)} — ${slug}.`;
+
+const hasProjectRouteInLines = (lines: ReadonlyArray<string>, slug: ProjectSlug): boolean => {
+  const headingIndex = findHeadingIndex(lines, "## Projects");
+  if (headingIndex < 0) {
+    return false;
+  }
+
+  const endIndex = findNextHeadingIndex(lines, headingIndex);
+  const routeLine = projectRouteLine(slug);
+  return lines.slice(headingIndex + 1, endIndex).some((line) => line.trim() === routeLine);
+};
+
+export const hasProjectRouteInMemory = (content: string, slug: ProjectSlug): boolean => {
+  const { body } = splitFrontmatter(content);
+  return hasProjectRouteInLines(body.split("\n"), slug);
+};
+
 const withProjectsRouteInExistingSection = (
   lines: ReadonlyArray<string>,
   routeLine: string,
@@ -98,12 +117,11 @@ export const ensureProjectRouteInMemory = (
   readonly content: string;
   readonly added: boolean;
 } => {
-  const projectLink = projectWikiLinkFromSlug(slug);
-  if (content.includes(projectLink)) {
+  if (hasProjectRouteInMemory(content, slug)) {
     return { content, added: false };
   }
 
-  const routeLine = `- ${projectLink} — ${slug}.`;
+  const routeLine = projectRouteLine(slug);
   const { prefix, body } = splitFrontmatter(content);
   const lines = body.split("\n");
   const nextLines =
@@ -204,6 +222,9 @@ const hasRequiredProjectSections = (content: string): boolean =>
     content.includes(heading),
   );
 
+const hasProjectTemplatePlaceholders = (content: string): boolean =>
+  content.includes("[[notes/example]]") || content.includes("[[projects/example]]");
+
 export const applyProjectTemplate = (
   templateDocument: string,
   values: {
@@ -221,7 +242,9 @@ export const applyProjectTemplate = (
       )
       .replace("project_status: candidate", "project_status: active");
 
-    return hasRequiredProjectSections(rendered) ? Option.some(rendered) : Option.none();
+    return hasRequiredProjectSections(rendered) && !hasProjectTemplatePlaceholders(rendered)
+      ? Option.some(rendered)
+      : Option.none();
   });
 
 export const projectFilePath = Effect.fnUntraced(function* (

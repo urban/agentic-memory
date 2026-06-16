@@ -1,7 +1,7 @@
 import type { ExecOptions, ExecResult } from "@earendil-works/pi-coding-agent";
 import type { StewardSessionPointer } from "@urban/agentic-memory-core/steward/StewardExecution";
 import type { StewardDecisionReport } from "@urban/agentic-memory-core/steward/StewardResult";
-import { Context, Effect, FileSystem, Layer, Schema } from "effect";
+import { Cause, Context, Effect, FileSystem, Layer, Schema } from "effect";
 import { encodeCapturePayloadJson, type CapturePayload } from "../schema.ts";
 import {
   decodeRunStewardResultJson,
@@ -166,6 +166,10 @@ export class MemorySteward extends Context.Service<
         ).pipe(Effect.exit);
 
         if (result._tag === "Failure") {
+          if (result.cause.reasons.some(Cause.isInterruptReason)) {
+            return yield* Effect.interrupt;
+          }
+
           return {
             _tag: "Failed",
             retryFailureReasons: [normalizeFailureReason("Failed to execute agentic-memory CLI")],

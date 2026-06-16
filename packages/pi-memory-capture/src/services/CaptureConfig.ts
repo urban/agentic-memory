@@ -81,7 +81,6 @@ export class CaptureConfig extends Context.Service<
         const exists = yield* fs
           .exists(paths.configFile)
           .pipe(Effect.catch(() => Effect.succeed(false)));
-        const { vaultOverride } = yield* environmentOverrides;
 
         if (!exists) {
           return LoadConfigResult.cases.missing.make({ paths });
@@ -131,22 +130,16 @@ export class CaptureConfig extends Context.Service<
           });
         }
 
-        return yield* vaultProjects
-          .validateTarget({
-            version: 1,
-            vaultPath: vaultOverride ?? decodedResult.config.vaultPath,
-            projectSlug: decodedResult.config.projectSlug,
-          })
-          .pipe(
-            Effect.match({
-              onFailure: (error) =>
-                LoadConfigResult.cases.invalid.make({
-                  paths,
-                  message: error.message,
-                }),
-              onSuccess: (config) => LoadConfigResult.cases.valid.make({ paths, config }),
-            }),
-          );
+        return yield* vaultProjects.validateTarget(decodedResult.config).pipe(
+          Effect.match({
+            onFailure: (error) =>
+              LoadConfigResult.cases.invalid.make({
+                paths,
+                message: error.message,
+              }),
+            onSuccess: (config) => LoadConfigResult.cases.valid.make({ paths, config }),
+          }),
+        );
       });
 
       const ensureLocalFiles = Effect.fn("CaptureConfig.ensureLocalFiles")(function* (

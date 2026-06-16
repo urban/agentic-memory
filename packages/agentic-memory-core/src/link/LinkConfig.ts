@@ -44,6 +44,47 @@ export const decodeLinkConfig = Schema.decodeUnknownEffect(LinkConfig);
 export const decodeLinkConfigJson = Schema.decodeUnknownEffect(LinkConfigJson);
 export const encodeLinkConfigJson = Schema.encodeUnknownEffect(LinkConfigJson);
 
+const hasErrnoCode = (cause: unknown, code: string): boolean =>
+  typeof cause === "object" && cause !== null && "code" in cause && cause.code === code;
+
+const ensureNotSymlink = Effect.fnUntraced(function* (
+  pathValue: string,
+  label: string,
+): Effect.fn.Return<void, LinkConfigError, FileSystem.FileSystem> {
+  const fs = yield* FileSystem.FileSystem;
+  const exists = yield* fs.exists(pathValue).pipe(Effect.catch(() => Effect.succeed(false)));
+  if (!exists) {
+    return;
+  }
+
+  yield* fs.readLink(pathValue).pipe(
+    Effect.matchEffect({
+      onFailure: (cause) =>
+        hasErrnoCode(cause.cause, "EINVAL")
+          ? Effect.void
+          : Effect.fail(
+              new LinkConfigError({
+                message: `Failed to inspect ${label}: ${pathValue}`,
+                cause,
+              }),
+            ),
+      onSuccess: () =>
+        Effect.fail(
+          new LinkConfigError({
+            message: `${label} must not be a symlink: ${pathValue}`,
+          }),
+        ),
+    }),
+  );
+});
+
+const ensureLocalLinkPathsSafe = Effect.fnUntraced(function* (
+  paths: LocalLinkPaths,
+): Effect.fn.Return<void, LinkConfigError, FileSystem.FileSystem> {
+  yield* ensureNotSymlink(paths.directory, "Local link directory");
+  yield* ensureNotSymlink(paths.configFile, "Local config file");
+});
+
 export const localLinkPaths = Effect.fnUntraced(function* (
   projectRoot: string,
 ): Effect.fn.Return<LocalLinkPaths, never, Path.Path> {
@@ -59,6 +100,19 @@ export const loadLinkConfig = Effect.fnUntraced(function* (
 ): Effect.fn.Return<LoadLinkConfigResult, never, FileSystem.FileSystem | Path.Path> {
   const fs = yield* FileSystem.FileSystem;
   const paths = yield* localLinkPaths(projectRoot);
+  const pathSafety = yield* ensureLocalLinkPathsSafe(paths).pipe(
+    Effect.match({
+      onFailure: (error) => error,
+      onSuccess: () => undefined,
+    }),
+  );
+
+  if (pathSafety !== undefined) {
+    return LoadLinkConfigResult.cases.invalid.make({
+      paths,
+      message: pathSafety.message,
+    });
+  }
   const exists = yield* fs.exists(paths.configFile).pipe(Effect.catch(() => Effect.succeed(false)));
 
   if (!exists) {
@@ -98,6 +152,7 @@ export const writeLinkConfig = Effect.fnUntraced(function* (
 ): Effect.fn.Return<LocalLinkPaths, LinkConfigError, FileSystem.FileSystem | Path.Path> {
   const fs = yield* FileSystem.FileSystem;
   const paths = yield* localLinkPaths(projectRoot);
+  yield* ensureLocalLinkPathsSafe(paths);
   const encoded = yield* encodeLinkConfigJson(config).pipe(
     Effect.mapError(
       (cause) =>
@@ -117,6 +172,7 @@ export const writeLinkConfig = Effect.fnUntraced(function* (
         }),
     ),
   );
+  yield* ensureLocalLinkPathsSafe(paths);
 
   yield* fs.writeFileString(paths.configFile, `${encoded}\n`).pipe(
     Effect.mapError(

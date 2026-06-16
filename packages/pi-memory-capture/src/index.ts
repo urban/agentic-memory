@@ -14,6 +14,15 @@ const notifyUnexpectedError = (ctx: ExtensionContext, fallback: string) => (erro
   notifyError(ctx, error instanceof Error ? error.message : fallback);
 };
 
+const withAbortSafeEntries = (pi: ExtensionAPI, signal: AbortSignal): ExtensionAPI => ({
+  ...pi,
+  appendEntry: (customType, data) => {
+    if (!signal.aborted) {
+      pi.appendEntry(customType, data);
+    }
+  },
+});
+
 export default function memoryCapture(pi: ExtensionAPI) {
   const runtime = makeMemoryCaptureRuntime(pi);
 
@@ -39,10 +48,30 @@ export default function memoryCapture(pi: ExtensionAPI) {
       .catch(notifyUnexpectedError(ctx, "Automatic capture failed after agent turn.")),
   );
 
-  pi.on("session_before_tree", (_event, ctx) =>
+  pi.on("session_before_tree", (event, ctx) =>
     runtime
-      .runPromise(runCapture(pi, ctx, "session_before_tree", true))
-      .catch(notifyUnexpectedError(ctx, "Automatic capture failed before tree navigation.")),
+      .runPromise(
+        runCapture(
+          withAbortSafeEntries(pi, event.signal),
+          ctx,
+          "session_before_tree",
+          true,
+          event.signal,
+        ),
+        {
+          signal: event.signal,
+        },
+      )
+      .catch((error) => {
+        if (event.signal.aborted) {
+          return;
+        }
+
+        return notifyUnexpectedError(
+          ctx,
+          "Automatic capture failed before tree navigation.",
+        )(error);
+      }),
   );
 
   pi.on("session_shutdown", (_event, ctx) =>

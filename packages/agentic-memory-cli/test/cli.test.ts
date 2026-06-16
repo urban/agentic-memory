@@ -147,4 +147,60 @@ describe("agentic-memory cli", () => {
       }),
     ),
   );
+
+  it.effect("does not mutate the vault when local link config creation fails", () =>
+    withCliRuntime(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const tempRoot = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-link-atomicity-",
+          });
+          const vaultPath = path.join(tempRoot, "vault");
+          const projectRoot = path.join(tempRoot, "project");
+          const memoryPath = path.join(vaultPath, "MEMORY.md");
+          const projectFilePath = path.join(vaultPath, "projects", "example-project.md");
+
+          yield* fs.makeDirectory(path.join(vaultPath, ".agentic-memory"), {
+            recursive: true,
+          });
+          yield* fs.makeDirectory(path.join(vaultPath, "projects"), {
+            recursive: true,
+          });
+          yield* fs.makeDirectory(projectRoot, { recursive: true });
+          yield* fs.writeFileString(memoryPath, "# Memory\n");
+          yield* fs.writeFileString(path.join(vaultPath, "USER.md"), "# User\n");
+          yield* fs.writeFileString(
+            path.join(vaultPath, ".agentic-memory", "LLM-outside-vault.md"),
+            "outside-vault contract",
+          );
+          yield* fs.chmod(projectRoot, 0o555);
+
+          const output = yield* runCapturedEffect([
+            "link",
+            "--vault",
+            vaultPath,
+            "--project",
+            "example-project",
+            "--project-root",
+            projectRoot,
+            "--json",
+          ]).pipe(Effect.ensuring(fs.chmod(projectRoot, 0o755).pipe(Effect.orDie)));
+
+          const memoryContents = yield* fs.readFileString(memoryPath);
+          const projectFileExists = yield* fs.exists(projectFilePath);
+
+          return { memoryContents, output, projectFileExists };
+        }),
+      ),
+    ).pipe(
+      Effect.map(({ memoryContents, output, projectFileExists }) => {
+        assert.strictEqual(output.exitCode, 1);
+        assert.include(output.stdout, '"code":"WriteConfigFailed"');
+        assert.isFalse(projectFileExists);
+        assert.notInclude(memoryContents, "[[projects/example-project]]");
+      }),
+    ),
+  );
 });

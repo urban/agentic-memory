@@ -1,8 +1,26 @@
 import type { ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { isProjectSlug } from "@urban/agentic-memory-core/link/ProjectSlug";
-import { Effect } from "effect";
+import { Effect, Option } from "effect";
+import { projectSlugFromLink } from "./project.ts";
 import { CaptureConfig } from "./services/CaptureConfig.ts";
 import { applyInitialization, planInitialization } from "./workflows/initialization.ts";
+
+const normalizeProjectSlugInput = (value: string | undefined): string | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return undefined;
+  }
+
+  if (isProjectSlug(trimmed)) {
+    return trimmed;
+  }
+
+  return Option.getOrUndefined(projectSlugFromLink(trimmed));
+};
 
 const parseInitCommandArgs = (args: string) => {
   const trimmed = args.trim();
@@ -14,18 +32,20 @@ const parseInitCommandArgs = (args: string) => {
   }
 
   const parts = trimmed.split(/\s+/);
-  const maybeSlug = parts.at(-1);
-  if (maybeSlug !== undefined && isProjectSlug(maybeSlug) && parts.length > 1) {
+  const maybeSlug = normalizeProjectSlugInput(parts.at(-1));
+  if (maybeSlug !== undefined && parts.length > 1) {
     return {
       vaultPath: parts.slice(0, -1).join(" "),
       projectSlug: maybeSlug,
     };
   }
 
-  return isProjectSlug(trimmed) && !trimmed.startsWith("/")
+  const projectSlug = normalizeProjectSlugInput(trimmed);
+
+  return projectSlug !== undefined && !trimmed.startsWith("/")
     ? {
         vaultPath: undefined,
-        projectSlug: trimmed,
+        projectSlug,
       }
     : {
         vaultPath: trimmed,
@@ -65,12 +85,13 @@ export const runInitCommand = Effect.fn("MemoryCapture.runInitCommand")(function
     return;
   }
 
-  const projectSlug =
+  const requestedProjectSlug = normalizeProjectSlugInput(
     parsedArgs.projectSlug ??
-    (yield* promptForMissingValue(ctx, "Project slug", "example-project"));
-  if (projectSlug === undefined || projectSlug.trim().length === 0) {
+      (yield* promptForMissingValue(ctx, "Project link", "[[projects/example-project]]")),
+  );
+  if (requestedProjectSlug === undefined) {
     yield* Effect.sync(() =>
-      notifyError(ctx, "Project slug is required for /memory-capture-init."),
+      notifyError(ctx, "Project link or slug is required for /memory-capture-init."),
     );
     return;
   }
@@ -78,7 +99,7 @@ export const runInitCommand = Effect.fn("MemoryCapture.runInitCommand")(function
   const plan = yield* planInitialization({
     cwd,
     vaultPath,
-    projectSlug,
+    projectSlug: requestedProjectSlug,
   });
 
   if (plan.overwriteConflict !== undefined) {

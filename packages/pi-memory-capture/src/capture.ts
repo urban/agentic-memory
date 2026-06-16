@@ -23,12 +23,19 @@ const notificationLevelForCapture = (execution: CaptureExecution): NotificationL
 const shouldNotify = (execution: CaptureExecution): boolean =>
   execution.status === "captured" || execution.status === "failed";
 
+const isAborted = (signal: AbortSignal | undefined): boolean => signal?.aborted === true;
+
 export const runCapture = Effect.fn("MemoryCapture.runCapture")(function* (
   pi: ExtensionAPI,
   ctx: ExtensionContext,
   triggerKind: TriggerKind,
   force: boolean,
+  abortSignal?: AbortSignal,
 ) {
+  if (isAborted(abortSignal)) {
+    return;
+  }
+
   const execution = yield* runCapturePass({
     cwd: ctx.cwd,
     branch: ctx.sessionManager.getBranch(),
@@ -36,6 +43,10 @@ export const runCapture = Effect.fn("MemoryCapture.runCapture")(function* (
     timeoutMillis: timeoutForTrigger(triggerKind),
     force,
   });
+
+  if (isAborted(abortSignal)) {
+    return;
+  }
 
   const markerAttributes = {
     "capture.run_id": execution.captureRunId,
@@ -46,11 +57,19 @@ export const runCapture = Effect.fn("MemoryCapture.runCapture")(function* (
   };
 
   yield* Effect.sync(() => {
+    if (isAborted(abortSignal)) {
+      return;
+    }
+
     for (const marker of execution.markers) {
+      if (isAborted(abortSignal)) {
+        return;
+      }
+
       pi.appendEntry(CUSTOM_ENTRY_TYPE, marker);
     }
 
-    if (ctx.hasUI && shouldNotify(execution)) {
+    if (!isAborted(abortSignal) && ctx.hasUI && shouldNotify(execution)) {
       ctx.ui.notify(formatCaptureNotification(execution), notificationLevelForCapture(execution));
     }
   }).pipe(Effect.withSpan("capture.write_markers", { attributes: markerAttributes }));

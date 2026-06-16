@@ -2,11 +2,17 @@ import * as BunFileSystem from "@effect/platform-bun/BunFileSystem";
 import * as BunPath from "@effect/platform-bun/BunPath";
 import { extractAssistantText } from "@urban/agentic-memory-core/steward/PiProcessRunner";
 import { Effect, Fiber, Layer, ManagedRuntime, Option } from "effect";
-import type { SessionEntry } from "@earendil-works/pi-coding-agent";
+import {
+  AuthStorage,
+  ModelRegistry,
+  type ExtensionAPI,
+  type SessionEntry,
+} from "@earendil-works/pi-coding-agent";
 // @effect-diagnostics-next-line nodeBuiltinImport:off
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { CAPTURE_BATCH_SIZE, MARKER_VERSION } from "../../src/constants.ts";
+import memoryCapture from "../../src/index.ts";
 import { CaptureConfig } from "../../src/services/CaptureConfig.ts";
 import {
   MemorySteward,
@@ -19,6 +25,7 @@ import { VaultProjects } from "../../src/services/VaultProjects.ts";
 import { runCapturePass } from "../../src/workflows/capture.ts";
 import {
   decodeAttemptId,
+  encodeProjectConfigJson,
   type CapturePayload,
   type LoadConfigResult,
   type LocalPaths,
@@ -28,6 +35,7 @@ import {
   createTempDirectory,
   makeAssistantEntry,
   makeCustomMarkerEntry,
+  makeSessionManager,
   makeUserEntry,
   removeTempDirectory,
   writeFile,
@@ -321,6 +329,178 @@ describe("MemorySteward", () => {
         ),
       );
   });
+
+  it("cancels session_before_tree capture when tree preparation is aborted", () =>
+    Effect.runPromise(
+      Effect.gen(function* () {
+        const root = createTempDirectory("pi-memory-tree-abort-");
+        const projectRoot = join(root, "project");
+        const vaultRoot = join(root, "vault");
+        const appendedEntries: string[] = [];
+        let execStarted = false;
+        const handlers = new Map<string, Function>();
+
+        const api = {
+          on: (event, handler) => {
+            handlers.set(event, handler);
+          },
+          registerTool: () => undefined,
+          registerCommand: () => undefined,
+          registerShortcut: () => undefined,
+          registerFlag: () => undefined,
+          getFlag: () => undefined,
+          registerMessageRenderer: () => undefined,
+          sendMessage: () => undefined,
+          sendUserMessage: () => undefined,
+          appendEntry: (customType) => {
+            appendedEntries.push(customType);
+          },
+          setSessionName: () => undefined,
+          getSessionName: () => undefined,
+          setLabel: () => undefined,
+          exec: (_command, _args, options) => {
+            execStarted = true;
+            const deferred = Promise.withResolvers<{
+              readonly stdout: string;
+              readonly stderr: string;
+              readonly code: number;
+              readonly killed: boolean;
+            }>();
+            const onAbort = () =>
+              deferred.resolve({
+                stdout: "",
+                stderr: "",
+                code: 143,
+                killed: true,
+              });
+
+            if (options?.signal?.aborted === true) {
+              onAbort();
+            } else {
+              options?.signal?.addEventListener("abort", onAbort, { once: true });
+            }
+
+            return deferred.promise.finally(() => {
+              options?.signal?.removeEventListener("abort", onAbort);
+            });
+          },
+          getActiveTools: () => [],
+          getAllTools: () => [],
+          setActiveTools: () => undefined,
+          getCommands: () => [],
+          setModel: () => Promise.resolve(false),
+          getThinkingLevel: () => "medium",
+          setThinkingLevel: () => undefined,
+          registerProvider: () => undefined,
+          unregisterProvider: () => undefined,
+          events: {
+            emit: () => undefined,
+            on: () => () => undefined,
+          },
+        } satisfies ExtensionAPI;
+
+        memoryCapture(api);
+
+        const beforeTreeHandler = handlers.get("session_before_tree");
+        const shutdownHandler = handlers.get("session_shutdown");
+
+        expect(beforeTreeHandler).toBeDefined();
+        expect(shutdownHandler).toBeDefined();
+        if (beforeTreeHandler === undefined || shutdownHandler === undefined) {
+          throw new Error("Expected session capture handlers to be registered");
+        }
+
+        writeFile(join(vaultRoot, "MEMORY.md"), "# Memory");
+        writeFile(join(vaultRoot, "USER.md"), "# User");
+        writeFile(join(vaultRoot, "projects", ".keep"), "");
+        writeFile(join(vaultRoot, ".agentic-memory", "LLM-outside-vault.md"), "# contract");
+        const configJson = yield* encodeProjectConfigJson({
+          version: 1,
+          vaultPath: vaultRoot,
+          projectSlug,
+        });
+        writeFile(join(projectRoot, ".agentic-memory-link", "config.json"), `${configJson}\n`);
+
+        const ctx = {
+          ui: {
+            notify: () => undefined,
+          },
+          hasUI: false,
+          cwd: projectRoot,
+          sessionManager: makeSessionManager(makeTurnEntries(1)),
+          modelRegistry: ModelRegistry.inMemory(AuthStorage.inMemory()),
+          model: undefined,
+          isIdle: () => true,
+          signal: undefined,
+          abort: () => undefined,
+          hasPendingMessages: () => false,
+          shutdown: () => undefined,
+          getContextUsage: () => undefined,
+          compact: () => undefined,
+          getSystemPrompt: () => "",
+        };
+        const cleanupCtx = {
+          ...ctx,
+          sessionManager: makeSessionManager([]),
+        };
+        const controller = new AbortController();
+
+        yield* Effect.gen(function* () {
+          const captureFiber = yield* Effect.forkChild(
+            Effect.promise(() =>
+              Promise.resolve(
+                beforeTreeHandler(
+                  {
+                    type: "session_before_tree",
+                    preparation: {
+                      targetId: "leaf-1",
+                      oldLeafId: "leaf-0",
+                      commonAncestorId: "a0",
+                      entriesToSummarize: [],
+                      userWantsSummary: true,
+                    },
+                    signal: controller.signal,
+                  },
+                  ctx,
+                ),
+              ),
+            ),
+          );
+
+          let spins = 0;
+          while (!execStarted && spins < 1_000) {
+            spins += 1;
+            yield* Effect.yieldNow;
+          }
+
+          expect(execStarted).toBe(true);
+          yield* Effect.sync(() => controller.abort());
+
+          const status = yield* Effect.raceFirst(
+            Fiber.join(captureFiber).pipe(Effect.as("settled")),
+            Effect.sleep(150).pipe(Effect.as("pending")),
+          );
+
+          expect(status).toBe("settled");
+          expect(appendedEntries).toHaveLength(0);
+        }).pipe(
+          Effect.ensuring(
+            Effect.promise(() =>
+              Promise.resolve(
+                shutdownHandler(
+                  {
+                    type: "session_shutdown",
+                    reason: "reload",
+                  },
+                  cleanupCtx,
+                ),
+              ),
+            ),
+          ),
+          Effect.ensuring(Effect.sync(() => removeTempDirectory(root))),
+        );
+      }),
+    ));
 });
 
 describe("runtime capture flow", () => {

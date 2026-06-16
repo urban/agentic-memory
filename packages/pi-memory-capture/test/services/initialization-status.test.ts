@@ -1,10 +1,18 @@
 import * as BunFileSystem from "@effect/platform-bun/BunFileSystem";
 import * as BunPath from "@effect/platform-bun/BunPath";
+import {
+  AuthStorage,
+  ModelRegistry,
+  SessionManager,
+  type ExtensionCommandContext,
+} from "@earendil-works/pi-coding-agent";
 import { Effect, Layer, ManagedRuntime } from "effect";
+import { theme } from "../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js";
 // @effect-diagnostics-next-line nodeBuiltinImport:off
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { encodeProjectConfigJson, type ResolvedProjectConfig } from "../../src/schema.ts";
+import { runInitCommand } from "../../src/initialization.ts";
 import { CaptureConfig } from "../../src/services/CaptureConfig.ts";
 import { Git } from "../../src/services/Git.ts";
 import { Markers } from "../../src/services/Markers.ts";
@@ -32,7 +40,108 @@ const runtimeLayer = Layer.mergeAll(
   Markers.layer,
 ).pipe(Layer.provide(Layer.mergeAll(BunFileSystem.layer, BunPath.layer)));
 
+const makeCommandContext = (cwd: string) =>
+  ({
+    ui: {
+      select: () => Promise.resolve(undefined),
+      confirm: () => Promise.resolve(false),
+      input: () => Promise.resolve(undefined),
+      notify: () => undefined,
+      onTerminalInput: () => () => undefined,
+      setStatus: () => undefined,
+      setWorkingMessage: () => undefined,
+      setWorkingVisible: () => undefined,
+      setWorkingIndicator: () => undefined,
+      setHiddenThinkingLabel: () => undefined,
+      setWidget: () => undefined,
+      setFooter: () => undefined,
+      setHeader: () => undefined,
+      setTitle: () => undefined,
+      custom: () => Promise.reject(new Error("Unexpected custom UI request")),
+      pasteToEditor: () => undefined,
+      setEditorText: () => undefined,
+      getEditorText: () => "",
+      editor: () => Promise.resolve(undefined),
+      addAutocompleteProvider: () => undefined,
+      setEditorComponent: () => undefined,
+      getEditorComponent: () => undefined,
+      theme,
+      getAllThemes: () => [],
+      getTheme: () => undefined,
+      setTheme: () => ({ success: false, error: "Theme switching is unavailable in tests" }),
+      getToolsExpanded: () => false,
+      setToolsExpanded: () => undefined,
+    },
+    hasUI: false,
+    cwd,
+    sessionManager: SessionManager.inMemory(cwd),
+    modelRegistry: ModelRegistry.inMemory(AuthStorage.inMemory()),
+    model: undefined,
+    isIdle: () => true,
+    signal: undefined,
+    abort: () => undefined,
+    hasPendingMessages: () => false,
+    shutdown: () => undefined,
+    getContextUsage: () => undefined,
+    compact: () => undefined,
+    getSystemPrompt: () => "",
+    waitForIdle: () => Promise.resolve(undefined),
+    newSession: () => Promise.resolve({ cancelled: false }),
+    fork: () => Promise.resolve({ cancelled: false }),
+    navigateTree: () => Promise.resolve({ cancelled: false }),
+    switchSession: () => Promise.resolve({ cancelled: false }),
+    reload: () => Promise.resolve(undefined),
+  }) satisfies ExtensionCommandContext;
+
 describe("initialization status flow", () => {
+  it("accepts the documented project wiki-link argument format", () => {
+    const root = createTempDirectory("pi-memory-init-link-");
+    const cwd = join(root, "project");
+    const vault = join(root, "vault");
+    const configFile = join(cwd, ".agentic-memory-link", "config.json");
+    const projectFile = join(vault, "projects", "capture-extension.md");
+    const runtime = ManagedRuntime.make(runtimeLayer);
+
+    writeFile(join(vault, ".agentic-memory", "LLM-outside-vault.md"), "# contract");
+    writeFile(join(vault, "USER.md"), "# User\n");
+    writeFile(
+      join(vault, "MEMORY.md"),
+      `---
+updated: 2026-01-01
+---
+
+# Memory
+
+## Current
+
+- Active work.
+`,
+    );
+    writeFile(projectFile, "# Capture Extension\n");
+
+    return runtime
+      .runPromise(
+        Effect.gen(function* () {
+          yield* runInitCommand(`${vault} [[projects/capture-extension]]`, makeCommandContext(cwd));
+
+          const config = yield* CaptureConfig;
+          const loaded = yield* config.load(cwd);
+
+          expect(loaded._tag).toBe("valid");
+          if (loaded._tag === "valid") {
+            expect(loaded.paths.configFile).toBe(configFile);
+            expect(loaded.config.vaultPath).toBe(vault);
+            expect(loaded.config.projectSlug).toBe("capture-extension");
+          }
+        }),
+      )
+      .finally(() =>
+        Promise.all([runtime.dispose(), Promise.resolve(removeTempDirectory(root))]).then(
+          () => undefined,
+        ),
+      );
+  });
+
   it("writes link config and status reports latest branch-local markers", () => {
     const root = createTempDirectory("pi-memory-init-status-");
     const cwd = join(root, "project");

@@ -10,7 +10,7 @@ Use `writing-memory.md` for persistence/promotion rules and `linking-and-maps.md
 - `MEMORY.md`: budget, top-level routes, project routes
 - `USER.md`: budget, confidence labels, pointer quality, overconfidence/sensitivity
 - maps: purpose, route format, depth, content-dump risk
-- projects: `project_status`, current state, next context, stale state, duplicated source facts, promotion opportunities
+- projects: `project_status`, resume context, project timeline, decision log, next useful context, stale state, duplicated source facts, promotion opportunities
 - notes: focus, maturity, semantic links, duplication, orphan status
 - people: usefulness, evidence, speculation/sensitivity risk
 - records/sources: boundaries, sizes, provenance
@@ -26,7 +26,7 @@ Ask before high-impact changes: deletion, pruning, archiving, splitting, merging
 
 ## Flag
 
-- missing `project_status`, current state, or next useful context
+- missing `project_status`, `Resume context`, `Project timeline`, `Decision log`, or next useful context
 - project task logs/source-code summaries/reusable insights that belong elsewhere
 - bulky, duplicated, overconfident, speculative, or unlabeled `USER.md` entries
 - maps that duplicate notes/projects instead of routing

@@ -38,9 +38,12 @@ const isCompatibleVault = Effect.fnUntraced(function* (
 ): Effect.fn.Return<boolean, never, FileSystem.FileSystem | Path.Path> {
   const path = yield* Path.Path;
   const required = [
+    "AGENTS.md",
     "MEMORY.md",
     "USER.md",
+    path.join(".agentic-memory", "LLM-vault-local.md"),
     path.join(".agentic-memory", "LLM-outside-vault.md"),
+    path.join(".agentic-memory", "adapters", "MEMORY_ADAPTER.md"),
     "projects",
   ];
 

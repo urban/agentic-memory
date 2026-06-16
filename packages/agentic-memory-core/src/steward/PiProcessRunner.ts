@@ -1,4 +1,5 @@
-import { Config as EffectConfig, Effect, Layer, Option, Schema, Stream } from "effect";
+import { Config as EffectConfig, Effect, Layer, Option, Ref, Schema, Stream } from "effect";
+import * as Fiber from "effect/Fiber";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import type { CaptureCorrelation } from "../observability/CaptureTelemetry.ts";
 import {
@@ -184,8 +185,28 @@ const runProcess = Effect.fnUntraced(function* (
     stdout: "pipe",
     stderr: "pipe",
   });
-  const collectOutput = Effect.scoped(
+
+  const appendDecodedStream = (
+    stream: Stream.Stream<Uint8Array, unknown>,
+    ref: Ref.Ref<string>,
+    channel: "stdout" | "stderr",
+  ): Effect.Effect<void, StewardRunnerError> =>
+    stream.pipe(
+      Stream.decodeText(),
+      Stream.runForEach((chunk) => Ref.update(ref, (current) => current + chunk)),
+      Effect.mapError(
+        (cause) =>
+          new StewardRunnerError({
+            message: `Failed while collecting Memory Steward process ${channel}`,
+            cause,
+          }),
+      ),
+    );
+
+  return yield* Effect.scoped(
     Effect.gen(function* () {
+      const stdoutRef = yield* Ref.make("");
+      const stderrRef = yield* Ref.make("");
       const handle = yield* spawner.spawn(command).pipe(
         Effect.mapError(
           (cause) =>
@@ -195,14 +216,25 @@ const runProcess = Effect.fnUntraced(function* (
             }),
         ),
       );
-      return yield* Effect.all(
-        {
-          stdout: handle.stdout.pipe(Stream.decodeText(), Stream.mkString),
-          stderr: handle.stderr.pipe(Stream.decodeText(), Stream.mkString),
-          exitCode: handle.exitCode,
-        },
-        { concurrency: 3 },
-      ).pipe(
+      const stdoutFiber = yield* appendDecodedStream(handle.stdout, stdoutRef, "stdout").pipe(
+        Effect.forkScoped({ startImmediately: true }),
+      );
+      const stderrFiber = yield* appendDecodedStream(handle.stderr, stderrRef, "stderr").pipe(
+        Effect.forkScoped({ startImmediately: true }),
+      );
+      const collectOutput = handle.exitCode.pipe(
+        Effect.flatMap((exitCode) =>
+          Effect.all([
+            Fiber.join(stdoutFiber),
+            Fiber.join(stderrFiber),
+            Effect.all({
+              stdout: Ref.get(stdoutRef),
+              stderr: Ref.get(stderrRef),
+              exitCode: Effect.succeed(exitCode),
+            }),
+          ]),
+        ),
+        Effect.map(([, , processResult]) => processResult),
         Effect.mapError(
           (cause) =>
             new StewardRunnerError({
@@ -211,22 +243,31 @@ const runProcess = Effect.fnUntraced(function* (
             }),
         ),
       );
-    }),
-  );
 
-  if (processCommand.timeoutMillis === undefined) {
-    return yield* collectOutput;
-  }
+      if (processCommand.timeoutMillis === undefined) {
+        return yield* collectOutput;
+      }
 
-  return yield* collectOutput.pipe(
-    Effect.timeoutOrElse({
-      duration: processCommand.timeoutMillis,
-      orElse: () =>
-        Effect.fail(
-          new StewardRunnerError({
-            message: "Timed out waiting for steward final JSON after child process launch",
-          }),
-        ),
+      return yield* collectOutput.pipe(
+        Effect.timeoutOrElse({
+          duration: processCommand.timeoutMillis,
+          orElse: () =>
+            Effect.gen(function* () {
+              const stdout = yield* Ref.get(stdoutRef);
+              const stderr = yield* Ref.get(stderrRef);
+              const stewardSession = extractStewardSessionPointer(
+                stdout,
+                processCommand.sessionName,
+              );
+
+              return yield* new StewardRunnerError({
+                message: "Timed out waiting for steward final JSON after child process launch",
+                cause: processOutputDiagnostics({ stdout, stderr }),
+                ...(stewardSession === undefined ? {} : { stewardSession }),
+              });
+            }),
+        }),
+      );
     }),
   );
 });

@@ -1,8 +1,18 @@
+import * as BunServices from "@effect/platform-bun/BunServices";
 import { assert, describe, it } from "@effect/vitest";
-import { Effect } from "effect";
+import { Context, Effect, FileSystem, Layer, ManagedRuntime, Path, Sink, Stream } from "effect";
+import * as Fiber from "effect/Fiber";
+import * as TestClock from "effect/testing/TestClock";
+import { ChildProcessSpawner } from "effect/unstable/process";
+import { afterAll } from "vitest";
 import { decodeCapturePayloadJson, MESSAGE_CHAR_LIMIT } from "../src/capture/CapturePayload.ts";
 import { shapeCapturePayload } from "../src/capture/PayloadShaping.ts";
-import { decodeLinkConfigJson } from "../src/link/LinkConfig.ts";
+import {
+  decodeLinkConfig,
+  decodeLinkConfigJson,
+  loadLinkConfig,
+  writeLinkConfig,
+} from "../src/link/LinkConfig.ts";
 import {
   decodeProjectSlug,
   projectFileRelativePathFromSlug,
@@ -12,13 +22,50 @@ import {
   buildPiProcessCommand,
   extractAssistantText,
   extractStewardSessionPointer,
+  PiProcessRunnerLayer,
 } from "../src/steward/PiProcessRunner.ts";
+import { StewardRunner } from "../src/steward/StewardExecution.ts";
 import { decodeStewardResultJson } from "../src/steward/StewardResult.ts";
+import { ensureProjectFile, ensureProjectRouteInMemory } from "../src/vault/ProjectRoute.ts";
+import { checkVaultHealth } from "../src/vault/VaultStatus.ts";
+import { initVaultFromTemplate } from "../src/vault/VaultTemplate.ts";
 
 const validPayloadJson =
   '{"version":1,"projectSlug":"agentic-memory-cli","messages":[{"role":"user","text":"hello"}]}';
 
+const sessionHeaderLine =
+  '{"type":"session","version":3,"id":"session-1","timestamp":"2026-06-15T12:00:00.000Z","cwd":"/vault"}\n';
+
+const CoreContractsRuntime = ManagedRuntime.make(BunServices.layer);
+
+const timeoutingSpawnerLayer = Layer.succeed(
+  ChildProcessSpawner.ChildProcessSpawner,
+  ChildProcessSpawner.make((_command) =>
+    Effect.succeed(
+      ChildProcessSpawner.makeHandle({
+        pid: ChildProcessSpawner.ProcessId(12345),
+        stdin: Sink.drain,
+        stdout: Stream.make(new TextEncoder().encode(sessionHeaderLine)).pipe(
+          Stream.concat(Stream.never),
+        ),
+        stderr: Stream.empty,
+        all: Stream.make(new TextEncoder().encode(sessionHeaderLine)).pipe(
+          Stream.concat(Stream.never),
+        ),
+        exitCode: Effect.never,
+        isRunning: Effect.succeed(true),
+        kill: () => Effect.void,
+        getInputFd: () => Sink.drain,
+        getOutputFd: () => Stream.empty,
+        unref: Effect.succeed(Effect.void),
+      }),
+    ),
+  ),
+);
+
 describe("core contracts", () => {
+  afterAll(() => CoreContractsRuntime.dispose());
+
   it.effect("validates project slugs and derives vault routes", () =>
     Effect.gen(function* () {
       const slug = yield* decodeProjectSlug("agentic-memory-cli");
@@ -44,6 +91,57 @@ describe("core contracts", () => {
         assert.strictEqual(decoded.projectSlug, "agentic-memory-cli");
         assert.strictEqual(oldShape._tag, "Failure");
       }),
+  );
+
+  it.effect("rejects symlinked link config paths instead of following them", () =>
+    CoreContractsRuntime.contextEffect.pipe(
+      Effect.flatMap((context) =>
+        Effect.provideContext(
+          Effect.scoped(
+            Effect.gen(function* () {
+              const fs = yield* FileSystem.FileSystem;
+              const path = yield* Path.Path;
+              const root = yield* fs.makeTempDirectoryScoped({
+                prefix: "agentic-memory-core-link-symlink-",
+              });
+              const projectRoot = path.join(root, "project");
+              const linkDirectory = path.join(projectRoot, ".agentic-memory-link");
+              const configFile = path.join(linkDirectory, "config.json");
+              const targetFile = path.join(root, "outside-config.json");
+
+              yield* fs.makeDirectory(linkDirectory, { recursive: true });
+              yield* fs.writeFileString(
+                targetFile,
+                '{"version":1,"vaultPath":"/vault-a","projectSlug":"old-project"}\n',
+              );
+              yield* fs.symlink(targetFile, configFile);
+
+              const loaded = yield* loadLinkConfig(projectRoot);
+              const writeResult = yield* decodeLinkConfig({
+                version: 1,
+                vaultPath: "/vault-b",
+                projectSlug: yield* decodeProjectSlug("agentic-memory-cli"),
+              }).pipe(
+                Effect.flatMap((config) => writeLinkConfig(projectRoot, config)),
+                Effect.exit,
+              );
+              const targetContents = yield* fs.readFileString(targetFile);
+
+              assert.strictEqual(loaded._tag, "invalid");
+              if (loaded._tag === "invalid") {
+                assert.include(loaded.message, "must not be a symlink");
+              }
+              assert.strictEqual(writeResult._tag, "Failure");
+              assert.strictEqual(
+                targetContents,
+                '{"version":1,"vaultPath":"/vault-a","projectSlug":"old-project"}\n',
+              );
+            }),
+          ),
+          context,
+        ),
+      ),
+    ),
   );
 
   it.effect("validates capture payloads and shapes visible text", () =>
@@ -169,5 +267,316 @@ describe("core contracts", () => {
       assert.strictEqual(stewardSession?.sessionId, "session-1");
       assert.strictEqual(stewardSession?.name, "Memory Steward capture attempt-1");
     }),
+  );
+
+  it.effect(
+    "preserves the steward session pointer when the Pi process times out after emitting the session header",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const context = yield* Layer.build(
+            PiProcessRunnerLayer.pipe(Layer.provide(timeoutingSpawnerLayer)),
+          );
+          const runner = Context.get(context, StewardRunner);
+          const payload = yield* decodeCapturePayloadJson(validPayloadJson);
+          const fiber = yield* runner
+            .run({
+              context: {
+                status: "ready",
+                payload,
+                vault: {
+                  path: "/vault",
+                  projectFile: "/vault/projects/agentic-memory-cli.md",
+                  memoryFile: "/vault/MEMORY.md",
+                  userFile: "/vault/USER.md",
+                  outsideVaultInstructions: "/vault/.agentic-memory/LLM-outside-vault.md",
+                },
+                instructions: {
+                  outsideVault: "contract",
+                  prompt: "prompt",
+                },
+                resultContract: {
+                  statusValues: ["captured", "no_changes"],
+                  capturedRequiresSummary: true,
+                },
+                warnings: [],
+              },
+              correlation: {
+                attemptId: "attempt-1",
+              },
+              options: {
+                timeoutMillis: 10,
+              },
+            })
+            .pipe(Effect.flip, Effect.forkChild);
+
+          yield* Effect.yieldNow;
+          yield* TestClock.adjust(10);
+
+          const error = yield* Fiber.join(fiber);
+
+          assert.strictEqual(
+            error.message,
+            "Timed out waiting for steward final JSON after child process launch",
+          );
+          assert.strictEqual(error.stewardSession?.sessionId, "session-1");
+          assert.strictEqual(error.stewardSession?.name, "Memory Steward capture attempt-1");
+          assert.strictEqual(error.stewardSession?.cwd, "/vault");
+        }),
+      ),
+  );
+
+  it.effect("adds a dedicated project route instead of accepting incidental project mentions", () =>
+    Effect.sync(() => {
+      const updated = ensureProjectRouteInMemory(
+        `---
+updated: 2026-06-01
+---
+
+# Memory
+
+## Current
+
+- Mention [[projects/agentic-memory-cli]] in prose only.
+`,
+        "agentic-memory-cli",
+        "2026-06-16",
+      );
+
+      assert.strictEqual(updated.added, true);
+      assert.match(
+        updated.content,
+        /## Projects\n\n- \[\[projects\/agentic-memory-cli\]\] — agentic-memory-cli\./,
+      );
+    }),
+  );
+
+  it.effect("does not copy placeholder example links into generated project files", () =>
+    CoreContractsRuntime.contextEffect.pipe(
+      Effect.flatMap((context) =>
+        Effect.provideContext(
+          Effect.scoped(
+            Effect.gen(function* () {
+              const fs = yield* FileSystem.FileSystem;
+              const path = yield* Path.Path;
+              const vaultPath = yield* fs.makeTempDirectoryScoped({
+                prefix: "agentic-memory-core-project-template-",
+              });
+              const templatePath = path.join(
+                vaultPath,
+                ".agentic-memory",
+                "templates",
+                "project.md",
+              );
+
+              yield* fs.makeDirectory(path.dirname(templatePath), { recursive: true });
+              yield* fs.writeFileString(
+                templatePath,
+                `# Project Template
+
+\`\`\`md
+---
+type: project
+project_status: candidate
+summary: "One-line project summary."
+---
+
+# Project Name
+
+## Resume context
+
+Placeholder.
+
+## Project timeline
+
+- YYYY-MM-DD: Placeholder milestone.
+
+## Decision log
+
+- Decision: Placeholder.
+  Rationale: Placeholder.
+
+## Routing
+
+- [[notes/example]] — short description. Read when: condition.
+
+## Semantic links
+
+> [!info] Semantic links
+>
+> - [[projects/example]] — parent, origin, or broader effort. Read when: condition.
+\`\`\`
+`,
+              );
+
+              const created = yield* ensureProjectFile({
+                vaultPath,
+                projectSlug: yield* decodeProjectSlug("agentic-memory-cli"),
+                date: "2026-06-16",
+              });
+              const projectPath = path.join(vaultPath, "projects", "agentic-memory-cli.md");
+              const contents = yield* fs.readFileString(projectPath);
+
+              assert.strictEqual(created, true);
+              assert.include(contents, "# agentic-memory-cli");
+              assert.notInclude(contents, "[[notes/example]]");
+              assert.notInclude(contents, "[[projects/example]]");
+            }),
+          ),
+          context,
+        ),
+      ),
+    ),
+  );
+
+  it.effect("treats incidental project mentions as unhealthy until a dedicated route exists", () =>
+    CoreContractsRuntime.contextEffect.pipe(
+      Effect.flatMap((context) =>
+        Effect.provideContext(
+          Effect.scoped(
+            Effect.gen(function* () {
+              const fs = yield* FileSystem.FileSystem;
+              const path = yield* Path.Path;
+              const vaultPath = yield* fs.makeTempDirectoryScoped({
+                prefix: "agentic-memory-core-route-health-",
+              });
+
+              yield* fs.makeDirectory(path.join(vaultPath, ".agentic-memory"), {
+                recursive: true,
+              });
+              yield* fs.makeDirectory(path.join(vaultPath, "projects"), {
+                recursive: true,
+              });
+              yield* fs.writeFileString(
+                path.join(vaultPath, "MEMORY.md"),
+                `---
+updated: 2026-06-01
+---
+
+# Memory
+
+## Current
+
+- Mention [[projects/agentic-memory-cli]] in prose only.
+`,
+              );
+              yield* fs.writeFileString(path.join(vaultPath, "USER.md"), "# User\n");
+              yield* fs.writeFileString(
+                path.join(vaultPath, ".agentic-memory", "LLM-outside-vault.md"),
+                "outside-vault contract",
+              );
+              yield* fs.writeFileString(
+                path.join(vaultPath, "projects", "agentic-memory-cli.md"),
+                "# agentic-memory-cli\n",
+              );
+
+              const health = yield* checkVaultHealth({
+                vaultPath,
+                projectSlug: yield* decodeProjectSlug("agentic-memory-cli"),
+              });
+
+              assert.strictEqual(health.memoryRouteExists, false);
+              assert.strictEqual(health.healthy, false);
+            }),
+          ),
+          context,
+        ),
+      ),
+    ),
+  );
+
+  it.effect(
+    "treats vaults missing session-capture guidance as unhealthy for steward capture",
+    () =>
+      CoreContractsRuntime.contextEffect.pipe(
+        Effect.flatMap((context) =>
+          Effect.provideContext(
+            Effect.scoped(
+              Effect.gen(function* () {
+                const fs = yield* FileSystem.FileSystem;
+                const path = yield* Path.Path;
+                const vaultPath = yield* fs.makeTempDirectoryScoped({
+                  prefix: "agentic-memory-core-capture-health-",
+                });
+
+                yield* fs.makeDirectory(path.join(vaultPath, ".agentic-memory"), {
+                  recursive: true,
+                });
+                yield* fs.makeDirectory(path.join(vaultPath, "projects"), {
+                  recursive: true,
+                });
+                yield* fs.writeFileString(
+                  path.join(vaultPath, "MEMORY.md"),
+                  `# Memory
+
+## Projects
+
+- [[projects/agentic-memory-cli]] — agentic-memory-cli.
+`,
+                );
+                yield* fs.writeFileString(path.join(vaultPath, "USER.md"), "# User\n");
+                yield* fs.writeFileString(
+                  path.join(vaultPath, ".agentic-memory", "LLM-outside-vault.md"),
+                  "outside-vault contract",
+                );
+                yield* fs.writeFileString(
+                  path.join(vaultPath, "projects", "agentic-memory-cli.md"),
+                  "# agentic-memory-cli\n",
+                );
+
+                const health = yield* checkVaultHealth({
+                  vaultPath,
+                  projectSlug: yield* decodeProjectSlug("agentic-memory-cli"),
+                });
+
+                assert.strictEqual(health.healthy, false);
+              }),
+            ),
+            context,
+          ),
+        ),
+      ),
+  );
+
+  it.effect(
+    "rejects partial non-empty vaults instead of treating them as already initialized",
+    () =>
+      CoreContractsRuntime.contextEffect.pipe(
+        Effect.flatMap((context) =>
+          Effect.provideContext(
+            Effect.scoped(
+              Effect.gen(function* () {
+                const fs = yield* FileSystem.FileSystem;
+                const path = yield* Path.Path;
+                const vaultPath = yield* fs.makeTempDirectoryScoped({
+                  prefix: "agentic-memory-core-init-",
+                });
+
+                yield* fs.makeDirectory(path.join(vaultPath, ".agentic-memory"), {
+                  recursive: true,
+                });
+                yield* fs.makeDirectory(path.join(vaultPath, "projects"), {
+                  recursive: true,
+                });
+                yield* fs.writeFileString(path.join(vaultPath, "MEMORY.md"), "# Memory\n");
+                yield* fs.writeFileString(path.join(vaultPath, "USER.md"), "# User\n");
+                yield* fs.writeFileString(
+                  path.join(vaultPath, ".agentic-memory", "LLM-outside-vault.md"),
+                  "outside-vault contract",
+                );
+
+                const result = yield* initVaultFromTemplate({
+                  targetPath: vaultPath,
+                  initializeGit: false,
+                  yes: false,
+                }).pipe(Effect.exit);
+
+                assert.strictEqual(result._tag, "Failure");
+              }),
+            ),
+            context,
+          ),
+        ),
+      ),
   );
 });

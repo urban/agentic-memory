@@ -82,6 +82,13 @@ export const commandLink = Command.make(
       });
     }
 
+    const paths = existingMatches
+      ? existing.paths
+      : yield* writeLinkConfig(projectRoot, config).pipe(
+          Effect.mapError((cause) =>
+            toFailure({ code: "WriteConfigFailed", message: cause.message }),
+          ),
+        );
     const date = yield* Clock.clockWith((clock) =>
       Effect.sync(() => formatIsoDateFromMillis(clock.currentTimeMillisUnsafe())),
     );
@@ -99,14 +106,6 @@ export const commandLink = Command.make(
     }).pipe(
       Effect.mapError((cause) => toFailure({ code: "MemoryRouteFailed", message: cause.message })),
     );
-
-    const paths = existingMatches
-      ? existing.paths
-      : yield* writeLinkConfig(projectRoot, config).pipe(
-          Effect.mapError((cause) =>
-            toFailure({ code: "WriteConfigFailed", message: cause.message }),
-          ),
-        );
     const gitExclude = yield* ensureGitExcludeEntry(projectRoot).pipe(
       Effect.mapError((cause) => toFailure({ code: "GitExcludeFailed", message: cause.message })),
     );

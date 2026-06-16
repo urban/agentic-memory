@@ -1,9 +1,6 @@
 import { Effect, FileSystem, Path, Schema } from "effect";
-import {
-  projectFileRelativePathFromSlug,
-  projectWikiLinkFromSlug,
-  type ProjectSlug,
-} from "../link/ProjectSlug.ts";
+import { projectFileRelativePathFromSlug, type ProjectSlug } from "../link/ProjectSlug.ts";
+import { hasProjectRouteInMemory } from "./ProjectRoute.ts";
 
 export const VaultHealth = Schema.Struct({
   path: Schema.String,
@@ -70,6 +67,11 @@ export const checkVaultHealth = Effect.fnUntraced(function* (input: {
   const outsideVaultInstructionsExists = pathIsAbsolute
     ? yield* existsOrFalse(paths.outsideVaultInstructions)
     : false;
+  const sessionCaptureInstructionsExists = pathIsAbsolute
+    ? yield* existsOrFalse(
+        path.join(input.vaultPath, ".agentic-memory", "instructions", "session-capture.md"),
+      )
+    : false;
   const projectsDirectoryExists = pathIsAbsolute
     ? yield* existsOrFalse(paths.projectsDirectory)
     : false;
@@ -77,7 +79,7 @@ export const checkVaultHealth = Effect.fnUntraced(function* (input: {
   const memoryRouteExists =
     memoryFileExists && pathIsAbsolute
       ? yield* fs.readFileString(paths.memoryFile).pipe(
-          Effect.map((contents) => contents.includes(projectWikiLinkFromSlug(input.projectSlug))),
+          Effect.map((contents) => hasProjectRouteInMemory(contents, input.projectSlug)),
           Effect.catch(() => Effect.succeed(false)),
         )
       : false;
@@ -87,6 +89,7 @@ export const checkVaultHealth = Effect.fnUntraced(function* (input: {
     memoryFileExists &&
     userFileExists &&
     outsideVaultInstructionsExists &&
+    sessionCaptureInstructionsExists &&
     projectsDirectoryExists &&
     projectFileExists &&
     memoryRouteExists;
