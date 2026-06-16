@@ -8,7 +8,11 @@ import {
   projectFileRelativePathFromSlug,
   projectWikiLinkFromSlug,
 } from "../src/link/ProjectSlug.ts";
-import { buildPiProcessCommand, extractAssistantText } from "../src/steward/PiProcessRunner.ts";
+import {
+  buildPiProcessCommand,
+  extractAssistantText,
+  extractStewardSessionPointer,
+} from "../src/steward/PiProcessRunner.ts";
 import { decodeStewardResultJson } from "../src/steward/StewardResult.ts";
 
 const validPayloadJson =
@@ -89,6 +93,21 @@ describe("core contracts", () => {
     }),
   );
 
+  it.effect("validates bounded steward decision reports when present", () =>
+    Effect.gen(function* () {
+      const decoded = yield* decodeStewardResultJson(
+        '{"status":"no_changes","decisionReport":{"decisionSummary":"No durable memory was observed.","durability":"not_durable","selectedDestinations":[],"skippedDestinations":[{"memoryLayer":"USER","reason":"No stable user preference or owner fact was observed."}],"durableSignals":[],"duplicateSignals":[],"privacyNotes":["No raw transcript text was stored."]}}',
+      );
+      const oversizedSummary = "x".repeat(501);
+      const oversized = yield* decodeStewardResultJson(
+        `{"status":"no_changes","decisionReport":{"decisionSummary":"${oversizedSummary}","durability":"uncertain","selectedDestinations":[],"skippedDestinations":[],"durableSignals":[],"duplicateSignals":[],"privacyNotes":[]}}`,
+      ).pipe(Effect.exit);
+
+      assert.strictEqual(decoded.decisionReport?.durability, "not_durable");
+      assert.strictEqual(oversized._tag, "Failure");
+    }),
+  );
+
   it.effect("constructs isolated Pi runner commands and extracts final assistant JSON", () =>
     Effect.gen(function* () {
       const command = buildPiProcessCommand({
@@ -114,6 +133,9 @@ describe("core contracts", () => {
             },
             warnings: [],
           },
+          correlation: {
+            attemptId: "attempt-1",
+          },
           options: {
             provider: "anthropic",
             model: "claude",
@@ -126,12 +148,26 @@ describe("core contracts", () => {
       );
 
       assert.strictEqual(command.command, "pi-test");
+      assert.include(command.args, "--name");
+      assert.include(command.args, "Memory Steward capture attempt-1");
       assert.include(command.args, "--no-context-files");
+      assert.notInclude(command.args, "--no-session");
+      assert.notInclude(command.args, "--continue");
+      assert.notInclude(command.args, "--session");
+      assert.notInclude(command.args, "--fork");
+      assert.notInclude(command.args, "--clone");
       assert.notInclude(command.args, "--no-tools");
       assert.include(command.args, "--provider");
       assert.include(command.args, "anthropic");
+      const stewardSession = extractStewardSessionPointer(
+        '{"type":"session","version":3,"id":"session-1","timestamp":"2026-06-15T12:00:00.000Z","cwd":"/vault"}\n',
+        "Memory Steward capture attempt-1",
+      );
+
       assert.strictEqual(command.cwd, "/vault");
       assert.strictEqual(assistantText, '{"status":"no_changes"}');
+      assert.strictEqual(stewardSession?.sessionId, "session-1");
+      assert.strictEqual(stewardSession?.name, "Memory Steward capture attempt-1");
     }),
   );
 });

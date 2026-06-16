@@ -1,5 +1,7 @@
+import packageJson from "../package.json" with { type: "json" };
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import * as BunServices from "@effect/platform-bun/BunServices";
+import { makeCaptureObservabilityLayer } from "@urban/agentic-memory-core/observability/CaptureTelemetry";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { CaptureConfig } from "./services/CaptureConfig.ts";
 import { Git } from "./services/Git.ts";
@@ -35,6 +37,12 @@ export const makeMemoryCaptureRuntime = (pi: ExtensionAPI) => {
     Preprocessor.layer,
     MemorySteward.layer.pipe(Layer.provideMerge(captureConfigLayer)),
   ).pipe(Layer.provide(infrastructureLayer));
+  const observabilityLayer = makeCaptureObservabilityLayer({
+    serviceName: "agentic-memory-pi-capture",
+    serviceVersion: packageJson.version,
+    component: "pi-capture",
+    harness: "pi",
+  });
 
-  return ManagedRuntime.make(servicesLayer);
+  return ManagedRuntime.make(Layer.merge(servicesLayer, observabilityLayer));
 };

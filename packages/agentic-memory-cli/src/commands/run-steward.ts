@@ -7,6 +7,10 @@ import { Command } from "effect/unstable/cli";
 import { exitWith, toFailure, withCliFailureOutput } from "../output.ts";
 import { commandRoot } from "./root.ts";
 import {
+  captureAttemptIdFlag,
+  captureProjectSlugFlag,
+  captureRunIdFlag,
+  captureTriggerKindFlag,
   modelFlag,
   optionalProjectFlag,
   optionalVaultFlag,
@@ -14,6 +18,7 @@ import {
   projectRootFlag,
   providerFlag,
   readPayload,
+  resolveCaptureCorrelation,
   resolveStewardTarget,
   runnerOptionsFromInput,
   thinkingFlag,
@@ -31,6 +36,10 @@ export const commandRunSteward = Command.make(
     model: modelFlag,
     thinking: thinkingFlag,
     timeoutMillis: timeoutMillisFlag,
+    captureAttemptId: captureAttemptIdFlag,
+    captureRunId: captureRunIdFlag,
+    captureTriggerKind: captureTriggerKindFlag,
+    captureProjectSlug: captureProjectSlugFlag,
   },
   Effect.fnUntraced(function* (input) {
     const root = yield* commandRoot;
@@ -46,12 +55,19 @@ export const commandRunSteward = Command.make(
       thinking: input.thinking,
       timeoutMillis: input.timeoutMillis,
     });
+    const correlation = yield* resolveCaptureCorrelation({
+      attemptId: input.captureAttemptId,
+      runId: input.captureRunId,
+      triggerKind: input.captureTriggerKind,
+      projectSlug: input.captureProjectSlug,
+    });
     const result = yield* runSteward({
       payload,
       vaultPath: target.vaultPath,
       projectSlug: target.projectSlug,
       payloadWarnings: [],
       options,
+      ...(correlation === undefined ? {} : { correlation }),
     }).pipe(
       Effect.mapError((cause) =>
         toFailure({

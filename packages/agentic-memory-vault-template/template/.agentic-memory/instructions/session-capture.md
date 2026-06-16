@@ -4,9 +4,9 @@ Guidance for Memory Steward capture passes invoked from work outside the vault.
 
 ## Inputs
 
-- Treat the Capture Payload as the authoritative session summary.
-- Use only visible user/assistant text, the observation window metadata, and the local scratchpad returned in the payload.
-- Do not reconstruct hidden reasoning, tool-call internals, raw transcript logs, or omitted repository state.
+- Treat the Capture Payload as the authoritative bounded session input.
+- Use only visible user/assistant text and the project route in the payload.
+- Do not reconstruct hidden reasoning, tool-call internals, raw transcript logs, image content, omitted tool output, or omitted repository state.
 
 ## What to persist
 
@@ -31,14 +31,19 @@ Guidance for Memory Steward capture passes invoked from work outside the vault.
 - Prefer promotion and linking over duplicating reusable knowledge across many projects.
 - Do not turn project files into issue trackers or sprint logs.
 
-## Scratchpad
+## Decision report
 
-- Scratchpad is local extension state passed through the payload/result boundary.
-- Use it for pending weak signals, candidate promotions, and carry-forward uncertainty between capture passes.
-- Return a bounded, valid scratchpad only when it helps the next capture pass.
+- Return a bounded `decisionReport` for both `captured` and `no_changes` outcomes.
+- Summarize observable rationale only; do not reveal hidden reasoning or chain-of-thought.
+- Explain why selected destinations were appropriate and why plausible destinations were skipped.
+- Do not quote raw transcript text, raw prompts, tool output, command output, diffs, secrets, or unbounded generated text.
+- Use concise non-sensitive prose for `decisionSummary`, destination `reason` fields, durable signals, duplicate signals, and privacy notes.
 
 ## Output contract
 
 - Return strict JSON only.
 - Match the Capture Result schema exactly.
-- Use `captured` when durable memory changed, `no_changes` when nothing should be written, `skipped` for deliberate no-op capture decisions, and `failed` only when the capture itself could not be completed safely.
+- Use `captured` when durable memory changed and `no_changes` when nothing should be written.
+- Include `filesChanged` and `warnings` arrays when present.
+- Include `decisionReport` with `decisionSummary`, `durability`, `selectedDestinations`, `skippedDestinations`, `durableSignals`, `duplicateSignals`, and `privacyNotes`.
+- Use memory layer values `MEMORY`, `USER`, `project`, `notes`, `maps`, `records`, `people`, or `sources`.

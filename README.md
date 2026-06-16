@@ -84,5 +84,6 @@ packages/agentic-memory-vault-template/    # canonical clean copyable Agentic Me
 - [Linking and maps](docs/linking-and-maps.md) — how navigation, memory maps, project routes, and semantic links work.
 - [Cross-project persistence](docs/cross-project-persistence.md) — how agents preserve durable memory while working in other repos.
 - [Memory adapter](docs/memory-adapter.md) — how to connect outside-vault agents to a central Agentic Memory vault.
+- [Capture observability](docs/capture-observability.md) — opt-in local traces and logs for Pi capture and Steward diagnostics.
 - [Reflection workflow](docs/reflection-workflow.md) — maintenance, compaction, graph health, and promotion review.
 - [Migration](docs/migration.md) — migration philosophy and versioned migration structure.

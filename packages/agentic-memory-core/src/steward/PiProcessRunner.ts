@@ -1,18 +1,22 @@
 import { Config as EffectConfig, Effect, Layer, Option, Schema, Stream } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+import type { CaptureCorrelation } from "../observability/CaptureTelemetry.ts";
 import {
   StewardRunner,
   StewardRunnerError,
+  type StewardRunnerOutcome,
   type StewardRunOptions,
   type StewardRunnerRequest,
+  type StewardSessionPointer,
 } from "./StewardExecution.ts";
-import { decodeStewardResultJson, type StewardResult } from "./StewardResult.ts";
+import { decodeStewardResultJson } from "./StewardResult.ts";
 
 export interface PiProcessCommand {
   readonly command: string;
   readonly args: ReadonlyArray<string>;
   readonly cwd: string;
   readonly timeoutMillis: number | undefined;
+  readonly sessionName: string;
 }
 
 const AssistantMessageEndEvent = Schema.Struct({
@@ -29,8 +33,19 @@ const AssistantMessageEndEvent = Schema.Struct({
 }).annotate({ identifier: "AssistantMessageEndEvent" });
 type AssistantMessageEndEvent = typeof AssistantMessageEndEvent.Type;
 
+const SessionHeaderEvent = Schema.Struct({
+  type: Schema.Literal("session"),
+  id: Schema.String,
+  cwd: Schema.String,
+  timestamp: Schema.String,
+}).annotate({ identifier: "StewardSessionHeaderEvent" });
+type SessionHeaderEvent = typeof SessionHeaderEvent.Type;
+
 const decodeAssistantMessageEndEvent = Schema.decodeUnknownOption(
   Schema.fromJsonString(AssistantMessageEndEvent),
+);
+const decodeSessionHeaderEvent = Schema.decodeUnknownOption(
+  Schema.fromJsonString(SessionHeaderEvent),
 );
 
 const optionalEnvironmentVariable = Effect.fnUntraced(
@@ -58,14 +73,21 @@ const withOptionalRunnerFlags = (
   return args;
 };
 
+export const stewardSessionName = (correlation: CaptureCorrelation | undefined): string => {
+  const suffix = correlation?.attemptId ?? correlation?.captureRunId ?? "manual";
+  return `Memory Steward capture ${suffix}`;
+};
+
 export const buildPiProcessCommand = (input: {
   readonly piBinary: string;
   readonly request: StewardRunnerRequest;
 }): PiProcessCommand => {
+  const sessionName = stewardSessionName(input.request.correlation);
   const baseArgs = [
     "--mode",
     "json",
-    "--no-session",
+    "--name",
+    sessionName,
     "--no-context-files",
     "--no-extensions",
     "--no-skills",
@@ -80,6 +102,7 @@ export const buildPiProcessCommand = (input: {
     args: withOptionalRunnerFlags(baseArgs, input.request.options),
     cwd: input.request.context.vault.path,
     timeoutMillis: input.request.options.timeoutMillis,
+    sessionName,
   };
 };
 
@@ -117,6 +140,32 @@ export const extractAssistantText = (
   }
 
   return "";
+};
+
+const firstNonEmptyLine = (output: string): string | undefined => {
+  const lines = output.split(/\r?\n/);
+  return lines.find((line) => line.trim().length > 0);
+};
+
+export const extractStewardSessionPointer = (
+  output: string,
+  sessionName: string,
+): StewardSessionPointer | undefined => {
+  const firstLine = firstNonEmptyLine(output);
+  if (firstLine === undefined) {
+    return undefined;
+  }
+
+  const header = decodeSessionHeaderEvent(firstLine);
+  return Option.match(header, {
+    onNone: () => undefined,
+    onSome: (value: SessionHeaderEvent) => ({
+      sessionId: value.id,
+      name: sessionName,
+      cwd: value.cwd,
+      startedAt: value.timestamp,
+    }),
+  });
 };
 
 const runProcess = Effect.fnUntraced(function* (
@@ -182,20 +231,32 @@ const runProcess = Effect.fnUntraced(function* (
   );
 });
 
+const processOutputDiagnostics = (input: {
+  readonly stdout: string;
+  readonly stderr: string;
+}): Record<string, unknown> => ({
+  stdoutLength: input.stdout.length,
+  stderrLength: input.stderr.length,
+});
+
 const decodeProcessResult = Effect.fnUntraced(function* (input: {
   readonly processResult: {
     readonly stdout: string;
     readonly stderr: string;
     readonly exitCode: ChildProcessSpawner.ExitCode;
   };
-}): Effect.fn.Return<StewardResult, StewardRunnerError> {
+  readonly sessionName: string;
+}): Effect.fn.Return<StewardRunnerOutcome, StewardRunnerError> {
+  const stewardSession = extractStewardSessionPointer(
+    input.processResult.stdout,
+    input.sessionName,
+  );
+
   if (input.processResult.exitCode !== ChildProcessSpawner.ExitCode(0)) {
     return yield* new StewardRunnerError({
       message: "Steward process exited with non-zero status before emitting final JSON",
-      cause: {
-        stdout: input.processResult.stdout,
-        stderr: input.processResult.stderr,
-      },
+      cause: processOutputDiagnostics(input.processResult),
+      ...(stewardSession === undefined ? {} : { stewardSession }),
     });
   }
 
@@ -203,22 +264,23 @@ const decodeProcessResult = Effect.fnUntraced(function* (input: {
   if (assistantText.trim().length === 0) {
     return yield* new StewardRunnerError({
       message: "Steward returned EOF before final assistant JSON response was emitted",
-      cause: {
-        stdout: input.processResult.stdout,
-        stderr: input.processResult.stderr,
-      },
+      cause: processOutputDiagnostics(input.processResult),
+      ...(stewardSession === undefined ? {} : { stewardSession }),
     });
   }
 
-  return yield* decodeStewardResultJson(assistantText).pipe(
+  const result = yield* decodeStewardResultJson(assistantText).pipe(
     Effect.mapError(
       (cause) =>
         new StewardRunnerError({
           message: "Steward returned invalid final JSON for capture result schema",
           cause,
+          ...(stewardSession === undefined ? {} : { stewardSession }),
         }),
     ),
   );
+
+  return stewardSession === undefined ? { result } : { result, stewardSession };
 });
 
 export const PiProcessRunnerLayer: Layer.Layer<
@@ -233,7 +295,10 @@ export const PiProcessRunnerLayer: Layer.Layer<
     const run = Effect.fnUntraced(function* (request: StewardRunnerRequest) {
       const command = buildPiProcessCommand({ piBinary, request });
       const processResult = yield* runProcess(spawner, command);
-      return yield* decodeProcessResult({ processResult });
+      return yield* decodeProcessResult({
+        processResult,
+        sessionName: command.sessionName,
+      });
     });
 
     return StewardRunner.of({

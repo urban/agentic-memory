@@ -10,7 +10,7 @@ After you initialize a project, the extension:
 - flushes remaining branch activity on `session_before_tree` and `session_shutdown`
 - captures only bounded visible user/assistant text from the current branch observation window
 - keeps only the project link at `.agentic-memory-link/config.json`
-- invokes an isolated Memory Steward Pi process in the target vault
+- invokes an isolated Memory Steward Pi process in the target vault with a fresh saved Pi diagnostic session
 - lets the Memory Steward update the smallest appropriate Agentic Memory files
 - stores minimal Pi custom-entry markers for observation outcomes and schedule cadence
 
@@ -39,10 +39,16 @@ From the Agentic Memory repository root:
 bun install
 ```
 
-If the Memory Steward child process should use a non-default Pi binary, set:
+If the extension should use a non-default `agentic-memory` CLI binary, set:
 
 ```bash
-export PI_MEMORY_CAPTURE_PI_BIN=/absolute/path/to/pi
+export AGENTIC_MEMORY_CLI_BIN=/absolute/path/to/agentic-memory
+```
+
+If `agentic-memory run-steward` should use a non-default Pi binary for the isolated Steward process, set:
+
+```bash
+export AGENTIC_MEMORY_PI_BIN=/absolute/path/to/pi
 ```
 
 ## Install
@@ -89,3 +95,14 @@ Initialization validates the vault, writes `.agentic-memory-link/config.json`, m
 - `/memory-capture-status` — show config, latest observation marker, latest schedule marker, automatic-capture state, and marker warnings
 
 Automatic capture is timeout-bounded/fail-open so it should not cancel session operations.
+
+## Local observability
+
+Telemetry is disabled by default. For local motel-compatible traces and logs:
+
+```bash
+export AGENTIC_MEMORY_OTEL_ENABLED=true
+export AGENTIC_MEMORY_OTEL_BASE_URL=http://127.0.0.1:27686
+```
+
+The Pi extension emits under `agentic-memory-pi-capture`; `agentic-memory run-steward` emits under `agentic-memory-cli`. Query by `capture.attempt_id` to correlate both processes. See `docs/capture-observability.md` in this repository.

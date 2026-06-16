@@ -1,3 +1,7 @@
+import {
+  captureCorrelationAttributes,
+  type CaptureCorrelation,
+} from "../observability/CaptureTelemetry.ts";
 import { Cause, Context, Effect, FileSystem, Layer, Path, Ref, Schema } from "effect";
 import type { CapturePayload } from "../capture/CapturePayload.ts";
 import type { ProjectSlug } from "../link/ProjectSlug.ts";
@@ -22,6 +26,14 @@ export const StewardExecutionInfo = Schema.Struct({
 }).annotate({ identifier: "StewardExecutionInfo" });
 export type StewardExecutionInfo = typeof StewardExecutionInfo.Type;
 
+export const StewardSessionPointer = Schema.Struct({
+  sessionId: Schema.String,
+  name: Schema.String,
+  cwd: Schema.String,
+  startedAt: Schema.String,
+}).annotate({ identifier: "StewardSessionPointer" });
+export type StewardSessionPointer = typeof StewardSessionPointer.Type;
+
 export const RunStewardResult = Schema.Union([
   Schema.Struct({
     status: Schema.Literal("succeeded"),
@@ -29,12 +41,14 @@ export const RunStewardResult = Schema.Union([
     execution: StewardExecutionInfo,
     retryFailureReasons: Schema.Array(Schema.String),
     warnings: Schema.Array(Schema.String),
+    stewardSession: Schema.optional(StewardSessionPointer),
   }),
   Schema.Struct({
     status: Schema.Literal("failed"),
     execution: StewardExecutionInfo,
     retryFailureReasons: Schema.Array(Schema.String),
     warnings: Schema.Array(Schema.String),
+    stewardSession: Schema.optional(StewardSessionPointer),
   }),
 ]).annotate({ identifier: "RunStewardResult" });
 export type RunStewardResult = typeof RunStewardResult.Type;
@@ -55,6 +69,12 @@ export interface StewardRunOptions {
 export interface StewardRunnerRequest {
   readonly context: StewardContextResult;
   readonly options: StewardRunOptions;
+  readonly correlation?: CaptureCorrelation;
+}
+
+export interface StewardRunnerOutcome {
+  readonly result: StewardResultValue;
+  readonly stewardSession?: StewardSessionPointer;
 }
 
 export class StewardRunnerError extends Schema.TaggedErrorClass<StewardRunnerError>()(
@@ -62,6 +82,7 @@ export class StewardRunnerError extends Schema.TaggedErrorClass<StewardRunnerErr
   {
     message: Schema.String,
     cause: Schema.optional(Schema.Unknown),
+    stewardSession: Schema.optional(StewardSessionPointer),
   },
 ) {}
 
@@ -71,7 +92,7 @@ export class StewardRunner extends Context.Service<
     readonly name: StewardRunnerName;
     readonly run: (
       request: StewardRunnerRequest,
-    ) => Effect.Effect<StewardResultValue, StewardRunnerError>;
+    ) => Effect.Effect<StewardRunnerOutcome, StewardRunnerError>;
   }
 >()("@urban/agentic-memory-core/steward/StewardExecution/StewardRunner") {}
 
@@ -98,58 +119,158 @@ export const normalizeRetryFailureReason = (message: string): string => {
 const backoffForAttemptIndex = (attemptIndex: number): number =>
   RETRY_BACKOFF_MILLIS[attemptIndex - 1] ?? 0;
 
-export const runSteward = Effect.fnUntraced(function* (input: {
+const stewardSessionFromCause = (
+  cause: Cause.Cause<StewardRunnerError>,
+): StewardSessionPointer | undefined => {
+  for (const reason of cause.reasons) {
+    if (Cause.isFailReason(reason) && reason.error.stewardSession !== undefined) {
+      return reason.error.stewardSession;
+    }
+  }
+  return undefined;
+};
+
+const withOptionalStewardSession = <T extends object>(
+  value: T,
+  stewardSession: StewardSessionPointer | undefined,
+): T | (T & { readonly stewardSession: StewardSessionPointer }) =>
+  stewardSession === undefined ? value : { ...value, stewardSession };
+
+const decisionReportAttributes = (result: StewardResultValue): Record<string, unknown> =>
+  result.decisionReport === undefined
+    ? {}
+    : {
+        "capture.decision.durability": result.decisionReport.durability,
+        "capture.decision.selected_count": result.decisionReport.selectedDestinations.length,
+        "capture.decision.skipped_count": result.decisionReport.skippedDestinations.length,
+        "capture.decision.summary": result.decisionReport.decisionSummary,
+      };
+
+export const runSteward = Effect.fn("agentic-memory.run_steward")(function* (input: {
   readonly payload: CapturePayload;
   readonly vaultPath: string;
   readonly projectSlug: ProjectSlug;
   readonly payloadWarnings: ReadonlyArray<string>;
   readonly options: StewardRunOptions;
+  readonly correlation?: CaptureCorrelation;
 }): Effect.fn.Return<
   RunStewardResult,
   StewardContextError,
   FileSystem.FileSystem | Path.Path | StewardRunner
 > {
   const runner = yield* StewardRunner;
+  const baseAttributes = {
+    ...captureCorrelationAttributes(input.correlation),
+    "capture.payload.warning_count": input.payloadWarnings.length,
+  };
+  yield* Effect.annotateCurrentSpan(baseAttributes);
+
   const context = yield* buildStewardContext({
     payload: input.payload,
     vaultPath: input.vaultPath,
     projectSlug: input.projectSlug,
     payloadWarnings: input.payloadWarnings,
-  });
+  }).pipe(Effect.withSpan("steward.build_context"), Effect.annotateSpans(baseAttributes));
+
   const retryFailureReasons: string[] = [];
   let attemptIndex = 0;
+  let latestStewardSession: StewardSessionPointer | undefined;
 
   while (attemptIndex < RETRY_ATTEMPTS) {
-    const result = yield* runner.run({ context, options: input.options }).pipe(Effect.exit);
+    const runnerAttributes = {
+      ...baseAttributes,
+      "capture.steward.retry_count": attemptIndex,
+    };
+    const result = yield* runner
+      .run({
+        context,
+        options: input.options,
+        ...(input.correlation === undefined ? {} : { correlation: input.correlation }),
+      })
+      .pipe(
+        Effect.withSpan("steward.invoke_pi_process", { attributes: runnerAttributes }),
+        Effect.exit,
+      );
     if (result._tag === "Success") {
-      return {
-        status: "succeeded",
-        result: result.value,
-        execution: {
-          runner: runner.name,
-          attempts: attemptIndex + 1,
-        },
-        retryFailureReasons,
-        warnings: [...input.payloadWarnings, ...result.value.warnings],
+      const stewardSession = result.value.stewardSession ?? latestStewardSession;
+      const successAttributes = {
+        ...runnerAttributes,
+        ...decisionReportAttributes(result.value.result),
+        ...(stewardSession === undefined
+          ? {}
+          : {
+              "capture.steward.session_id": stewardSession.sessionId,
+              "capture.steward.session_name": stewardSession.name,
+              "capture.steward.session_cwd": stewardSession.cwd,
+              "capture.steward.session_started_at": stewardSession.startedAt,
+            }),
+        "capture.steward.status": result.value.result.status,
+        "capture.changed_files_count": result.value.result.filesChanged.length,
       };
+      yield* Effect.annotateCurrentSpan(successAttributes);
+      yield* Effect.logInfo("Memory Steward completed").pipe(
+        Effect.annotateLogs(successAttributes),
+      );
+
+      return withOptionalStewardSession(
+        {
+          status: "succeeded",
+          result: result.value.result,
+          execution: {
+            runner: runner.name,
+            attempts: attemptIndex + 1,
+          },
+          retryFailureReasons,
+          warnings: [...input.payloadWarnings, ...result.value.result.warnings],
+        },
+        stewardSession,
+      );
     }
 
+    latestStewardSession = stewardSessionFromCause(result.cause) ?? latestStewardSession;
     retryFailureReasons.push(normalizeRetryFailureReason(Cause.pretty(result.cause)));
     attemptIndex += 1;
+    yield* Effect.logWarning("Memory Steward retry failed").pipe(
+      Effect.annotateLogs({
+        ...baseAttributes,
+        "capture.steward.retry_count": attemptIndex,
+      }),
+    );
     if (attemptIndex < RETRY_ATTEMPTS) {
       yield* Effect.sleep(backoffForAttemptIndex(attemptIndex));
     }
   }
 
-  return {
-    status: "failed",
-    execution: {
-      runner: runner.name,
-      attempts: RETRY_ATTEMPTS,
-    },
-    retryFailureReasons,
-    warnings: [...input.payloadWarnings],
+  const failedAttributes = {
+    ...baseAttributes,
+    ...(latestStewardSession === undefined
+      ? {}
+      : {
+          "capture.steward.session_id": latestStewardSession.sessionId,
+          "capture.steward.session_name": latestStewardSession.name,
+          "capture.steward.session_cwd": latestStewardSession.cwd,
+          "capture.steward.session_started_at": latestStewardSession.startedAt,
+        }),
+    "capture.steward.status": "failed",
+    "capture.steward.retry_count": RETRY_ATTEMPTS,
   };
+  yield* Effect.annotateCurrentSpan(failedAttributes);
+  yield* Effect.logError("Memory Steward failed after retries").pipe(
+    Effect.annotateLogs(failedAttributes),
+  );
+
+  return withOptionalStewardSession(
+    {
+      status: "failed",
+      execution: {
+        runner: runner.name,
+        attempts: RETRY_ATTEMPTS,
+      },
+      retryFailureReasons,
+      warnings: [...input.payloadWarnings],
+    },
+    latestStewardSession,
+  );
 });
 
 export const stewardRunnerSuccessLayer = (result: StewardResultValue): Layer.Layer<StewardRunner> =>
@@ -157,7 +278,7 @@ export const stewardRunnerSuccessLayer = (result: StewardResultValue): Layer.Lay
     StewardRunner,
     StewardRunner.of({
       name: "pi-process",
-      run: (_request: StewardRunnerRequest) => Effect.succeed(result),
+      run: (_request: StewardRunnerRequest) => Effect.succeed({ result }),
     }),
   );
 
@@ -173,7 +294,7 @@ export const stewardRunnerFailureLayer = (message: string): Layer.Layer<StewardR
   );
 
 export const scriptedStewardRunnerLayer = (
-  responses: ReadonlyArray<Effect.Effect<StewardResultValue, StewardRunnerError>>,
+  responses: ReadonlyArray<Effect.Effect<StewardRunnerOutcome, StewardRunnerError>>,
 ): Layer.Layer<StewardRunner> =>
   Layer.effect(
     StewardRunner,

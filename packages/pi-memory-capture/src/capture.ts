@@ -37,6 +37,14 @@ export const runCapture = Effect.fn("MemoryCapture.runCapture")(function* (
     force,
   });
 
+  const markerAttributes = {
+    "capture.run_id": execution.captureRunId,
+    ...(execution.attemptId === undefined ? {} : { "capture.attempt_id": execution.attemptId }),
+    "capture.trigger_kind": triggerKind,
+    "capture.status": execution.status,
+    "capture.marker_count": execution.markers.length,
+  };
+
   yield* Effect.sync(() => {
     for (const marker of execution.markers) {
       pi.appendEntry(CUSTOM_ENTRY_TYPE, marker);
@@ -45,5 +53,5 @@ export const runCapture = Effect.fn("MemoryCapture.runCapture")(function* (
     if (ctx.hasUI && shouldNotify(execution)) {
       ctx.ui.notify(formatCaptureNotification(execution), notificationLevelForCapture(execution));
     }
-  });
+  }).pipe(Effect.withSpan("capture.write_markers", { attributes: markerAttributes }));
 });

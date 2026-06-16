@@ -1,7 +1,14 @@
 import type { ExecOptions, ExecResult } from "@earendil-works/pi-coding-agent";
+import type { StewardSessionPointer } from "@urban/agentic-memory-core/steward/StewardExecution";
+import type { StewardDecisionReport } from "@urban/agentic-memory-core/steward/StewardResult";
 import { Context, Effect, FileSystem, Layer, Schema } from "effect";
 import { encodeCapturePayloadJson, type CapturePayload } from "../schema.ts";
-import { decodeRunStewardResultJson, type StewardResultStatus } from "../schema.ts";
+import {
+  decodeRunStewardResultJson,
+  type AttemptId,
+  type StewardResultStatus,
+  type TriggerKind,
+} from "../schema.ts";
 import { CaptureConfig } from "./CaptureConfig.ts";
 
 export interface StewardObservationResult {
@@ -9,6 +16,8 @@ export interface StewardObservationResult {
   readonly summary: string | undefined;
   readonly filesChanged: ReadonlyArray<string>;
   readonly warnings: ReadonlyArray<string>;
+  readonly decisionReport?: StewardDecisionReport;
+  readonly stewardSession?: StewardSessionPointer;
 }
 
 export type StewardRunResult =
@@ -16,10 +25,12 @@ export type StewardRunResult =
       readonly _tag: "Succeeded";
       readonly result: StewardObservationResult;
       readonly retryFailureReasons: ReadonlyArray<string>;
+      readonly stewardSession?: StewardSessionPointer;
     }
   | {
       readonly _tag: "Failed";
       readonly retryFailureReasons: ReadonlyArray<string>;
+      readonly stewardSession?: StewardSessionPointer;
     };
 
 export class MemoryStewardError extends Schema.TaggedErrorClass<MemoryStewardError>()(
@@ -67,6 +78,10 @@ export class MemorySteward extends Context.Service<
       readonly payload: CapturePayload;
       readonly payloadWarnings: ReadonlyArray<string>;
       readonly timeoutMillis: number;
+      readonly captureRunId: string;
+      readonly attemptId: AttemptId;
+      readonly triggerKind: TriggerKind;
+      readonly projectSlug: string;
     }) => Effect.Effect<StewardRunResult>;
   }
 >()("@urban/pi-memory-capture/services/MemorySteward") {
@@ -83,6 +98,10 @@ export class MemorySteward extends Context.Service<
         readonly payload: CapturePayload;
         readonly payloadWarnings: ReadonlyArray<string>;
         readonly timeoutMillis: number;
+        readonly captureRunId: string;
+        readonly attemptId: AttemptId;
+        readonly triggerKind: TriggerKind;
+        readonly projectSlug: string;
       }): Effect.fn.Return<StewardRunResult> {
         const result = yield* Effect.scoped(
           Effect.gen(function* () {
@@ -128,6 +147,14 @@ export class MemorySteward extends Context.Service<
                 "--json",
                 "--timeout-ms",
                 String(input.timeoutMillis),
+                "--capture-attempt-id",
+                input.attemptId,
+                "--capture-run-id",
+                input.captureRunId,
+                "--capture-trigger-kind",
+                input.triggerKind,
+                "--capture-project-slug",
+                input.projectSlug,
               ],
               {
                 cwd: input.projectRoot,
@@ -159,6 +186,9 @@ export class MemorySteward extends Context.Service<
           return {
             _tag: "Failed",
             retryFailureReasons: decoded.value.retryFailureReasons,
+            ...(decoded.value.stewardSession === undefined
+              ? {}
+              : { stewardSession: decoded.value.stewardSession }),
           };
         }
 
@@ -168,6 +198,9 @@ export class MemorySteward extends Context.Service<
             retryFailureReasons: [
               normalizeFailureReason("agentic-memory CLI exited unsuccessfully"),
             ],
+            ...(decoded.value.stewardSession === undefined
+              ? {}
+              : { stewardSession: decoded.value.stewardSession }),
           };
         }
 
@@ -178,8 +211,17 @@ export class MemorySteward extends Context.Service<
             summary: decoded.value.result.summary,
             filesChanged: decoded.value.result.filesChanged,
             warnings: decoded.value.result.warnings,
+            ...(decoded.value.result.decisionReport === undefined
+              ? {}
+              : { decisionReport: decoded.value.result.decisionReport }),
+            ...(decoded.value.stewardSession === undefined
+              ? {}
+              : { stewardSession: decoded.value.stewardSession }),
           },
           retryFailureReasons: decoded.value.retryFailureReasons,
+          ...(decoded.value.stewardSession === undefined
+            ? {}
+            : { stewardSession: decoded.value.stewardSession }),
         };
       });
 

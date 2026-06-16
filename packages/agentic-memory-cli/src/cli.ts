@@ -1,5 +1,6 @@
 import packageJson from "../package.json" with { type: "json" };
 import * as BunServices from "@effect/platform-bun/BunServices";
+import { makeCaptureObservabilityLayer } from "@urban/agentic-memory-core/observability/CaptureTelemetry";
 import { PiProcessRunnerLayer } from "@urban/agentic-memory-core/steward/PiProcessRunner";
 import type { StewardRunner } from "@urban/agentic-memory-core/steward/StewardExecution";
 import { Layer } from "effect";
@@ -15,8 +16,15 @@ export const cliVersion = packageJson.version;
 
 export type CliRequirements = BunServices.BunServices | StewardRunner;
 
-export const appLayer: Layer.Layer<CliRequirements> = PiProcessRunnerLayer.pipe(
-  Layer.provideMerge(BunServices.layer),
+const observabilityLayer = makeCaptureObservabilityLayer({
+  serviceName: "agentic-memory-cli",
+  serviceVersion: cliVersion,
+  component: "cli",
+});
+
+export const appLayer: Layer.Layer<CliRequirements> = Layer.merge(
+  PiProcessRunnerLayer.pipe(Layer.provideMerge(BunServices.layer)),
+  observabilityLayer,
 );
 
 export const agenticMemoryCommand = commandRoot.pipe(

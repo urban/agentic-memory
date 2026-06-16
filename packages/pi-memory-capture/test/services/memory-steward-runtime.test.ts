@@ -18,6 +18,7 @@ import { Preprocessor } from "../../src/services/Preprocessor.ts";
 import { VaultProjects } from "../../src/services/VaultProjects.ts";
 import { runCapturePass } from "../../src/workflows/capture.ts";
 import {
+  decodeAttemptId,
   type CapturePayload,
   type LoadConfigResult,
   type LocalPaths,
@@ -202,11 +203,16 @@ describe("MemorySteward", () => {
       .runPromise(
         Effect.gen(function* () {
           const steward = yield* MemorySteward;
+          const attemptId = yield* decodeAttemptId("attempt-1");
           const result = yield* steward.run({
             projectRoot,
             payload: capturePayload,
             payloadWarnings: ["payload warning"],
             timeoutMillis: 12_000,
+            captureRunId: "run-1",
+            attemptId,
+            triggerKind: "agent_end",
+            projectSlug,
           });
 
           expect(result._tag).toBe("Succeeded");
@@ -222,6 +228,14 @@ describe("MemorySteward", () => {
           expect(seen[0]?.args).toContain(projectRoot);
           expect(seen[0]?.args).toContain("--json");
           expect(seen[0]?.args).toContain("--timeout-ms");
+          expect(seen[0]?.args).toContain("--capture-attempt-id");
+          expect(seen[0]?.args).toContain("attempt-1");
+          expect(seen[0]?.args).toContain("--capture-run-id");
+          expect(seen[0]?.args).toContain("run-1");
+          expect(seen[0]?.args).toContain("--capture-trigger-kind");
+          expect(seen[0]?.args).toContain("agent_end");
+          expect(seen[0]?.args).toContain("--capture-project-slug");
+          expect(seen[0]?.args).toContain(projectSlug);
           expect(seen[0]?.cwd).toBe(projectRoot);
           expect(seen[0]?.timeout).toBe(17_000);
         }),
@@ -275,12 +289,17 @@ describe("MemorySteward", () => {
       .runPromise(
         Effect.gen(function* () {
           const steward = yield* MemorySteward;
+          const attemptId = yield* decodeAttemptId("attempt-1");
           const fiber = yield* Effect.forkChild(
             steward.run({
               projectRoot: vault,
               payload: capturePayload,
               payloadWarnings: [],
               timeoutMillis: 12_000,
+              captureRunId: "run-1",
+              attemptId,
+              triggerKind: "session_shutdown",
+              projectSlug,
             }),
           );
 
@@ -347,6 +366,21 @@ describe("runtime capture flow", () => {
             summary: "Record project history",
             filesChanged: ["projects/capture-extension.md"],
             warnings: [],
+            decisionReport: {
+              decisionSummary: "Durable project context should be written.",
+              durability: "durable",
+              selectedDestinations: [
+                {
+                  target: "projects/capture-extension.md",
+                  memoryLayer: "project",
+                  reason: "The observation is project-specific resume context.",
+                },
+              ],
+              skippedDestinations: [],
+              durableSignals: ["Future sessions need this project context."],
+              duplicateSignals: [],
+              privacyNotes: ["No raw transcript text was stored."],
+            },
           },
           retryFailureReasons: [],
         }),
@@ -375,6 +409,8 @@ describe("runtime capture flow", () => {
             expect(execution.markers[1].sendStatus).toBe("succeeded");
             expect(execution.markers[1].retryFailureReasons).toEqual([]);
           }
+          expect(execution.decisionReport?.durability).toBe("durable");
+          expect(execution.markers.some((marker) => "decisionReport" in marker)).toBe(false);
         }),
       )
       .finally(() => runtime.dispose());
