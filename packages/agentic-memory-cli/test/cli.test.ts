@@ -97,6 +97,58 @@ describe("agentic-memory cli", () => {
     ),
   );
 
+  it.effect("rejects linking vaults that are missing session-capture guidance", () =>
+    withCliRuntime(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const tempRoot = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-link-missing-capture-",
+          });
+          const vaultPath = path.join(tempRoot, "vault");
+          const projectRoot = path.join(tempRoot, "project");
+          const configPath = path.join(projectRoot, ".agentic-memory-link", "config.json");
+
+          yield* fs.makeDirectory(path.join(vaultPath, ".agentic-memory", "instructions"), {
+            recursive: true,
+          });
+          yield* fs.makeDirectory(path.join(vaultPath, "projects"), {
+            recursive: true,
+          });
+          yield* fs.makeDirectory(projectRoot, { recursive: true });
+          yield* fs.writeFileString(path.join(vaultPath, "MEMORY.md"), "# Memory\n");
+          yield* fs.writeFileString(path.join(vaultPath, "USER.md"), "# User\n");
+          yield* fs.writeFileString(
+            path.join(vaultPath, ".agentic-memory", "LLM-outside-vault.md"),
+            "outside-vault contract",
+          );
+
+          const output = yield* runCapturedEffect([
+            "link",
+            "--vault",
+            vaultPath,
+            "--project",
+            "example-project",
+            "--project-root",
+            projectRoot,
+            "--json",
+          ]);
+          const configExists = yield* fs.exists(configPath);
+
+          return { configExists, output };
+        }),
+      ),
+    ).pipe(
+      Effect.map(({ configExists, output }) => {
+        assert.strictEqual(output.exitCode, 1);
+        assert.include(output.stdout, '"code":"InvalidVault"');
+        assert.include(output.stdout, "session-capture.md");
+        assert.isFalse(configExists);
+      }),
+    ),
+  );
+
   it.effect("reports unlinked status without searching ancestors", () =>
     withCliRuntime(
       Effect.scoped(
@@ -112,6 +164,62 @@ describe("agentic-memory cli", () => {
         assert.include(output.stdout, '"status":"unlinked"');
         assert.include(output.stdout, ".agentic-memory-link/config.json");
         assert.strictEqual(output.stderr, "");
+      }),
+    ),
+  );
+
+  it.effect("surfaces missing session-capture guidance in unhealthy status details", () =>
+    withCliRuntime(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const tempRoot = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-status-missing-capture-",
+          });
+          const vaultPath = path.join(tempRoot, "vault");
+          const projectRoot = path.join(tempRoot, "project");
+
+          yield* fs.makeDirectory(path.join(vaultPath, ".agentic-memory", "instructions"), {
+            recursive: true,
+          });
+          yield* fs.makeDirectory(path.join(vaultPath, "projects"), {
+            recursive: true,
+          });
+          yield* fs.makeDirectory(path.join(projectRoot, ".agentic-memory-link"), {
+            recursive: true,
+          });
+          yield* fs.writeFileString(
+            path.join(projectRoot, ".agentic-memory-link", "config.json"),
+            `{"version":1,"vaultPath":"${vaultPath}","projectSlug":"example-project"}\n`,
+          );
+          yield* fs.writeFileString(
+            path.join(vaultPath, "MEMORY.md"),
+            `# Memory
+
+## Projects
+
+- [[projects/example-project]] — example-project.
+`,
+          );
+          yield* fs.writeFileString(path.join(vaultPath, "USER.md"), "# User\n");
+          yield* fs.writeFileString(
+            path.join(vaultPath, ".agentic-memory", "LLM-outside-vault.md"),
+            "outside-vault contract",
+          );
+          yield* fs.writeFileString(
+            path.join(vaultPath, "projects", "example-project.md"),
+            "# example-project\n",
+          );
+
+          return yield* runCapturedEffect(["status", "--project-root", projectRoot, "--json"]);
+        }),
+      ),
+    ).pipe(
+      Effect.map((output) => {
+        assert.strictEqual(output.exitCode, 0);
+        assert.include(output.stdout, '"status":"unhealthy"');
+        assert.include(output.stdout, '"sessionCaptureInstructionsExists":false');
       }),
     ),
   );
@@ -132,19 +240,31 @@ describe("agentic-memory cli", () => {
           const adapterExists = yield* fs.exists(
             path.join(vaultPath, ".agentic-memory", "adapters", "MEMORY_ADAPTER.md"),
           );
+          const sessionCaptureExists = yield* fs.exists(
+            path.join(vaultPath, ".agentic-memory", "instructions", "session-capture.md"),
+          );
 
-          return { adapterExists, localContractExists, memoryExists, output };
+          return {
+            adapterExists,
+            localContractExists,
+            memoryExists,
+            output,
+            sessionCaptureExists,
+          };
         }),
       ),
     ).pipe(
-      Effect.map(({ adapterExists, localContractExists, memoryExists, output }) => {
-        assert.strictEqual(output.exitCode, 0);
-        assert.include(output.stdout, '"status":"initialized"');
-        assert.strictEqual(output.stderr, "");
-        assert.isTrue(memoryExists);
-        assert.isTrue(localContractExists);
-        assert.isTrue(adapterExists);
-      }),
+      Effect.map(
+        ({ adapterExists, localContractExists, memoryExists, output, sessionCaptureExists }) => {
+          assert.strictEqual(output.exitCode, 0);
+          assert.include(output.stdout, '"status":"initialized"');
+          assert.strictEqual(output.stderr, "");
+          assert.isTrue(memoryExists);
+          assert.isTrue(localContractExists);
+          assert.isTrue(adapterExists);
+          assert.isTrue(sessionCaptureExists);
+        },
+      ),
     ),
   );
 
@@ -162,7 +282,7 @@ describe("agentic-memory cli", () => {
           const memoryPath = path.join(vaultPath, "MEMORY.md");
           const projectFilePath = path.join(vaultPath, "projects", "example-project.md");
 
-          yield* fs.makeDirectory(path.join(vaultPath, ".agentic-memory"), {
+          yield* fs.makeDirectory(path.join(vaultPath, ".agentic-memory", "instructions"), {
             recursive: true,
           });
           yield* fs.makeDirectory(path.join(vaultPath, "projects"), {
@@ -174,6 +294,10 @@ describe("agentic-memory cli", () => {
           yield* fs.writeFileString(
             path.join(vaultPath, ".agentic-memory", "LLM-outside-vault.md"),
             "outside-vault contract",
+          );
+          yield* fs.writeFileString(
+            path.join(vaultPath, ".agentic-memory", "instructions", "session-capture.md"),
+            "session-capture contract",
           );
           yield* fs.chmod(projectRoot, 0o555);
 
@@ -200,6 +324,69 @@ describe("agentic-memory cli", () => {
         assert.include(output.stdout, '"code":"WriteConfigFailed"');
         assert.isFalse(projectFileExists);
         assert.notInclude(memoryContents, "[[projects/example-project]]");
+      }),
+    ),
+  );
+
+  it.effect("does not leave a local link behind when vault setup fails", () =>
+    withCliRuntime(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const tempRoot = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-link-rollback-",
+          });
+          const vaultPath = path.join(tempRoot, "vault");
+          const projectRoot = path.join(tempRoot, "project");
+          const configPath = path.join(projectRoot, ".agentic-memory-link", "config.json");
+
+          yield* fs.makeDirectory(path.join(vaultPath, ".agentic-memory", "instructions"), {
+            recursive: true,
+          });
+          yield* fs.makeDirectory(path.join(vaultPath, "projects"), {
+            recursive: true,
+          });
+          yield* fs.makeDirectory(projectRoot, { recursive: true });
+          yield* fs.writeFileString(path.join(vaultPath, "MEMORY.md"), "# Memory\n");
+          yield* fs.writeFileString(path.join(vaultPath, "USER.md"), "# User\n");
+          yield* fs.writeFileString(
+            path.join(vaultPath, ".agentic-memory", "LLM-outside-vault.md"),
+            "outside-vault contract",
+          );
+          yield* fs.writeFileString(
+            path.join(vaultPath, ".agentic-memory", "instructions", "session-capture.md"),
+            "session-capture contract",
+          );
+          yield* fs.chmod(path.join(vaultPath, "projects"), 0o555);
+
+          const output = yield* runCapturedEffect([
+            "link",
+            "--vault",
+            vaultPath,
+            "--project",
+            "example-project",
+            "--project-root",
+            projectRoot,
+            "--yes",
+            "--json",
+          ]).pipe(
+            Effect.ensuring(
+              fs
+                .chmod(path.join(vaultPath, "projects"), 0o755)
+                .pipe(Effect.catch(() => Effect.void)),
+            ),
+          );
+          const configExists = yield* fs.exists(configPath);
+
+          return { configExists, output };
+        }),
+      ),
+    ).pipe(
+      Effect.map(({ configExists, output }) => {
+        assert.strictEqual(output.exitCode, 1);
+        assert.include(output.stdout, '"code":"ProjectFileFailed"');
+        assert.isFalse(configExists);
       }),
     ),
   );

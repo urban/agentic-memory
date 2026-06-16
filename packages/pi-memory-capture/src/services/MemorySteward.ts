@@ -16,7 +16,7 @@ export interface StewardObservationResult {
   readonly summary: string | undefined;
   readonly filesChanged: ReadonlyArray<string>;
   readonly warnings: ReadonlyArray<string>;
-  readonly decisionReport?: StewardDecisionReport;
+  readonly decisionReport: StewardDecisionReport;
   readonly stewardSession?: StewardSessionPointer;
 }
 
@@ -215,9 +215,7 @@ export class MemorySteward extends Context.Service<
             summary: decoded.value.result.summary,
             filesChanged: decoded.value.result.filesChanged,
             warnings: decoded.value.result.warnings,
-            ...(decoded.value.result.decisionReport === undefined
-              ? {}
-              : { decisionReport: decoded.value.result.decisionReport }),
+            decisionReport: decoded.value.result.decisionReport,
             ...(decoded.value.stewardSession === undefined
               ? {}
               : { stewardSession: decoded.value.stewardSession }),

@@ -9,6 +9,7 @@ export const VaultHealth = Schema.Struct({
   memoryFileExists: Schema.Boolean,
   userFileExists: Schema.Boolean,
   outsideVaultInstructionsExists: Schema.Boolean,
+  sessionCaptureInstructionsExists: Schema.Boolean,
   projectsDirectoryExists: Schema.Boolean,
   projectFileExists: Schema.Boolean,
   memoryRouteExists: Schema.Boolean,
@@ -30,6 +31,7 @@ export interface VaultPaths {
   readonly projectsDirectory: string;
   readonly projectFile: string;
   readonly outsideVaultInstructions: string;
+  readonly sessionCaptureInstructions: string;
 }
 
 export const resolveVaultPaths = Effect.fnUntraced(function* (input: {
@@ -44,6 +46,12 @@ export const resolveVaultPaths = Effect.fnUntraced(function* (input: {
     projectsDirectory: path.join(input.vaultPath, "projects"),
     projectFile: path.join(input.vaultPath, projectFileRelativePathFromSlug(input.projectSlug)),
     outsideVaultInstructions: path.join(input.vaultPath, ".agentic-memory", "LLM-outside-vault.md"),
+    sessionCaptureInstructions: path.join(
+      input.vaultPath,
+      ".agentic-memory",
+      "instructions",
+      "session-capture.md",
+    ),
   };
 });
 
@@ -68,9 +76,7 @@ export const checkVaultHealth = Effect.fnUntraced(function* (input: {
     ? yield* existsOrFalse(paths.outsideVaultInstructions)
     : false;
   const sessionCaptureInstructionsExists = pathIsAbsolute
-    ? yield* existsOrFalse(
-        path.join(input.vaultPath, ".agentic-memory", "instructions", "session-capture.md"),
-      )
+    ? yield* existsOrFalse(paths.sessionCaptureInstructions)
     : false;
   const projectsDirectoryExists = pathIsAbsolute
     ? yield* existsOrFalse(paths.projectsDirectory)
@@ -101,6 +107,7 @@ export const checkVaultHealth = Effect.fnUntraced(function* (input: {
     memoryFileExists,
     userFileExists,
     outsideVaultInstructionsExists,
+    sessionCaptureInstructionsExists,
     projectsDirectoryExists,
     projectFileExists,
     memoryRouteExists,
@@ -118,12 +125,19 @@ export const validateVaultForLink = Effect.fnUntraced(function* (
   const memoryFile = path.join(vaultPath, "MEMORY.md");
   const userFile = path.join(vaultPath, "USER.md");
   const outsideVaultInstructions = path.join(vaultPath, ".agentic-memory", "LLM-outside-vault.md");
+  const sessionCaptureInstructions = path.join(
+    vaultPath,
+    ".agentic-memory",
+    "instructions",
+    "session-capture.md",
+  );
   const projectsDirectory = path.join(vaultPath, "projects");
   const required = [
     { label: "vault root", path: vaultPath },
     { label: "MEMORY.md", path: memoryFile },
     { label: "USER.md", path: userFile },
     { label: ".agentic-memory/LLM-outside-vault.md", path: outsideVaultInstructions },
+    { label: ".agentic-memory/instructions/session-capture.md", path: sessionCaptureInstructions },
     { label: "projects/", path: projectsDirectory },
   ];
 

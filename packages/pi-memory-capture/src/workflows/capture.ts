@@ -155,16 +155,13 @@ const stewardSessionAttributes = (
       };
 
 const decisionReportAttributes = (
-  decisionReport: StewardDecisionReport | undefined,
-): Record<string, unknown> =>
-  decisionReport === undefined
-    ? {}
-    : {
-        "capture.decision.durability": decisionReport.durability,
-        "capture.decision.selected_count": decisionReport.selectedDestinations.length,
-        "capture.decision.skipped_count": decisionReport.skippedDestinations.length,
-        "capture.decision.summary": decisionReport.decisionSummary,
-      };
+  decisionReport: StewardDecisionReport,
+): Record<string, unknown> => ({
+  "capture.decision.durability": decisionReport.durability,
+  "capture.decision.selected_count": decisionReport.selectedDestinations.length,
+  "capture.decision.skipped_count": decisionReport.skippedDestinations.length,
+  "capture.decision.summary": decisionReport.decisionSummary,
+});
 
 const annotateFinalStatus = (attributes: Record<string, unknown>): Effect.Effect<void> =>
   Effect.annotateCurrentSpan(attributes);
@@ -405,9 +402,7 @@ export const runCapturePass = (
         return {
           captureRunId,
           attemptId,
-          ...(stewardResult.result.decisionReport === undefined
-            ? {}
-            : { decisionReport: stewardResult.result.decisionReport }),
+          decisionReport: stewardResult.result.decisionReport,
           ...(stewardResult.stewardSession === undefined
             ? {}
             : { stewardSession: stewardResult.stewardSession }),

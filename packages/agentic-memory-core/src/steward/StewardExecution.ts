@@ -136,15 +136,12 @@ const withOptionalStewardSession = <T extends object>(
 ): T | (T & { readonly stewardSession: StewardSessionPointer }) =>
   stewardSession === undefined ? value : { ...value, stewardSession };
 
-const decisionReportAttributes = (result: StewardResultValue): Record<string, unknown> =>
-  result.decisionReport === undefined
-    ? {}
-    : {
-        "capture.decision.durability": result.decisionReport.durability,
-        "capture.decision.selected_count": result.decisionReport.selectedDestinations.length,
-        "capture.decision.skipped_count": result.decisionReport.skippedDestinations.length,
-        "capture.decision.summary": result.decisionReport.decisionSummary,
-      };
+const decisionReportAttributes = (result: StewardResultValue): Record<string, unknown> => ({
+  "capture.decision.durability": result.decisionReport.durability,
+  "capture.decision.selected_count": result.decisionReport.selectedDestinations.length,
+  "capture.decision.skipped_count": result.decisionReport.skippedDestinations.length,
+  "capture.decision.summary": result.decisionReport.decisionSummary,
+});
 
 export const runSteward = Effect.fn("agentic-memory.run_steward")(function* (input: {
   readonly payload: CapturePayload;

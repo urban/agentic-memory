@@ -1,5 +1,5 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off
-import { readFileSync } from "node:fs";
+import { readFileSync, symlinkSync } from "node:fs";
 import * as BunServices from "@effect/platform-bun/BunServices";
 import * as BunFileSystem from "@effect/platform-bun/BunFileSystem";
 import * as BunPath from "@effect/platform-bun/BunPath";
@@ -37,6 +37,10 @@ describe("CaptureConfig", () => {
 
     for (const vault of [vaultA, vaultB]) {
       writeFile(join(vault, ".agentic-memory", "LLM-outside-vault.md"), "# contract");
+      writeFile(
+        join(vault, ".agentic-memory", "instructions", "session-capture.md"),
+        "# capture\n",
+      );
       writeFile(join(vault, "MEMORY.md"), "# Memory\n");
       writeFile(join(vault, "USER.md"), "# User\n");
       writeFile(join(vault, "projects", ".gitkeep"), "");
@@ -109,6 +113,89 @@ describe("CaptureConfig", () => {
 
         expect(paths.directory.endsWith(".agentic-memory-link")).toBe(true);
         expect(readFileSync(paths.configFile, "utf8")).toContain("capture-extension");
+      }),
+    ).finally(() => removeTempDirectory(root));
+  });
+
+  it("rejects symlinked config files instead of reading through them", () => {
+    const root = createTempDirectory("pi-memory-config-symlink-load-");
+    const cwd = join(root, "project");
+    const localDirectory = join(cwd, ".agentic-memory-link");
+    const targetFile = join(root, "outside-config.json");
+
+    writeFile(join(cwd, "README.md"), "# project\n");
+    writeFile(
+      targetFile,
+      '{"version":1,"vaultPath":"/vault-a","projectSlug":"capture-extension"}\n',
+    );
+    writeFile(join(localDirectory, ".gitkeep"), "");
+    symlinkSync(targetFile, join(localDirectory, "config.json"));
+
+    return CaptureConfigRuntime.runPromise(
+      Effect.gen(function* () {
+        const config = yield* CaptureConfig;
+        const loaded = yield* config.load(cwd);
+
+        expect(loaded._tag).toBe("invalid");
+        if (loaded._tag === "invalid") {
+          expect(loaded.message).toContain("must not be a symlink");
+        }
+      }),
+    ).finally(() => removeTempDirectory(root));
+  });
+
+  it("rejects symlinked config targets instead of overwriting them", () => {
+    const root = createTempDirectory("pi-memory-config-symlink-write-");
+    const cwd = join(root, "project");
+    const localDirectory = join(cwd, ".agentic-memory-link");
+    const targetFile = join(root, "outside-config.json");
+
+    writeFile(join(cwd, "README.md"), "# project\n");
+    writeFile(targetFile, '{"version":1,"vaultPath":"/vault-a","projectSlug":"old-project"}\n');
+    writeFile(join(localDirectory, ".gitkeep"), "");
+    symlinkSync(targetFile, join(localDirectory, "config.json"));
+
+    return CaptureConfigRuntime.runPromise(
+      Effect.gen(function* () {
+        const config = yield* CaptureConfig;
+        const written = yield* config
+          .ensureLocalFiles(cwd, {
+            version: 1,
+            vaultPath: join(root, "vault-b"),
+            projectSlug: "capture-extension",
+          })
+          .pipe(Effect.exit);
+
+        expect(written._tag).toBe("Failure");
+        expect(readFileSync(targetFile, "utf8")).toBe(
+          '{"version":1,"vaultPath":"/vault-a","projectSlug":"old-project"}\n',
+        );
+      }),
+    ).finally(() => removeTempDirectory(root));
+  });
+
+  it("rejects symlinked link directories before creating config files", () => {
+    const root = createTempDirectory("pi-memory-config-symlink-dir-");
+    const cwd = join(root, "project");
+    const outsideDirectory = join(root, "outside-link");
+
+    writeFile(join(cwd, "README.md"), "# project\n");
+    writeFile(join(outsideDirectory, ".gitkeep"), "");
+    symlinkSync(outsideDirectory, join(cwd, ".agentic-memory-link"));
+
+    return CaptureConfigRuntime.runPromise(
+      Effect.gen(function* () {
+        const config = yield* CaptureConfig;
+        const written = yield* config
+          .ensureLocalFiles(cwd, {
+            version: 1,
+            vaultPath: join(root, "vault"),
+            projectSlug: "capture-extension",
+          })
+          .pipe(Effect.exit);
+
+        expect(written._tag).toBe("Failure");
+        expect(readFileSync(join(outsideDirectory, ".gitkeep"), "utf8")).toBe("");
       }),
     ).finally(() => removeTempDirectory(root));
   });

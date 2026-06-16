@@ -1,5 +1,7 @@
+import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import { Effect, ManagedRuntime } from "effect";
 import { describe, expect, it } from "vitest";
+import { MESSAGE_LIMIT } from "../../src/constants.ts";
 import { MARKER_VERSION } from "../../src/constants.ts";
 import { Markers } from "../../src/services/Markers.ts";
 import { Preprocessor } from "../../src/services/Preprocessor.ts";
@@ -20,6 +22,16 @@ const observation = {
   entryCount: 2,
   messageCount: 2,
 };
+
+const makeTurnEntries = (count: number): ReadonlyArray<SessionEntry> =>
+  Array.from({ length: count }).flatMap((_, index) => {
+    const userId = `u${index}`;
+    const assistantId = `a${index}`;
+    return [
+      makeUserEntry(userId, `prompt ${index}`, index === 0 ? null : `a${index - 1}`),
+      makeAssistantEntry(assistantId, [{ type: "text", text: `answer ${index}` }], userId),
+    ];
+  });
 
 describe("Markers", () => {
   it("selects observation after the latest captured observation marker only", () =>
@@ -119,6 +131,57 @@ describe("Markers", () => {
         expect(turns).toBe(0);
       }),
     ));
+
+  it("uses the covered observation tail instead of the marker position when entries remain", () =>
+    MarkersRuntime.runPromise(
+      Effect.gen(function* () {
+        const markers = yield* Markers;
+        const coveredObservation = {
+          fromEntryId: "u0",
+          toEntryId: "a0",
+          entryCount: 2,
+          messageCount: 2,
+        };
+        const branch = [
+          makeUserEntry("u0", "first"),
+          makeAssistantEntry("a0", [{ type: "text", text: "one" }], "u0"),
+          makeUserEntry("u1", "second", "a0"),
+          makeAssistantEntry("a1", [{ type: "text", text: "two" }], "u1"),
+          makeCustomMarkerEntry("o1", {
+            markerVersion: MARKER_VERSION,
+            kind: "observation_result",
+            attemptId: "attempt-1",
+            timestamp,
+            triggerKind: "agent_end",
+            observation: coveredObservation,
+            observationStatus: "captured",
+            summary: "Record first memory",
+          }),
+          makeCustomMarkerEntry("s1", {
+            markerVersion: MARKER_VERSION,
+            kind: "schedule_result",
+            attemptId: "attempt-1",
+            timestamp,
+            triggerKind: "agent_end",
+            observation: coveredObservation,
+            sendStatus: "succeeded",
+            retryFailureReasons: [],
+          }),
+        ];
+
+        const selection = yield* markers.selectObservation(branch);
+        const turnsAfterSchedule = yield* markers.completedAssistantTurnsAfterSchedule(branch);
+
+        expect(selection.observedEntries.map((entry) => entry.id)).toEqual([
+          "u1",
+          "a1",
+          "o1",
+          "s1",
+        ]);
+        expect(selection.capturableMessages.map((entry) => entry.id)).toEqual(["u1", "a1"]);
+        expect(turnsAfterSchedule).toBe(1);
+      }),
+    ));
 });
 
 describe("Preprocessor", () => {
@@ -179,6 +242,30 @@ describe("Preprocessor", () => {
         ]);
 
         expect(result._tag).toBe("NoMessages");
+      }),
+    ));
+
+  it("bounds the reported observation to the last included message when the payload truncates", () =>
+    PreprocessorRuntime.runPromise(
+      Effect.gen(function* () {
+        const preprocessor = yield* Preprocessor;
+        const result = yield* preprocessor.buildPayload(
+          "session_shutdown",
+          "capture-extension",
+          makeTurnEntries(MESSAGE_LIMIT / 2 + 1),
+        );
+
+        expect(result._tag).toBe("Payload");
+        if (result._tag === "Payload") {
+          expect(result.payload.messages).toHaveLength(MESSAGE_LIMIT);
+          expect(result.observation.fromEntryId).toBe("u0");
+          expect(result.observation.toEntryId).toBe("a39");
+          expect(result.observation.entryCount).toBe(MESSAGE_LIMIT);
+          expect(result.observation.messageCount).toBe(MESSAGE_LIMIT);
+          expect(
+            result.warnings.some((warning) => warning.includes("later messages were omitted")),
+          ).toBe(true);
+        }
       }),
     ));
 });

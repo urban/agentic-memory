@@ -1,6 +1,7 @@
 import * as BunFileSystem from "@effect/platform-bun/BunFileSystem";
 import * as BunPath from "@effect/platform-bun/BunPath";
 import { extractAssistantText } from "@urban/agentic-memory-core/steward/PiProcessRunner";
+import type { StewardDecisionReport } from "@urban/agentic-memory-core/steward/StewardResult";
 import { Effect, Fiber, Layer, ManagedRuntime, Option } from "effect";
 import {
   AuthStorage,
@@ -54,6 +55,22 @@ const capturePayload: CapturePayload = {
       text: "hi",
     },
   ],
+};
+
+const durableDecisionReport: StewardDecisionReport = {
+  decisionSummary: "Durable project context should be written.",
+  durability: "durable",
+  selectedDestinations: [
+    {
+      target: "projects/capture-extension.md",
+      memoryLayer: "project",
+      reason: "The observation is project-specific resume context.",
+    },
+  ],
+  skippedDestinations: [],
+  durableSignals: ["Future sessions need this project context."],
+  duplicateSignals: [],
+  privacyNotes: ["No raw transcript text was stored."],
 };
 
 type StewardRun = (input: {
@@ -190,6 +207,7 @@ describe("MemorySteward", () => {
                       summary: "Record history",
                       filesChanged: ["projects/capture-extension.md"],
                       warnings: ["steward warning"],
+                      decisionReport: durableDecisionReport,
                     },
                     execution: {
                       runner: "pi-process",
@@ -414,6 +432,10 @@ describe("MemorySteward", () => {
         writeFile(join(vaultRoot, "USER.md"), "# User");
         writeFile(join(vaultRoot, "projects", ".keep"), "");
         writeFile(join(vaultRoot, ".agentic-memory", "LLM-outside-vault.md"), "# contract");
+        writeFile(
+          join(vaultRoot, ".agentic-memory", "instructions", "session-capture.md"),
+          "# capture",
+        );
         const configJson = yield* encodeProjectConfigJson({
           version: 1,
           vaultPath: vaultRoot,
@@ -546,21 +568,7 @@ describe("runtime capture flow", () => {
             summary: "Record project history",
             filesChanged: ["projects/capture-extension.md"],
             warnings: [],
-            decisionReport: {
-              decisionSummary: "Durable project context should be written.",
-              durability: "durable",
-              selectedDestinations: [
-                {
-                  target: "projects/capture-extension.md",
-                  memoryLayer: "project",
-                  reason: "The observation is project-specific resume context.",
-                },
-              ],
-              skippedDestinations: [],
-              durableSignals: ["Future sessions need this project context."],
-              duplicateSignals: [],
-              privacyNotes: ["No raw transcript text was stored."],
-            },
+            decisionReport: durableDecisionReport,
           },
           retryFailureReasons: [],
         }),
@@ -591,6 +599,55 @@ describe("runtime capture flow", () => {
           }
           expect(execution.decisionReport?.durability).toBe("durable");
           expect(execution.markers.some((marker) => "decisionReport" in marker)).toBe(false);
+        }),
+      )
+      .finally(() => runtime.dispose());
+  });
+
+  it("keeps omitted tail messages eligible after a truncated successful capture", () => {
+    const cwd = "/project";
+    const branch = makeTurnEntries(CAPTURE_BATCH_SIZE * 4 + 1);
+    const runtime = ManagedRuntime.make(
+      makeRuntimeLayer(() =>
+        Effect.succeed({
+          _tag: "Succeeded",
+          result: {
+            status: "captured",
+            summary: "Record project history",
+            filesChanged: ["projects/capture-extension.md"],
+            warnings: [],
+            decisionReport: durableDecisionReport,
+          },
+          retryFailureReasons: [],
+        }),
+      ),
+    );
+
+    return runtime
+      .runPromise(
+        Effect.gen(function* () {
+          const execution = yield* runCapturePass({
+            cwd,
+            branch,
+            triggerKind: "agent_end",
+            timeoutMillis: 20_000,
+            force: false,
+          });
+          const markers = yield* Markers;
+          const branchWithMarkers = [
+            ...branch,
+            makeCustomMarkerEntry("o1", execution.markers[0], "a40"),
+            makeCustomMarkerEntry("s1", execution.markers[1], "o1"),
+          ];
+          const nextSelection = yield* markers.selectObservation(branchWithMarkers);
+          const turnsAfterSchedule =
+            yield* markers.completedAssistantTurnsAfterSchedule(branchWithMarkers);
+
+          expect(execution.status).toBe("captured");
+          expect(execution.markers[0]?.observation.toEntryId).toBe("a39");
+          expect(execution.markers[0]?.observation.entryCount).toBe(80);
+          expect(nextSelection.capturableMessages.map((entry) => entry.id)).toEqual(["u40", "a40"]);
+          expect(turnsAfterSchedule).toBe(1);
         }),
       )
       .finally(() => runtime.dispose());
@@ -638,6 +695,7 @@ describe("runtime capture flow", () => {
             summary: "Record overlapped history",
             filesChanged: [],
             warnings: [],
+            decisionReport: durableDecisionReport,
           },
           retryFailureReasons: [],
         }),

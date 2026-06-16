@@ -103,6 +103,7 @@ describe("initialization status flow", () => {
     const runtime = ManagedRuntime.make(runtimeLayer);
 
     writeFile(join(vault, ".agentic-memory", "LLM-outside-vault.md"), "# contract");
+    writeFile(join(vault, ".agentic-memory", "instructions", "session-capture.md"), "# capture");
     writeFile(join(vault, "USER.md"), "# User\n");
     writeFile(
       join(vault, "MEMORY.md"),
@@ -154,6 +155,7 @@ updated: 2026-01-01
     };
 
     writeFile(join(vault, ".agentic-memory", "LLM-outside-vault.md"), "# contract");
+    writeFile(join(vault, ".agentic-memory", "instructions", "session-capture.md"), "# capture");
     writeFile(join(vault, "USER.md"), "# User\n");
     writeFile(
       join(vault, "MEMORY.md"),

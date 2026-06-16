@@ -86,14 +86,14 @@ export const StewardResult = Schema.Union([
     summary: StewardSummary,
     filesChanged: FilesChanged,
     warnings: Warnings,
-    decisionReport: Schema.optional(StewardDecisionReport),
+    decisionReport: StewardDecisionReport,
   }),
   Schema.Struct({
     status: Schema.Literal("no_changes"),
     summary: Schema.optional(StewardSummary),
     filesChanged: FilesChanged,
     warnings: Warnings,
-    decisionReport: Schema.optional(StewardDecisionReport),
+    decisionReport: StewardDecisionReport,
   }),
 ]).annotate({ identifier: "StewardResult" });
 export type StewardResult = typeof StewardResult.Type;

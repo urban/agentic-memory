@@ -119,6 +119,16 @@ const startIndexAfterEntry = (branch: ReadonlyArray<SessionEntry>, entryId: stri
   return index === -1 ? 0 : index + 1;
 };
 
+const coveredEntryIdForMarker = <TMarker extends ObservationResultMarker | ScheduleResultMarker>(
+  branch: ReadonlyArray<SessionEntry>,
+  markerEntry: MarkerEntry<TMarker> | undefined,
+): string | undefined =>
+  markerEntry === undefined
+    ? undefined
+    : branch.some((entry) => entry.id === markerEntry.marker.observation.toEntryId)
+      ? markerEntry.marker.observation.toEntryId
+      : markerEntry.entry.id;
+
 const countAssistantTurnsAfter = (
   branch: ReadonlyArray<SessionEntry>,
   entryId: string | undefined,
@@ -127,7 +137,10 @@ const countAssistantTurnsAfter = (
 
 const selectObservationFromBranch = (branch: ReadonlyArray<SessionEntry>): ObservationSelection => {
   const state = scanBranchState(branch);
-  const startIndex = startIndexAfterEntry(branch, state.latestCapturedObservation?.entry.id);
+  const startIndex = startIndexAfterEntry(
+    branch,
+    coveredEntryIdForMarker(branch, state.latestCapturedObservation),
+  );
   const observedEntries = branch.slice(startIndex);
 
   return {
@@ -168,7 +181,9 @@ export class Markers extends Context.Service<
         "Markers.completedAssistantTurnsAfterSchedule",
       )((branch) => {
         const state = scanBranchState(branch);
-        return Effect.succeed(countAssistantTurnsAfter(branch, state.latestSchedule?.entry.id));
+        return Effect.succeed(
+          countAssistantTurnsAfter(branch, coveredEntryIdForMarker(branch, state.latestSchedule)),
+        );
       }),
     }),
   );

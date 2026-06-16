@@ -15,7 +15,7 @@ import {
   formatIsoDateFromMillis,
 } from "@urban/agentic-memory-core/vault/ProjectRoute";
 import { validateVaultForLink } from "@urban/agentic-memory-core/vault/VaultStatus";
-import { Clock, Console, Effect } from "effect";
+import { Clock, Console, Effect, Exit, FileSystem, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import { toFailure, withCliFailureOutput } from "../output.ts";
 import { commandRoot } from "./root.ts";
@@ -40,6 +40,7 @@ export const commandLink = Command.make(
   },
   Effect.fnUntraced(function* ({ vaultPath, project, projectRoot: rawProjectRoot, yes }) {
     const root = yield* commandRoot;
+    const fs = yield* FileSystem.FileSystem;
     const projectRoot = yield* resolveProjectRoot(rawProjectRoot);
     const projectSlug = yield* decodeProjectSlug(project).pipe(
       Effect.mapError((cause) =>
@@ -82,46 +83,95 @@ export const commandLink = Command.make(
       });
     }
 
-    const paths = existingMatches
-      ? existing.paths
-      : yield* writeLinkConfig(projectRoot, config).pipe(
-          Effect.mapError((cause) =>
-            toFailure({ code: "WriteConfigFailed", message: cause.message }),
-          ),
-        );
     const date = yield* Clock.clockWith((clock) =>
       Effect.sync(() => formatIsoDateFromMillis(clock.currentTimeMillisUnsafe())),
     );
-    const createdProjectFile = yield* ensureProjectFile({
-      vaultPath: config.vaultPath,
-      projectSlug: config.projectSlug,
-      date,
-    }).pipe(
-      Effect.mapError((cause) => toFailure({ code: "ProjectFileFailed", message: cause.message })),
-    );
-    const updatedMemoryRoute = yield* ensureMemoryRoute({
-      vaultPath: config.vaultPath,
-      projectSlug: config.projectSlug,
-      date,
-    }).pipe(
-      Effect.mapError((cause) => toFailure({ code: "MemoryRouteFailed", message: cause.message })),
-    );
-    const gitExclude = yield* ensureGitExcludeEntry(projectRoot).pipe(
-      Effect.mapError((cause) => toFailure({ code: "GitExcludeFailed", message: cause.message })),
-    );
-    const warnings = gitExclude.warning === undefined ? [] : [gitExclude.warning];
+    const rollbackWrittenConfig = (configPath: string, previousContents: string | undefined) =>
+      (previousContents === undefined
+        ? fs.remove(configPath, { force: true })
+        : fs.writeFileString(configPath, previousContents)
+      ).pipe(Effect.catch(() => Effect.void));
+    const finalizeLink = (configPath: string) =>
+      Effect.gen(function* () {
+        const createdProjectFile = yield* ensureProjectFile({
+          vaultPath: config.vaultPath,
+          projectSlug: config.projectSlug,
+          date,
+        }).pipe(
+          Effect.mapError((cause) =>
+            toFailure({ code: "ProjectFileFailed", message: cause.message }),
+          ),
+        );
+        const updatedMemoryRoute = yield* ensureMemoryRoute({
+          vaultPath: config.vaultPath,
+          projectSlug: config.projectSlug,
+          date,
+        }).pipe(
+          Effect.mapError((cause) =>
+            toFailure({ code: "MemoryRouteFailed", message: cause.message }),
+          ),
+        );
+        const gitExclude = yield* ensureGitExcludeEntry(projectRoot).pipe(
+          Effect.mapError((cause) =>
+            toFailure({ code: "GitExcludeFailed", message: cause.message }),
+          ),
+        );
+
+        return {
+          configPath,
+          createdProjectFile,
+          updatedMemoryRoute,
+          updatedGitExclude: gitExclude.updated,
+          warnings: gitExclude.warning === undefined ? [] : [gitExclude.warning],
+        };
+      });
+    const linkChanges = yield* existingMatches
+      ? finalizeLink(existing.paths.configFile).pipe(
+          Effect.map((result) => ({
+            ...result,
+            wroteConfig: false,
+          })),
+        )
+      : Effect.acquireUseRelease(
+          Effect.gen(function* () {
+            const previousContents = Option.getOrUndefined(
+              yield* fs.readFileString(existing.paths.configFile).pipe(Effect.option),
+            );
+            const paths = yield* writeLinkConfig(projectRoot, config).pipe(
+              Effect.mapError((cause) =>
+                toFailure({ code: "WriteConfigFailed", message: cause.message }),
+              ),
+            );
+
+            return {
+              configPath: paths.configFile,
+              previousContents,
+            };
+          }),
+          ({ configPath }) =>
+            finalizeLink(configPath).pipe(
+              Effect.map((result) => ({
+                ...result,
+                wroteConfig: true,
+              })),
+            ),
+          ({ configPath, previousContents }, exit) =>
+            Exit.isSuccess(exit)
+              ? Effect.void
+              : rollbackWrittenConfig(configPath, previousContents),
+        );
     const result: LinkCommandResult = {
       status: "linked",
       projectRoot,
-      configPath: paths.configFile,
+      configPath: linkChanges.configPath,
       config,
       changes: {
-        wroteConfig: !existingMatches,
-        createdProjectFile,
-        updatedMemoryRoute,
-        updatedGitExclude: gitExclude.updated,
+        wroteConfig: linkChanges.wroteConfig,
+        createdProjectFile: linkChanges.createdProjectFile,
+        updatedMemoryRoute: linkChanges.updatedMemoryRoute,
+        updatedGitExclude: linkChanges.updatedGitExclude,
       },
-      warnings,
+      warnings: linkChanges.warnings,
     };
     const jsonText = yield* encodeLinkCommandResultJson(result).pipe(
       Effect.mapError((cause) =>

@@ -27,7 +27,7 @@ import {
 import { StewardRunner } from "../src/steward/StewardExecution.ts";
 import { decodeStewardResultJson } from "../src/steward/StewardResult.ts";
 import { ensureProjectFile, ensureProjectRouteInMemory } from "../src/vault/ProjectRoute.ts";
-import { checkVaultHealth } from "../src/vault/VaultStatus.ts";
+import { checkVaultHealth, validateVaultForLink } from "../src/vault/VaultStatus.ts";
 import { initVaultFromTemplate } from "../src/vault/VaultTemplate.ts";
 
 const validPayloadJson =
@@ -176,22 +176,28 @@ describe("core contracts", () => {
     }),
   );
 
-  it.effect("normalizes steward result arrays and requires captured summaries", () =>
-    Effect.gen(function* () {
-      const decoded = yield* decodeStewardResultJson(
-        '{"status":"captured","summary":"Record memory CLI"}',
-      );
-      const missingSummary = yield* decodeStewardResultJson('{"status":"captured"}').pipe(
-        Effect.exit,
-      );
+  it.effect(
+    "normalizes steward result arrays and requires captured summaries and decision reports",
+    () =>
+      Effect.gen(function* () {
+        const decoded = yield* decodeStewardResultJson(
+          '{"status":"captured","summary":"Record memory CLI","decisionReport":{"decisionSummary":"Project memory should be updated.","durability":"durable","selectedDestinations":[{"target":"projects/agentic-memory-cli.md","memoryLayer":"project","reason":"The observation is project-specific durable context."}],"skippedDestinations":[],"durableSignals":["Future sessions need the project update."],"duplicateSignals":[],"privacyNotes":["No raw transcript text was stored."]}}',
+        );
+        const missingSummary = yield* decodeStewardResultJson('{"status":"captured"}').pipe(
+          Effect.exit,
+        );
+        const missingDecisionReport = yield* decodeStewardResultJson(
+          '{"status":"captured","summary":"Record memory CLI"}',
+        ).pipe(Effect.exit);
 
-      assert.deepStrictEqual(decoded.filesChanged, []);
-      assert.deepStrictEqual(decoded.warnings, []);
-      assert.strictEqual(missingSummary._tag, "Failure");
-    }),
+        assert.deepStrictEqual(decoded.filesChanged, []);
+        assert.deepStrictEqual(decoded.warnings, []);
+        assert.strictEqual(missingSummary._tag, "Failure");
+        assert.strictEqual(missingDecisionReport._tag, "Failure");
+      }),
   );
 
-  it.effect("validates bounded steward decision reports when present", () =>
+  it.effect("validates bounded steward decision reports", () =>
     Effect.gen(function* () {
       const decoded = yield* decodeStewardResultJson(
         '{"status":"no_changes","decisionReport":{"decisionSummary":"No durable memory was observed.","durability":"not_durable","selectedDestinations":[],"skippedDestinations":[{"memoryLayer":"USER","reason":"No stable user preference or owner fact was observed."}],"durableSignals":[],"duplicateSignals":[],"privacyNotes":["No raw transcript text was stored."]}}',
@@ -201,7 +207,7 @@ describe("core contracts", () => {
         `{"status":"no_changes","decisionReport":{"decisionSummary":"${oversizedSummary}","durability":"uncertain","selectedDestinations":[],"skippedDestinations":[],"durableSignals":[],"duplicateSignals":[],"privacyNotes":[]}}`,
       ).pipe(Effect.exit);
 
-      assert.strictEqual(decoded.decisionReport?.durability, "not_durable");
+      assert.strictEqual(decoded.decisionReport.durability, "not_durable");
       assert.strictEqual(oversized._tag, "Failure");
     }),
   );
@@ -485,57 +491,92 @@ updated: 2026-06-01
     ),
   );
 
-  it.effect(
-    "treats vaults missing session-capture guidance as unhealthy for steward capture",
-    () =>
-      CoreContractsRuntime.contextEffect.pipe(
-        Effect.flatMap((context) =>
-          Effect.provideContext(
-            Effect.scoped(
-              Effect.gen(function* () {
-                const fs = yield* FileSystem.FileSystem;
-                const path = yield* Path.Path;
-                const vaultPath = yield* fs.makeTempDirectoryScoped({
-                  prefix: "agentic-memory-core-capture-health-",
-                });
+  it.effect("treats vaults missing session-capture guidance as unhealthy for steward capture", () =>
+    CoreContractsRuntime.contextEffect.pipe(
+      Effect.flatMap((context) =>
+        Effect.provideContext(
+          Effect.scoped(
+            Effect.gen(function* () {
+              const fs = yield* FileSystem.FileSystem;
+              const path = yield* Path.Path;
+              const vaultPath = yield* fs.makeTempDirectoryScoped({
+                prefix: "agentic-memory-core-capture-health-",
+              });
 
-                yield* fs.makeDirectory(path.join(vaultPath, ".agentic-memory"), {
-                  recursive: true,
-                });
-                yield* fs.makeDirectory(path.join(vaultPath, "projects"), {
-                  recursive: true,
-                });
-                yield* fs.writeFileString(
-                  path.join(vaultPath, "MEMORY.md"),
-                  `# Memory
+              yield* fs.makeDirectory(path.join(vaultPath, ".agentic-memory"), {
+                recursive: true,
+              });
+              yield* fs.makeDirectory(path.join(vaultPath, "projects"), {
+                recursive: true,
+              });
+              yield* fs.writeFileString(
+                path.join(vaultPath, "MEMORY.md"),
+                `# Memory
 
 ## Projects
 
 - [[projects/agentic-memory-cli]] — agentic-memory-cli.
 `,
-                );
-                yield* fs.writeFileString(path.join(vaultPath, "USER.md"), "# User\n");
-                yield* fs.writeFileString(
-                  path.join(vaultPath, ".agentic-memory", "LLM-outside-vault.md"),
-                  "outside-vault contract",
-                );
-                yield* fs.writeFileString(
-                  path.join(vaultPath, "projects", "agentic-memory-cli.md"),
-                  "# agentic-memory-cli\n",
-                );
+              );
+              yield* fs.writeFileString(path.join(vaultPath, "USER.md"), "# User\n");
+              yield* fs.writeFileString(
+                path.join(vaultPath, ".agentic-memory", "LLM-outside-vault.md"),
+                "outside-vault contract",
+              );
+              yield* fs.writeFileString(
+                path.join(vaultPath, "projects", "agentic-memory-cli.md"),
+                "# agentic-memory-cli\n",
+              );
 
-                const health = yield* checkVaultHealth({
-                  vaultPath,
-                  projectSlug: yield* decodeProjectSlug("agentic-memory-cli"),
-                });
+              const health = yield* checkVaultHealth({
+                vaultPath,
+                projectSlug: yield* decodeProjectSlug("agentic-memory-cli"),
+              });
 
-                assert.strictEqual(health.healthy, false);
-              }),
-            ),
-            context,
+              assert.strictEqual(health.sessionCaptureInstructionsExists, false);
+              assert.strictEqual(health.healthy, false);
+            }),
           ),
+          context,
         ),
       ),
+    ),
+  );
+
+  it.effect("rejects link validation when session-capture guidance is missing", () =>
+    CoreContractsRuntime.contextEffect.pipe(
+      Effect.flatMap((context) =>
+        Effect.provideContext(
+          Effect.scoped(
+            Effect.gen(function* () {
+              const fs = yield* FileSystem.FileSystem;
+              const path = yield* Path.Path;
+              const vaultPath = yield* fs.makeTempDirectoryScoped({
+                prefix: "agentic-memory-core-link-health-",
+              });
+
+              yield* fs.makeDirectory(path.join(vaultPath, ".agentic-memory"), {
+                recursive: true,
+              });
+              yield* fs.makeDirectory(path.join(vaultPath, "projects"), {
+                recursive: true,
+              });
+              yield* fs.writeFileString(path.join(vaultPath, "MEMORY.md"), "# Memory\n");
+              yield* fs.writeFileString(path.join(vaultPath, "USER.md"), "# User\n");
+              yield* fs.writeFileString(
+                path.join(vaultPath, ".agentic-memory", "LLM-outside-vault.md"),
+                "outside-vault contract",
+              );
+
+              const validation = yield* validateVaultForLink(vaultPath).pipe(Effect.exit);
+
+              assert.strictEqual(validation._tag, "Failure");
+            }),
+          ),
+          context,
+        ),
+      ),
+    ),
   );
 
   it.effect(
@@ -555,14 +596,26 @@ updated: 2026-06-01
                 yield* fs.makeDirectory(path.join(vaultPath, ".agentic-memory"), {
                   recursive: true,
                 });
+                yield* fs.makeDirectory(path.join(vaultPath, ".agentic-memory", "adapters"), {
+                  recursive: true,
+                });
                 yield* fs.makeDirectory(path.join(vaultPath, "projects"), {
                   recursive: true,
                 });
+                yield* fs.writeFileString(path.join(vaultPath, "AGENTS.md"), "# Agents\n");
                 yield* fs.writeFileString(path.join(vaultPath, "MEMORY.md"), "# Memory\n");
                 yield* fs.writeFileString(path.join(vaultPath, "USER.md"), "# User\n");
                 yield* fs.writeFileString(
+                  path.join(vaultPath, ".agentic-memory", "LLM-vault-local.md"),
+                  "vault-local contract",
+                );
+                yield* fs.writeFileString(
                   path.join(vaultPath, ".agentic-memory", "LLM-outside-vault.md"),
                   "outside-vault contract",
+                );
+                yield* fs.writeFileString(
+                  path.join(vaultPath, ".agentic-memory", "adapters", "MEMORY_ADAPTER.md"),
+                  "adapter",
                 );
 
                 const result = yield* initVaultFromTemplate({

@@ -44,6 +44,7 @@ const isCompatibleVault = Effect.fnUntraced(function* (
     path.join(".agentic-memory", "LLM-vault-local.md"),
     path.join(".agentic-memory", "LLM-outside-vault.md"),
     path.join(".agentic-memory", "adapters", "MEMORY_ADAPTER.md"),
+    path.join(".agentic-memory", "instructions", "session-capture.md"),
     "projects",
   ];
 

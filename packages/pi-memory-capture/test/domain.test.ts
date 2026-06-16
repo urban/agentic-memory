@@ -124,6 +124,21 @@ None.
             summary: "Record project history",
             filesChanged: ["projects/capture-extension.md"],
             warnings: [],
+            decisionReport: {
+              decisionSummary: "Project memory should be updated.",
+              durability: "durable",
+              selectedDestinations: [
+                {
+                  target: "projects/capture-extension.md",
+                  memoryLayer: "project",
+                  reason: "The observation is project-specific resume context.",
+                },
+              ],
+              skippedDestinations: [],
+              durableSignals: ["Future sessions need this project context."],
+              duplicateSignals: [],
+              privacyNotes: ["No raw transcript text was stored."],
+            },
           }),
         );
 
@@ -136,10 +151,14 @@ None.
     Effect.runPromise(
       Effect.gen(function* () {
         const exit = yield* Schema.decodeUnknownEffect(StewardResultEnvelopeJson)(
-          '{"status":"captured"}',
+          '{"status":"captured","decisionReport":{"decisionSummary":"Project memory should be updated.","durability":"durable","selectedDestinations":[{"target":"projects/capture-extension.md","memoryLayer":"project","reason":"The observation is project-specific resume context."}],"skippedDestinations":[],"durableSignals":["Future sessions need this project context."],"duplicateSignals":[],"privacyNotes":["No raw transcript text was stored."]}}',
+        ).pipe(Effect.exit);
+        const missingDecisionReport = yield* Schema.decodeUnknownEffect(StewardResultEnvelopeJson)(
+          '{"status":"captured","summary":"Record project history"}',
         ).pipe(Effect.exit);
 
         expect(exit._tag).toBe("Failure");
+        expect(missingDecisionReport._tag).toBe("Failure");
       }),
     ));
 

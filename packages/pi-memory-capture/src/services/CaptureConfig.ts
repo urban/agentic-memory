@@ -33,6 +33,9 @@ export interface EnvironmentOverrides {
   readonly cliBinary: string | undefined;
 }
 
+const hasErrnoCode = (cause: unknown, code: string): boolean =>
+  typeof cause === "object" && cause !== null && "code" in cause && cause.code === code;
+
 const optionalEnvironmentVariable = Effect.fn("CaptureConfig.optionalEnvironmentVariable")(
   function* (name: string) {
     const value = yield* EffectConfig.string(name).pipe(EffectConfig.option);
@@ -74,10 +77,61 @@ export class CaptureConfig extends Context.Service<
         ),
       );
 
+      const ensureNotSymlink = Effect.fnUntraced(function* (
+        pathValue: string,
+        label: string,
+      ): Effect.fn.Return<void, CaptureConfigServiceError> {
+        const exists = yield* fs.exists(pathValue).pipe(Effect.catch(() => Effect.succeed(false)));
+        if (!exists) {
+          return;
+        }
+
+        yield* fs.readLink(pathValue).pipe(
+          Effect.matchEffect({
+            onFailure: (cause) =>
+              hasErrnoCode(cause.cause, "EINVAL")
+                ? Effect.void
+                : Effect.fail(
+                    new CaptureConfigServiceError({
+                      message: `Failed to inspect ${label}: ${pathValue}`,
+                      cause,
+                    }),
+                  ),
+            onSuccess: () =>
+              Effect.fail(
+                new CaptureConfigServiceError({
+                  message: `${label} must not be a symlink: ${pathValue}`,
+                }),
+              ),
+          }),
+        );
+      });
+
+      const ensureLocalPathsSafe = Effect.fnUntraced(function* (
+        paths: LocalPaths,
+      ): Effect.fn.Return<void, CaptureConfigServiceError> {
+        yield* ensureNotSymlink(paths.directory, "Local link directory");
+        yield* ensureNotSymlink(paths.configFile, "Local config file");
+      });
+
       const load = Effect.fn("CaptureConfig.load")(function* (
         cwd: string,
       ): Effect.fn.Return<LoadConfigResult> {
         const paths = yield* localPaths(cwd);
+        const pathSafety = yield* ensureLocalPathsSafe(paths).pipe(
+          Effect.match({
+            onFailure: (error) => error,
+            onSuccess: () => undefined,
+          }),
+        );
+
+        if (pathSafety !== undefined) {
+          return LoadConfigResult.cases.invalid.make({
+            paths,
+            message: pathSafety.message,
+          });
+        }
+
         const exists = yield* fs
           .exists(paths.configFile)
           .pipe(Effect.catch(() => Effect.succeed(false)));
@@ -147,6 +201,7 @@ export class CaptureConfig extends Context.Service<
         config: ResolvedProjectConfig,
       ): Effect.fn.Return<LocalPaths, CaptureConfigServiceError> {
         const paths = yield* localPaths(cwd);
+        yield* ensureLocalPathsSafe(paths);
         yield* fs.makeDirectory(paths.directory, { recursive: true }).pipe(
           Effect.mapError(
             (cause) =>
@@ -156,6 +211,7 @@ export class CaptureConfig extends Context.Service<
               }),
           ),
         );
+        yield* ensureLocalPathsSafe(paths);
 
         const configContents = yield* encodeProjectConfigJson(config).pipe(
           Effect.mapError(
