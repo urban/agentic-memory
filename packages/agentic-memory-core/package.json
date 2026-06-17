@@ -1,0 +1,52 @@
+{
+  "name": "@urban/agentic-memory-core",
+  "version": "0.4.0",
+  "private": true,
+  "files": [
+    "src"
+  ],
+  "type": "module",
+  "exports": {
+    "./capture/CapturePayload": "./src/capture/CapturePayload.ts",
+    "./capture/PayloadShaping": "./src/capture/PayloadShaping.ts",
+    "./link/LinkConfig": "./src/link/LinkConfig.ts",
+    "./link/ProjectSlug": "./src/link/ProjectSlug.ts",
+    "./vault/VaultStatus": "./src/vault/VaultStatus.ts",
+    "./vault/VaultTemplate": "./src/vault/VaultTemplate.ts",
+    "./vault/ProjectRoute": "./src/vault/ProjectRoute.ts",
+    "./steward/StewardContext": "./src/steward/StewardContext.ts",
+    "./steward/StewardExecution": "./src/steward/StewardExecution.ts",
+    "./steward/StewardPrompt": "./src/steward/StewardPrompt.ts",
+    "./steward/StewardResult": "./src/steward/StewardResult.ts",
+    "./steward/PiProcessRunner": "./src/steward/PiProcessRunner.ts",
+    "./observability/CaptureTelemetry": "./src/observability/CaptureTelemetry.ts",
+    "./cli/CliResults": "./src/cli/CliResults.ts"
+  },
+  "scripts": {
+    "check": "bun run lint && bun run typecheck && bun run test",
+    "lint": "oxfmt && oxlint --fix",
+    "test": "vitest run",
+    "typecheck": "node node_modules/@typescript/native-preview/bin/tsgo.js -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@effect/platform-bun": "4.0.0-beta.65",
+    "@urban/agentic-memory-vault-template": "workspace:*",
+    "effect": "4.0.0-beta.65"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.85.1",
+    "@effect/tsgo": "0.6.0",
+    "@effect/vitest": "4.0.0-beta.65",
+    "@types/bun": "1.3.13",
+    "@types/node": "25.6.2",
+    "@typescript/native-preview": "7.0.0-dev.20260511.1",
+    "oxfmt": "0.49.0",
+    "oxlint": "1.64.0",
+    "typescript": "latest",
+    "vitest": "4.1.6"
+  },
+  "engines": {
+    "node": ">=24.12.0"
+  },
+  "packageManager": "bun@1.3.5"
+}

@@ -1,6 +1,6 @@
 ---
 name: agentic-memory-reflection
-version: 0.3.0
+version: 0.4.0
 description: Dispatch to the local Agentic Memory Reflection instructions for a vault.
 ---
 

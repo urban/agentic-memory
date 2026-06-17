@@ -1,6 +1,6 @@
 # Memory Adapter
 
-`MEMORY_ADAPTER.md` is a copyable router snippet for connecting agents outside an Agentic Memory vault to that vault as persistent secondary memory. In this repository it lives at `template/.agentic-memory/adapters/MEMORY_ADAPTER.md`; after initializing a vault it lives at `.agentic-memory/adapters/MEMORY_ADAPTER.md` inside that vault.
+`MEMORY_ADAPTER.md` is a copyable router snippet for connecting agents outside an Agentic Memory vault to that vault as persistent secondary memory. In this repository it lives at `packages/agentic-memory-vault-template/template/.agentic-memory/adapters/MEMORY_ADAPTER.md`; after initializing a vault it lives at `.agentic-memory/adapters/MEMORY_ADAPTER.md` inside that vault.
 
 The adapter does not teach the whole memory system. It only decides which mode applies and points the agent to the correct LLM contract.
 
@@ -23,6 +23,15 @@ Common installation targets:
 - any custom system-prompt or instruction file supported by a coding-agent harness
 
 You do not need the memory adapter for agents already operating inside the memory vault. In that case, the vault's own `AGENTS.md` is the entry point.
+
+## Adapter versus project link config
+
+The memory adapter is not the same thing as the project-local link used by capture tooling.
+
+- `MEMORY_ADAPTER.md` changes startup routing for agents working outside the vault.
+- `.agentic-memory-link/config.json` binds one external project root to one vault path and `projectSlug`.
+
+Tools such as the Pi Memory Capture extension and `agentic-memory run-steward` use the local link config. They do not replace the adapter, and the adapter does not replace project-local capture setup.
 
 ## Setup
 

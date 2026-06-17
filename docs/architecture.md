@@ -42,6 +42,7 @@ The control plane lives in a hidden folder:
 │   ├── writing-memory.md
 │   ├── linking-and-maps.md
 │   ├── cross-project-persistence.md
+│   ├── session-capture.md
 │   └── reflection.md
 └── templates/
     ├── map.md
@@ -65,9 +66,11 @@ Agentic Memory has two supported agent entry points.
 
 If both entry points are visible because a global memory adapter is active while the current working directory contains `.agentic-memory/`, the vault-local entry point wins. The adapter is redundant in that context and should not create a second cross-project memory flow.
 
+Some outside-vault integrations also keep a project-local `.agentic-memory-link/config.json` beside the active repo. That local file is not a third startup path and it is not part of the vault. It binds one external project root to one central vault path and `projectSlug` so capture tooling such as the Pi extension and `agentic-memory run-steward` can target the correct durable project memory.
+
 ## Core model
 
-Agentic Memory has eight practical content parts:
+Agentic Memory has eight practical content parts plus one local capture-state surface:
 
 1. **Core memory** — `MEMORY.md`
    - Always-loaded summary and root memory map.
@@ -86,8 +89,9 @@ Agentic Memory has eight practical content parts:
 
 4. **Projects** — `projects/*.md`
    - Durable state and routing for recurring efforts, including candidates, active projects, completed projects, archived projects, and umbrella efforts.
-   - A project is like a project-specific memory map plus current state, goals, decisions, open questions, and next useful context.
+   - A project is like a project-specific memory map plus resume context, goals, dated timeline, decisions, open questions, and next useful context.
    - Project files should not duplicate facts that can be cheaply re-read from source code or project files.
+   - Project files should keep `## Resume context`, `## Project timeline`, and `## Decision log` current without turning into task trackers.
 
 5. **Atomic notes** — `notes/*.md`
    - The smallest durable knowledge units.
@@ -109,6 +113,11 @@ Agentic Memory has eight practical content parts:
    - Records describe what happened, why, how, and what mattered.
    - They do not store full artifacts by default.
 
+9. **Capture scratchpad** — `.pi/agentic-memory-capture/`
+   - Local extension state used by outside-vault capture flows.
+   - Carries weak signals and candidate promotions between capture passes.
+   - Not part of vault memory content and not loaded as normal memory.
+
 ## Required vault layout
 
 ```text
@@ -125,6 +134,7 @@ memory/
 │   │   ├── writing-memory.md
 │   │   ├── linking-and-maps.md
 │   │   ├── cross-project-persistence.md
+│   │   ├── session-capture.md
 │   │   └── reflection.md
 │   └── templates/
 │       ├── map.md
@@ -145,7 +155,7 @@ memory/
 
 Content folders are flat by default. Use memory maps, project links, and semantic links for structure instead of deep folder hierarchy.
 
-`template/` starts with empty `maps/`, `projects/`, `notes/`, `people/`, `sources/`, and `records/` folders plus a scaffolded `USER.md`. See `examples/basic/` for reference content.
+The canonical template at `packages/agentic-memory-vault-template/template/` starts with empty `maps/`, `projects/`, `notes/`, `people/`, `sources/`, and `records/` folders plus a scaffolded `USER.md`. See `examples/basic/` for reference content.
 
 ## Progressive disclosure
 
@@ -184,6 +194,8 @@ Memory maps may reference other memory maps and projects, but depth should remai
 Project memory is a staging layer for durable context discovered during work. The most valuable memory often transcends one project: repeated user preferences, repeated technical rationale, reusable workflows, and durable decision heuristics should be promoted into atomic notes or `USER.md` and linked from the originating projects.
 
 Promotion keeps project files concise and makes atomic notes the single source of truth for reusable knowledge.
+
+`## Resume context` should answer "what does the next session need before resuming?" `## Project timeline` should capture only meaningful dated milestones. `## Decision log` should preserve consequential decisions with concise rationale. If the durable history becomes dense, prefer a linked `records/` entry over expanding the project file into a running activity log.
 
 ## Design constraints
 

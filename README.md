@@ -2,7 +2,7 @@
 
 Agentic Memory is a local-first memory system for AI agents. It gives agents a small, navigable Markdown vault for durable context without forcing them to load an entire note collection into the context window.
 
-This repository is not itself a memory vault. It defines the system, documents the operating model, and provides a clean starter vault under `template/`.
+This repository is not itself a memory vault. It defines the system, documents the operating model, and provides a clean starter vault from the `@urban/agentic-memory-vault-template` workspace package.
 
 ## Why use it
 
@@ -45,23 +45,80 @@ Other patterns, such as Reflection, migration, human browsing in Obsidian, or mu
 
 ## Quick start
 
-1. Copy `template/` to the place where you want a new memory vault.
-2. Open the new vault's `MEMORY.md` and add only top-level routes that future agents should see early.
-3. Open `USER.md` and add stable owner context, preferences, and glossary terms. Keep it lean.
-4. Add maps, projects, notes, people, sources, and records as durable memory emerges.
-5. For vault-local use, start the coding harness in the initialized vault/repo and let it read root `AGENTS.md`.
-6. For outside-vault use, copy/adapt `.agentic-memory/adapters/MEMORY_ADAPTER.md` from the initialized vault into the relevant global or project harness entry point and replace `/absolute/path/to/memory-vault` with the real path.
+1. **Install dependencies in this checkout.**
 
-`template/` is intentionally clean: its content folders start empty and `USER.md` is only a scaffold, so a new vault does not inherit example memory. For a concrete reference graph, inspect `examples/basic/`. The example intentionally omits `.agentic-memory/`; pair it with the template control plane if you want to operate it as a full vault.
+   ```sh
+   bun install
+   ```
+
+2. **Create your vault.** Use the CLI to copy the canonical vault template to a permanent local folder that you control:
+
+   ```sh
+   bun packages/agentic-memory-cli/src/main.ts init /absolute/path/to/agentic-memory-vault --git --yes
+   cd /absolute/path/to/agentic-memory-vault
+   ```
+
+   If you have already linked the CLI onto your `PATH`, the equivalent command is:
+
+   ```sh
+   agentic-memory init /absolute/path/to/agentic-memory-vault --git --yes
+   cd /absolute/path/to/agentic-memory-vault
+   ```
+
+   Git is optional, but recommended because agents will update plain Markdown and you can review every memory change as a diff. The raw template lives at `packages/agentic-memory-vault-template/template/` for manual inspection or copying.
+
+3. **Add the first routing memory.** Open `MEMORY.md` and add only the top-level context future agents should see early: active projects, major domains, and links to maps or project files you expect to create. Keep this file small.
+
+4. **Add stable owner context.** Open `USER.md` and add durable facts about the vault owner, long-lived preferences, communication style, and glossary terms. Keep transient tasks out of this file.
+
+5. **Choose how outside-vault work should connect to the vault.**
+   - **Harness adapter route:** copy `.agentic-memory/adapters/MEMORY_ADAPTER.md` from your new vault into the relevant user-level or project-level harness entry point, such as `AGENTS.md`, `CLAUDE.md`, Pi `APPEND_SYSTEM.md`, or another harness-specific instruction file. Replace `/absolute/path/to/memory-vault` with your vault's real absolute path. After that, agents working in other repositories can use the vault for durable memory while keeping the current project instructions primary.
+   - **Project-local link route:** from an external project, create a local link to one vault project with:
+
+     ```sh
+     agentic-memory link --vault /absolute/path/to/agentic-memory-vault --project example-project --project-root /absolute/path/to/project --yes
+     agentic-memory status --project-root /absolute/path/to/project --json
+     ```
+
+     This writes `.agentic-memory-link/config.json` using the `projectSlug` contract, ensures the target project file exists in the vault, ensures `MEMORY.md` routes to it, and validates the link health.
+
+6. **Start using the vault with an agent.** Pick one of the two supported entry points:
+   - **Vault-local use:** start your coding harness with the vault as the current working directory. The harness should read the root `AGENTS.md`, which routes it into `.agentic-memory/LLM-vault-local.md` and then to the right memory files.
+   - **Outside-vault use:** install the adapter route above when you want startup-time durable memory routing outside the vault. Use the project-local link route above when a concrete external project should persist into one specific vault project and tooling such as Pi capture should manage that link.
+
+7. **Optional: add the Pi capture extension to an external project.** From this repository root:
+
+   ```sh
+   pi install /absolute/path/to/agentic-memory-repo/packages/pi-memory-capture
+   ```
+
+   Or install it only for one project:
+
+   ```sh
+   pi install -l /absolute/path/to/agentic-memory-repo/packages/pi-memory-capture
+   ```
+
+   Then, inside the target project in Pi:
+
+   ```text
+   /memory-capture-init /absolute/path/to/agentic-memory-vault example-project
+   /memory-capture-status
+   ```
+
+   `[[projects/example-project]]` is still accepted by `/memory-capture-init`, but the canonical `0.4.0` identifier is the bare slug `example-project`. The extension uses the same `.agentic-memory-link/config.json` contract as `agentic-memory link` and sends capture runs through `agentic-memory run-steward`.
+
+8. **Let memory grow through use.** During work, ask the agent to create or update maps, projects, notes, people, sources, and records only when the information is durable enough to help future sessions. Review the Markdown changes, commit useful memory, and prune or revise anything that should not persist.
+
+The template package is intentionally clean: its content folders start empty and `USER.md` is only a scaffold, so a new vault does not inherit example memory. For a concrete reference graph, inspect `examples/basic/`. The example intentionally omits `.agentic-memory/`; pair it with the template control plane if you want to operate it as a full vault.
 
 ## Repository layout
 
 ```text
-docs/                      # human-facing guides and reference docs
-examples/basic/            # small example memory graph
-skills/reflection/         # companion skill dispatcher for Reflection
-migrations/                # versioned migration guides and migration skills
-template/                  # clean copyable Agentic Memory vault
+docs/                                      # human-facing guides and reference docs
+examples/basic/                            # small example memory graph
+skills/reflection/                         # companion skill dispatcher for Reflection
+migrations/                                # versioned migration guides and migration skills
+packages/agentic-memory-vault-template/    # canonical clean copyable Agentic Memory vault
 ```
 
 ## Guides
@@ -72,5 +129,6 @@ template/                  # clean copyable Agentic Memory vault
 - [Linking and maps](docs/linking-and-maps.md) — how navigation, memory maps, project routes, and semantic links work.
 - [Cross-project persistence](docs/cross-project-persistence.md) — how agents preserve durable memory while working in other repos.
 - [Memory adapter](docs/memory-adapter.md) — how to connect outside-vault agents to a central Agentic Memory vault.
+- [Capture observability](docs/capture-observability.md) — opt-in local traces and logs for Pi capture and Steward diagnostics.
 - [Reflection workflow](docs/reflection-workflow.md) — maintenance, compaction, graph health, and promotion review.
 - [Migration](docs/migration.md) — migration philosophy and versioned migration structure.

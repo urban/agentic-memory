@@ -25,7 +25,7 @@ For project-oriented work, the agent should identify the relevant existing proje
 - Use vault-root-relative wikilinks for memory content, such as `[[USER]]`, `[[maps/name]]`, `[[projects/name]]`, `[[notes/name]]`, or `[[people/name]]`.
 - Do not load all notes just because they exist.
 - Treat `USER.md` as lean owner context; follow its note links only when relevant.
-- Treat project files as current-state routing surfaces, not complete histories.
+- Treat project files as current-state routing surfaces with `Resume context`, `Project timeline`, and `Decision log`, not complete histories.
 - Treat sources as evidence, not default context.
 - Treat records as compact recall summaries, not full artifacts.
 
@@ -36,7 +36,7 @@ Use the smallest correct memory layer:
 - `MEMORY.md` — cross-cutting core memory, root routing, and active project routes.
 - `USER.md` — lean durable owner facts, communication preferences, glossary terms, and inferred preferences.
 - `maps/` — conceptual/domain framing and navigation.
-- `projects/` — durable recurring effort state, goals, decisions, open loops, and project-specific routing.
+- `projects/` — durable recurring effort state, goals, decisions, open loops, project timeline, and project-specific routing.
 - `notes/` — atomic durable ideas, preferences, patterns, heuristics, and reusable knowledge.
 - `people/` — durable context about specific people other than the vault owner.
 - `sources/` — immutable captured evidence.
@@ -100,7 +100,7 @@ The agent should proactively update memory at natural stopping points when it ob
 - a repeated user preference, glossary meaning, communication pattern, or tech-selection rationale
 - a reusable workflow or prompting pattern that may help future projects
 
-Repeated project-specific observations should be promoted into `notes/` or `USER.md` and linked from the project files. Project files should not become the long-term home for reusable cross-project knowledge.
+Repeated project-specific observations should be promoted into `notes/` or `USER.md` and linked from the project files. Project files should not become the long-term home for reusable cross-project knowledge, ticket checklists, or daily status logs.
 
 ## Authorship and trust
 
@@ -146,6 +146,7 @@ When editing a managed Markdown file:
 - maintain root routes in `MEMORY.md`
 - maintain project routes and lifecycle state in `projects/`
 - maintain `USER.md` as lean pointer-heavy owner context
+- maintain project `Resume context`, `Project timeline`, and `Decision log`
 - maintain memory-map routing links
 - maintain semantic links for atomic notes and projects
 - maintain person notes when durable people context emerges
