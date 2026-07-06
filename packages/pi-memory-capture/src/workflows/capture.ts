@@ -65,12 +65,41 @@ const nowValues = Clock.clockWith((clock) =>
   })),
 );
 
-const makeCaptureRunId = Effect.fn("MemoryCapture.makeCaptureRunId")(function* () {
-  return yield* Random.nextUUIDv4;
+const randomByte = (): Effect.Effect<number> => Random.nextIntBetween(0, 256, { halfOpen: true });
+
+const hexByte = (byte: number): string => byte.toString(16).padStart(2, "0");
+
+const makeCaptureRunId = Effect.fnUntraced(function* (): Effect.fn.Return<string> {
+  const b0 = yield* randomByte();
+  const b1 = yield* randomByte();
+  const b2 = yield* randomByte();
+  const b3 = yield* randomByte();
+  const b4 = yield* randomByte();
+  const b5 = yield* randomByte();
+  const b6 = yield* randomByte();
+  const b7 = yield* randomByte();
+  const b8 = yield* randomByte();
+  const b9 = yield* randomByte();
+  const b10 = yield* randomByte();
+  const b11 = yield* randomByte();
+  const b12 = yield* randomByte();
+  const b13 = yield* randomByte();
+  const b14 = yield* randomByte();
+  const b15 = yield* randomByte();
+  const versionByte = (b6 & 0x0f) | 0x40;
+  const variantByte = (b8 & 0x3f) | 0x80;
+
+  return [
+    `${hexByte(b0)}${hexByte(b1)}${hexByte(b2)}${hexByte(b3)}`,
+    `${hexByte(b4)}${hexByte(b5)}`,
+    `${hexByte(versionByte)}${hexByte(b7)}`,
+    `${hexByte(variantByte)}${hexByte(b9)}`,
+    `${hexByte(b10)}${hexByte(b11)}${hexByte(b12)}${hexByte(b13)}${hexByte(b14)}${hexByte(b15)}`,
+  ].join("-");
 });
 
-const makeAttemptId = Effect.fn("MemoryCapture.makeAttemptId")(function* () {
-  const uuid = yield* Random.nextUUIDv4;
+const makeAttemptId = Effect.fnUntraced(function* (): Effect.fn.Return<AttemptId> {
+  const uuid = yield* makeCaptureRunId();
   return yield* decodeAttemptId(uuid).pipe(Effect.catch((cause) => Effect.die(cause)));
 });
 
