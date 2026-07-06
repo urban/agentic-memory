@@ -1,6 +1,8 @@
 import { Effect } from "effect";
-import { encodeCapturePayloadJson, type CapturePayload } from "../capture/CapturePayload.ts";
-import type { VaultPaths } from "../vault/VaultStatus.ts";
+import { encodeCapturePayloadJson } from "../capture/CapturePayload.ts";
+
+type CapturePayload = import("../capture/CapturePayload.ts").CapturePayload;
+type VaultPaths = import("../vault/VaultStatus.ts").VaultPaths;
 
 export interface StewardPromptInput {
   readonly payload: CapturePayload;

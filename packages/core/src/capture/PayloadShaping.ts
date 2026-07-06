@@ -5,9 +5,10 @@ import {
   MESSAGE_LIMIT,
   MESSAGE_TRUNCATION_SUFFIX,
   PAYLOAD_CHAR_LIMIT,
-  type CaptureMessageRole,
-  type CapturePayload,
 } from "./CapturePayload.ts";
+
+type CaptureMessageRole = import("./CapturePayload.ts").CaptureMessageRole;
+type CapturePayload = import("./CapturePayload.ts").CapturePayload;
 
 export {
   MESSAGE_CHAR_LIMIT,

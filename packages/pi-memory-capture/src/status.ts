@@ -1,6 +1,7 @@
-import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { Effect } from "effect";
 import { loadStatus } from "./workflows/status.ts";
+
+type ExtensionCommandContext = import("@earendil-works/pi-coding-agent").ExtensionCommandContext;
 
 export const runStatusCommand = Effect.fn("MemoryCapture.runStatusCommand")(function* (
   ctx: ExtensionCommandContext,

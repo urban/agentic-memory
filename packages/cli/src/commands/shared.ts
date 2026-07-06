@@ -1,11 +1,16 @@
 import { decodeCapturePayloadJson } from "@urban/agentic-memory-core/capture/CapturePayload";
 import { loadLinkConfig } from "@urban/agentic-memory-core/link/LinkConfig";
-import { decodeProjectSlug, type ProjectSlug } from "@urban/agentic-memory-core/link/ProjectSlug";
-import type { CaptureCorrelation } from "@urban/agentic-memory-core/observability/CaptureTelemetry";
-import type { StewardRunOptions } from "@urban/agentic-memory-core/steward/StewardExecution";
+import { decodeProjectSlug } from "@urban/agentic-memory-core/link/ProjectSlug";
 import { Config as EffectConfig, Effect, FileSystem, Option, Path, Stdio, Stream } from "effect";
 import { CliError, Flag } from "effect/unstable/cli";
-import { toFailure, type CliCommandFailure } from "../output.ts";
+import { toFailure } from "../output.ts";
+
+type ProjectSlug = import("@urban/agentic-memory-core/link/ProjectSlug").ProjectSlug;
+type CaptureCorrelation =
+  import("@urban/agentic-memory-core/observability/CaptureTelemetry").CaptureCorrelation;
+type StewardRunOptions =
+  import("@urban/agentic-memory-core/steward/StewardExecution").StewardRunOptions;
+type CliCommandFailure = import("../output.ts").CliCommandFailure;
 
 export interface ResolvedStewardTarget {
   readonly vaultPath: string;

@@ -2,7 +2,6 @@ import packageJson from "../package.json" with { type: "json" };
 import * as BunServices from "@effect/platform-bun/BunServices";
 import { makeCaptureObservabilityLayer } from "@urban/agentic-memory-core/observability/CaptureTelemetry";
 import { PiProcessRunnerLayer } from "@urban/agentic-memory-core/steward/PiProcessRunner";
-import type { StewardRunner } from "@urban/agentic-memory-core/steward/StewardExecution";
 import { Layer } from "effect";
 import { Command } from "effect/unstable/cli";
 import { commandInit } from "./commands/init.ts";
@@ -13,6 +12,8 @@ import { commandStatus } from "./commands/status.ts";
 import { commandStewardContext } from "./commands/steward-context.ts";
 
 export const cliVersion = packageJson.version;
+
+type StewardRunner = import("@urban/agentic-memory-core/steward/StewardExecution").StewardRunner;
 
 export type CliRequirements = BunServices.BunServices | StewardRunner;
 

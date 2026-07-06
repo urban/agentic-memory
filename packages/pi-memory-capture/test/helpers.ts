@@ -1,9 +1,15 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import type { CustomEntry, SessionEntry, SessionHeader } from "@earendil-works/pi-coding-agent";
-import type { AssistantMessage, TextContent, ToolCall, UserMessage } from "@earendil-works/pi-ai";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
+
+type CustomEntry<T = unknown> = import("@earendil-works/pi-coding-agent").CustomEntry<T>;
+type SessionEntry = import("@earendil-works/pi-coding-agent").SessionEntry;
+type SessionHeader = import("@earendil-works/pi-coding-agent").SessionHeader;
+type AssistantMessage = import("@earendil-works/pi-ai").AssistantMessage;
+type TextContent = import("@earendil-works/pi-ai").TextContent;
+type ToolCall = import("@earendil-works/pi-ai").ToolCall;
+type UserMessage = import("@earendil-works/pi-ai").UserMessage;
 
 const timestamp = "2026-06-05T12:00:00.000Z";
 

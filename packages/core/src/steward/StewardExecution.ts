@@ -1,16 +1,13 @@
-import {
-  captureCorrelationAttributes,
-  type CaptureCorrelation,
-} from "../observability/CaptureTelemetry.ts";
 import { Cause, Context, Effect, FileSystem, Layer, Path, Ref, Schema } from "effect";
-import type { CapturePayload } from "../capture/CapturePayload.ts";
-import type { ProjectSlug } from "../link/ProjectSlug.ts";
-import {
-  buildStewardContext,
-  StewardContextError,
-  type StewardContextResult,
-} from "./StewardContext.ts";
-import { StewardResult, type StewardResult as StewardResultValue } from "./StewardResult.ts";
+import { captureCorrelationAttributes } from "../observability/CaptureTelemetry.ts";
+import { buildStewardContext, StewardContextError } from "./StewardContext.ts";
+import { StewardResult } from "./StewardResult.ts";
+
+type CaptureCorrelation = import("../observability/CaptureTelemetry.ts").CaptureCorrelation;
+type CapturePayload = import("../capture/CapturePayload.ts").CapturePayload;
+type ProjectSlug = import("../link/ProjectSlug.ts").ProjectSlug;
+type StewardContextResult = import("./StewardContext.ts").StewardContextResult;
+type StewardResultValue = import("./StewardResult.ts").StewardResult;
 
 export const RETRY_ATTEMPTS = 3;
 export const RETRY_BACKOFF_MILLIS = [1_000, 2_000];

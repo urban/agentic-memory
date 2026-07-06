@@ -1,8 +1,9 @@
-import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import { Effect } from "effect";
-import { type LoadConfigResult } from "../schema.ts";
 import { CaptureConfig } from "../services/CaptureConfig.ts";
 import { Markers } from "../services/Markers.ts";
+
+type SessionEntry = import("@earendil-works/pi-coding-agent").SessionEntry;
+type LoadConfigResult = import("../schema.ts").LoadConfigResult;
 
 export interface StatusResult {
   readonly config: LoadConfigResult;

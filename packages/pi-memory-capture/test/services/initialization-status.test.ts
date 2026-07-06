@@ -1,17 +1,12 @@
 import * as BunFileSystem from "@effect/platform-bun/BunFileSystem";
 import * as BunPath from "@effect/platform-bun/BunPath";
-import {
-  AuthStorage,
-  ModelRegistry,
-  SessionManager,
-  type ExtensionCommandContext,
-} from "@earendil-works/pi-coding-agent";
+import { AuthStorage, ModelRegistry, SessionManager } from "@earendil-works/pi-coding-agent";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { theme } from "../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js";
 // @effect-diagnostics-next-line nodeBuiltinImport:off
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { encodeProjectConfigJson, type ResolvedProjectConfig } from "../../src/schema.ts";
+import { encodeProjectConfigJson } from "../../src/schema.ts";
 import { runInitCommand } from "../../src/initialization.ts";
 import { CaptureConfig } from "../../src/services/CaptureConfig.ts";
 import { Git } from "../../src/services/Git.ts";
@@ -25,6 +20,9 @@ import {
   removeTempDirectory,
   writeFile,
 } from "../helpers.ts";
+
+type ExtensionCommandContext = import("@earendil-works/pi-coding-agent").ExtensionCommandContext;
+type ResolvedProjectConfig = import("../../src/schema.ts").ResolvedProjectConfig;
 
 const captureConfigLayer = CaptureConfig.layer.pipe(Layer.provideMerge(VaultProjects.layer));
 const runtimeLayer = Layer.mergeAll(

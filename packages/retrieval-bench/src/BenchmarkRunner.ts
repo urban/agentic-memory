@@ -1,5 +1,8 @@
 import { Effect, FileSystem, Path, PlatformError } from "effect";
-import { evaluateHardGates, type GateStatus, type HardGateResult } from "./HardGates.ts";
+import { evaluateHardGates } from "./HardGates.ts";
+
+type GateStatus = import("./HardGates.ts").GateStatus;
+type HardGateResult = import("./HardGates.ts").HardGateResult;
 
 type RunnerBenchmarkCase = {
   readonly id: string;

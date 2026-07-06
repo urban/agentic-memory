@@ -1,16 +1,14 @@
 import { Config as EffectConfig, Effect, Layer, Option, Ref, Schema, Stream } from "effect";
 import * as Fiber from "effect/Fiber";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
-import type { CaptureCorrelation } from "../observability/CaptureTelemetry.ts";
-import {
-  StewardRunner,
-  StewardRunnerError,
-  type StewardRunnerOutcome,
-  type StewardRunOptions,
-  type StewardRunnerRequest,
-  type StewardSessionPointer,
-} from "./StewardExecution.ts";
+import { StewardRunner, StewardRunnerError } from "./StewardExecution.ts";
 import { decodeStewardResultJson } from "./StewardResult.ts";
+
+type CaptureCorrelation = import("../observability/CaptureTelemetry.ts").CaptureCorrelation;
+type StewardRunnerOutcome = import("./StewardExecution.ts").StewardRunnerOutcome;
+type StewardRunOptions = import("./StewardExecution.ts").StewardRunOptions;
+type StewardRunnerRequest = import("./StewardExecution.ts").StewardRunnerRequest;
+type StewardSessionPointer = import("./StewardExecution.ts").StewardSessionPointer;
 
 export interface PiProcessCommand {
   readonly command: string;

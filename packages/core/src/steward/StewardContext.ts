@@ -1,8 +1,9 @@
 import { Effect, FileSystem, Path, Schema } from "effect";
 import { CapturePayload } from "../capture/CapturePayload.ts";
-import type { ProjectSlug } from "../link/ProjectSlug.ts";
 import { resolveVaultPaths, validateVaultForSteward } from "../vault/VaultStatus.ts";
 import { buildStewardPrompt } from "./StewardPrompt.ts";
+
+type ProjectSlug = import("../link/ProjectSlug.ts").ProjectSlug;
 
 export const StewardContextVault = Schema.Struct({
   path: Schema.String,

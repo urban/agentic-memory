@@ -1,21 +1,19 @@
 import { shapeCapturePayload } from "@urban/agentic-memory-core/capture/PayloadShaping";
-import type {
-  AssistantMessage,
-  ImageContent,
-  TextContent,
-  ThinkingContent,
-  ToolCall,
-  UserMessage,
-} from "@earendil-works/pi-ai";
-import type { SessionEntry, SessionMessageEntry } from "@earendil-works/pi-coding-agent";
 import { Context, Effect, Layer } from "effect";
-import {
-  type CapturePayload,
-  type PayloadMessage,
-  type PayloadObservation,
-  type TriggerKind,
-} from "../schema.ts";
 import { sanitizeVisibleText } from "../text.ts";
+
+type AssistantMessage = import("@earendil-works/pi-ai").AssistantMessage;
+type ImageContent = import("@earendil-works/pi-ai").ImageContent;
+type TextContent = import("@earendil-works/pi-ai").TextContent;
+type ThinkingContent = import("@earendil-works/pi-ai").ThinkingContent;
+type ToolCall = import("@earendil-works/pi-ai").ToolCall;
+type UserMessage = import("@earendil-works/pi-ai").UserMessage;
+type SessionEntry = import("@earendil-works/pi-coding-agent").SessionEntry;
+type SessionMessageEntry = import("@earendil-works/pi-coding-agent").SessionMessageEntry;
+type CapturePayload = import("../schema.ts").CapturePayload;
+type PayloadMessage = import("../schema.ts").PayloadMessage;
+type PayloadObservation = import("../schema.ts").PayloadObservation;
+type TriggerKind = import("../schema.ts").TriggerKind;
 
 type UserVisibleBlock = TextContent | ImageContent;
 type AssistantVisibleBlock = TextContent | ThinkingContent | ToolCall;

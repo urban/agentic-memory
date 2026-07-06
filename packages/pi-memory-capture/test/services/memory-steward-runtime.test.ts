@@ -1,37 +1,20 @@
 import * as BunFileSystem from "@effect/platform-bun/BunFileSystem";
 import * as BunPath from "@effect/platform-bun/BunPath";
 import { extractAssistantText } from "@urban/agentic-memory-core/steward/PiProcessRunner";
-import type { StewardDecisionReport } from "@urban/agentic-memory-core/steward/StewardResult";
 import { Effect, Fiber, Layer, ManagedRuntime, Option } from "effect";
-import {
-  AuthStorage,
-  ModelRegistry,
-  type ExtensionAPI,
-  type SessionEntry,
-} from "@earendil-works/pi-coding-agent";
+import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
 // @effect-diagnostics-next-line nodeBuiltinImport:off
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { CAPTURE_BATCH_SIZE, MARKER_VERSION } from "../../src/constants.ts";
 import memoryCapture from "../../src/index.ts";
 import { CaptureConfig } from "../../src/services/CaptureConfig.ts";
-import {
-  MemorySteward,
-  StewardExecutor,
-  type StewardRunResult,
-} from "../../src/services/MemorySteward.ts";
+import { MemorySteward, StewardExecutor } from "../../src/services/MemorySteward.ts";
 import { Markers } from "../../src/services/Markers.ts";
 import { Preprocessor } from "../../src/services/Preprocessor.ts";
 import { VaultProjects } from "../../src/services/VaultProjects.ts";
 import { runCapturePass } from "../../src/workflows/capture.ts";
-import {
-  decodeAttemptId,
-  encodeProjectConfigJson,
-  type CapturePayload,
-  type LoadConfigResult,
-  type LocalPaths,
-  type ResolvedProjectConfig,
-} from "../../src/schema.ts";
+import { decodeAttemptId, encodeProjectConfigJson } from "../../src/schema.ts";
 import {
   createTempDirectory,
   makeAssistantEntry,
@@ -41,6 +24,16 @@ import {
   removeTempDirectory,
   writeFile,
 } from "../helpers.ts";
+
+type StewardDecisionReport =
+  import("@urban/agentic-memory-core/steward/StewardResult").StewardDecisionReport;
+type ExtensionAPI = import("@earendil-works/pi-coding-agent").ExtensionAPI;
+type SessionEntry = import("@earendil-works/pi-coding-agent").SessionEntry;
+type StewardRunResult = import("../../src/services/MemorySteward.ts").StewardRunResult;
+type CapturePayload = import("../../src/schema.ts").CapturePayload;
+type LoadConfigResult = import("../../src/schema.ts").LoadConfigResult;
+type LocalPaths = import("../../src/schema.ts").LocalPaths;
+type ResolvedProjectConfig = import("../../src/schema.ts").ResolvedProjectConfig;
 
 const capturePayload: CapturePayload = {
   version: 1,

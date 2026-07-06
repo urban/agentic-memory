@@ -1,4 +1,3 @@
-import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import { Effect, ManagedRuntime } from "effect";
 import { describe, expect, it } from "vitest";
 import { MESSAGE_LIMIT } from "../../src/constants.ts";
@@ -12,6 +11,8 @@ import {
   makeCustomMarkerEntry,
   makeUserEntry,
 } from "../helpers.ts";
+
+type SessionEntry = import("@earendil-works/pi-coding-agent").SessionEntry;
 
 const MarkersRuntime = ManagedRuntime.make(Markers.layer);
 const PreprocessorRuntime = ManagedRuntime.make(Preprocessor.layer);

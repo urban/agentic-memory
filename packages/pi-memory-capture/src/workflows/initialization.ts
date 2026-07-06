@@ -1,10 +1,12 @@
 import { Clock, Effect } from "effect";
 import { GIT_EXCLUDE_ENTRY } from "../constants.ts";
 import { formatIsoDateFromMillis } from "../project.ts";
-import { LoadConfigResult, type ResolvedProjectConfig } from "../schema.ts";
+import { LoadConfigResult } from "../schema.ts";
 import { CaptureConfig } from "../services/CaptureConfig.ts";
 import { Git } from "../services/Git.ts";
 import { VaultProjects } from "../services/VaultProjects.ts";
+
+type ResolvedProjectConfig = import("../schema.ts").ResolvedProjectConfig;
 
 export interface InitializationInputs {
   readonly cwd: string;

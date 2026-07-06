@@ -1,15 +1,17 @@
-import type { ExecOptions, ExecResult } from "@earendil-works/pi-coding-agent";
-import type { StewardSessionPointer } from "@urban/agentic-memory-core/steward/StewardExecution";
-import type { StewardDecisionReport } from "@urban/agentic-memory-core/steward/StewardResult";
 import { Cause, Context, Effect, FileSystem, Layer, Schema } from "effect";
-import { encodeCapturePayloadJson, type CapturePayload } from "../schema.ts";
-import {
-  decodeRunStewardResultJson,
-  type AttemptId,
-  type StewardResultStatus,
-  type TriggerKind,
-} from "../schema.ts";
+import { decodeRunStewardResultJson, encodeCapturePayloadJson } from "../schema.ts";
 import { CaptureConfig } from "./CaptureConfig.ts";
+
+type ExecOptions = import("@earendil-works/pi-coding-agent").ExecOptions;
+type ExecResult = import("@earendil-works/pi-coding-agent").ExecResult;
+type StewardSessionPointer =
+  import("@urban/agentic-memory-core/steward/StewardExecution").StewardSessionPointer;
+type StewardDecisionReport =
+  import("@urban/agentic-memory-core/steward/StewardResult").StewardDecisionReport;
+type CapturePayload = import("../schema.ts").CapturePayload;
+type AttemptId = import("../schema.ts").AttemptId;
+type StewardResultStatus = import("../schema.ts").StewardResultStatus;
+type TriggerKind = import("../schema.ts").TriggerKind;
 
 export interface StewardObservationResult {
   readonly status: StewardResultStatus;

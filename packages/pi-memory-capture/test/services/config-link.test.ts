@@ -8,11 +8,12 @@ import { ConfigProvider, Effect, FileSystem, Layer, ManagedRuntime, PlatformErro
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { GIT_EXCLUDE_ENTRY } from "../../src/constants.ts";
-import type { ResolvedProjectConfig } from "../../src/schema.ts";
 import { CaptureConfig } from "../../src/services/CaptureConfig.ts";
 import { Git } from "../../src/services/Git.ts";
 import { VaultProjects } from "../../src/services/VaultProjects.ts";
 import { createTempDirectory, removeTempDirectory, writeFile } from "../helpers.ts";
+
+type ResolvedProjectConfig = import("../../src/schema.ts").ResolvedProjectConfig;
 
 const InfrastructureLayer = Layer.mergeAll(BunFileSystem.layer, BunPath.layer);
 const CaptureConfigTestLayer = CaptureConfig.layer.pipe(

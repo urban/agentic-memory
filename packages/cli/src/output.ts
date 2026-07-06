@@ -1,10 +1,8 @@
-import {
-  encodeCliFailureResultJson,
-  type CliFailureResult,
-} from "@urban/agentic-memory-core/cli/CliResults";
+import { encodeCliFailureResultJson } from "@urban/agentic-memory-core/cli/CliResults";
 import { Console, Effect, Runtime, Schema } from "effect";
-import type { Command as CliCommand } from "effect/unstable/cli";
 import { commandRoot } from "./commands/root.ts";
+
+type CliFailureResult = import("@urban/agentic-memory-core/cli/CliResults").CliFailureResult;
 
 export class CliCommandFailure extends Schema.TaggedErrorClass<CliCommandFailure>()(
   "CliCommandFailure",
@@ -90,7 +88,7 @@ export const failWithOutput = Effect.fnUntraced(function* (
 });
 
 type CliOutputFailure = CliCommandFailure | CliCommandExit;
-type RootCommandContext = CliCommand.CommandContext<"agentic-memory">;
+type RootCommandContext = import("effect/unstable/cli").Command.CommandContext<"agentic-memory">;
 
 export const withCliFailureOutput = <A, R>(
   self: Effect.Effect<A, CliOutputFailure, R>,

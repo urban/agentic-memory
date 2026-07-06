@@ -1,20 +1,21 @@
-import type { SessionEntry } from "@earendil-works/pi-coding-agent";
-import type { StewardSessionPointer } from "@urban/agentic-memory-core/steward/StewardExecution";
-import type { StewardDecisionReport } from "@urban/agentic-memory-core/steward/StewardResult";
 import { Clock, Effect, Random, Semaphore } from "effect";
 import { CAPTURE_BATCH_SIZE, MARKER_VERSION } from "../constants.ts";
 import { formatIsoFromMillis } from "../project.ts";
-import {
-  decodeAttemptId,
-  type AttemptId,
-  type CaptureMarker,
-  type PayloadObservation,
-  type TriggerKind,
-} from "../schema.ts";
+import { decodeAttemptId } from "../schema.ts";
 import { CaptureConfig } from "../services/CaptureConfig.ts";
 import { Markers } from "../services/Markers.ts";
 import { MemorySteward } from "../services/MemorySteward.ts";
 import { Preprocessor } from "../services/Preprocessor.ts";
+
+type SessionEntry = import("@earendil-works/pi-coding-agent").SessionEntry;
+type StewardSessionPointer =
+  import("@urban/agentic-memory-core/steward/StewardExecution").StewardSessionPointer;
+type StewardDecisionReport =
+  import("@urban/agentic-memory-core/steward/StewardResult").StewardDecisionReport;
+type AttemptId = import("../schema.ts").AttemptId;
+type CaptureMarker = import("../schema.ts").CaptureMarker;
+type PayloadObservation = import("../schema.ts").PayloadObservation;
+type TriggerKind = import("../schema.ts").TriggerKind;
 
 export type CaptureExecutionStatus =
   | "captured"

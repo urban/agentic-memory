@@ -14,9 +14,10 @@ import {
   encodeProjectConfigJson,
   LoadConfigResult,
   LocalPaths,
-  type ResolvedProjectConfig,
 } from "../schema.ts";
 import { VaultProjects } from "./VaultProjects.ts";
+
+type ResolvedProjectConfig = import("../schema.ts").ResolvedProjectConfig;
 
 export type { LoadConfigResult, LocalPaths } from "../schema.ts";
 

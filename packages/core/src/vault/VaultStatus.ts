@@ -1,6 +1,8 @@
 import { Effect, FileSystem, Path, Schema } from "effect";
-import { projectFileRelativePathFromSlug, type ProjectSlug } from "../link/ProjectSlug.ts";
+import { projectFileRelativePathFromSlug } from "../link/ProjectSlug.ts";
 import { hasProjectRouteInMemory } from "./ProjectRoute.ts";
+
+type ProjectSlug = import("../link/ProjectSlug.ts").ProjectSlug;
 
 export const VaultHealth = Schema.Struct({
   path: Schema.String,

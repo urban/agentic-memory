@@ -1,9 +1,11 @@
-import type { ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { isProjectSlug } from "@urban/agentic-memory-core/link/ProjectSlug";
 import { Effect, Option } from "effect";
 import { projectSlugFromLink } from "./project.ts";
 import { CaptureConfig } from "./services/CaptureConfig.ts";
 import { applyInitialization, planInitialization } from "./workflows/initialization.ts";
+
+type ExtensionCommandContext = import("@earendil-works/pi-coding-agent").ExtensionCommandContext;
+type ExtensionContext = import("@earendil-works/pi-coding-agent").ExtensionContext;
 
 const normalizeProjectSlugInput = (value: string | undefined): string | undefined => {
   if (value === undefined) {
