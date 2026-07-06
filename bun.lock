@@ -20,7 +20,7 @@
         "vitest": "4.1.6",
       },
     },
-    "packages/agentic-memory-cli": {
+    "packages/cli": {
       "name": "@urban/agentic-memory-cli",
       "version": "0.4.0",
       "bin": {
@@ -44,7 +44,7 @@
         "vitest": "4.1.6",
       },
     },
-    "packages/agentic-memory-core": {
+    "packages/core": {
       "name": "@urban/agentic-memory-core",
       "version": "0.4.0",
       "dependencies": {
@@ -65,15 +65,38 @@
         "vitest": "4.1.6",
       },
     },
-    "packages/agentic-memory-vault-template": {
-      "name": "@urban/agentic-memory-vault-template",
+    "packages/pi-memory-capture": {
+      "name": "@urban/pi-memory-capture",
       "version": "0.4.0",
       "dependencies": {
+        "@effect/platform-bun": "4.0.0-beta.65",
+        "@urban/agentic-memory-core": "workspace:*",
+        "effect": "4.0.0-beta.65",
+      },
+      "devDependencies": {
+        "@earendil-works/pi-ai": "0.75.5",
+        "@earendil-works/pi-coding-agent": "0.75.5",
+        "@effect/language-service": "0.85.1",
+        "@effect/tsgo": "0.6.0",
+        "@effect/vitest": "4.0.0-beta.65",
+        "@types/bun": "1.3.14",
+        "@types/node": "25.6.2",
+        "@typescript/native-preview": "7.0.0-dev.20260511.1",
+        "oxfmt": "0.49.0",
+        "oxlint": "1.64.0",
+        "typescript": "latest",
+        "vitest": "4.1.6",
+      },
+    },
+    "packages/retrieval-bench": {
+      "name": "@urban/agentic-memory-retrieval-bench",
+      "version": "0.4.0",
+      "dependencies": {
+        "@effect/platform-bun": "4.0.0-beta.65",
         "effect": "4.0.0-beta.65",
       },
       "devDependencies": {
         "@effect/language-service": "0.85.1",
-        "@effect/platform-bun": "4.0.0-beta.65",
         "@effect/tsgo": "0.6.0",
         "@effect/vitest": "4.0.0-beta.65",
         "@types/bun": "1.3.13",
@@ -85,17 +108,15 @@
         "vitest": "4.1.6",
       },
     },
-    "packages/pi-memory-capture": {
-      "name": "@urban/pi-memory-capture",
+    "packages/vault-template": {
+      "name": "@urban/agentic-memory-vault-template",
       "version": "0.4.0",
       "dependencies": {
-        "@effect/platform-bun": "4.0.0-beta.65",
-        "@urban/agentic-memory-core": "workspace:*",
         "effect": "4.0.0-beta.65",
       },
       "devDependencies": {
-        "@earendil-works/pi-coding-agent": "0.75.5",
         "@effect/language-service": "0.85.1",
+        "@effect/platform-bun": "4.0.0-beta.65",
         "@effect/tsgo": "0.6.0",
         "@effect/vitest": "4.0.0-beta.65",
         "@types/bun": "1.3.13",
@@ -443,11 +464,13 @@
 
     "@typescript/native-preview-win32-x64": ["@typescript/native-preview-win32-x64@7.0.0-dev.20260511.1", "", { "os": "win32", "cpu": "x64" }, "sha512-SUm7iVYzKaflol+QwH0Ny5jZtco6PJduI+h/TEg0sgBJzVBa+9RN4I9+Xu9v+EJ1bci3XI7835IRdSP36lCgCw=="],
 
-    "@urban/agentic-memory-cli": ["@urban/agentic-memory-cli@workspace:packages/agentic-memory-cli"],
+    "@urban/agentic-memory-cli": ["@urban/agentic-memory-cli@workspace:packages/cli"],
 
-    "@urban/agentic-memory-core": ["@urban/agentic-memory-core@workspace:packages/agentic-memory-core"],
+    "@urban/agentic-memory-core": ["@urban/agentic-memory-core@workspace:packages/core"],
 
-    "@urban/agentic-memory-vault-template": ["@urban/agentic-memory-vault-template@workspace:packages/agentic-memory-vault-template"],
+    "@urban/agentic-memory-retrieval-bench": ["@urban/agentic-memory-retrieval-bench@workspace:packages/retrieval-bench"],
+
+    "@urban/agentic-memory-vault-template": ["@urban/agentic-memory-vault-template@workspace:packages/vault-template"],
 
     "@urban/pi-memory-capture": ["@urban/pi-memory-capture@workspace:packages/pi-memory-capture"],
 
@@ -797,6 +820,8 @@
 
     "@aws-sdk/nested-clients/@smithy/node-http-handler": ["@smithy/node-http-handler@4.7.7", "", { "dependencies": { "@smithy/core": "^3.24.6", "@smithy/types": "^4.14.3", "tslib": "^2.6.2" } }, "sha512-ZAFvHXrEk6K180EVhmZVg8GU5pUH5BSFqRs27JW3j1qEFx9YyYwWFx17x/MHcjALYimGAji7qEOlF1++be+G5A=="],
 
+    "@urban/pi-memory-capture/@types/bun": ["@types/bun@1.3.14", "", { "dependencies": { "bun-types": "1.3.14" } }, "sha512-h1hFqFVcvAvD9j9K7ZW7vd82aSA+rTdznZa+5bwvCwqSB1jmmfLcbIWhOLx1/+boy/xmjgCs/OMUL8hRJSmnPw=="],
+
     "@vitest/expect/@vitest/utils": ["@vitest/utils@4.1.6", "", { "dependencies": { "@vitest/pretty-format": "4.1.6", "convert-source-map": "^2.0.0", "tinyrainbow": "^3.1.0" } }, "sha512-FxIY+U81R3LGKCxaHHFRQ5+g6/iRgGLmeHWdp2Amj4ljQRrEIWHmZyDfDYBRZlpyqA7qKxtS9DD1dhk8RnRIVQ=="],
 
     "@vitest/runner/@vitest/utils": ["@vitest/utils@4.1.6", "", { "dependencies": { "@vitest/pretty-format": "4.1.6", "convert-source-map": "^2.0.0", "tinyrainbow": "^3.1.0" } }, "sha512-FxIY+U81R3LGKCxaHHFRQ5+g6/iRgGLmeHWdp2Amj4ljQRrEIWHmZyDfDYBRZlpyqA7qKxtS9DD1dhk8RnRIVQ=="],
@@ -814,5 +839,7 @@
     "vitest/@vitest/utils": ["@vitest/utils@4.1.6", "", { "dependencies": { "@vitest/pretty-format": "4.1.6", "convert-source-map": "^2.0.0", "tinyrainbow": "^3.1.0" } }, "sha512-FxIY+U81R3LGKCxaHHFRQ5+g6/iRgGLmeHWdp2Amj4ljQRrEIWHmZyDfDYBRZlpyqA7qKxtS9DD1dhk8RnRIVQ=="],
 
     "wrap-ansi/string-width": ["string-width@7.2.0", "", { "dependencies": { "emoji-regex": "^10.3.0", "get-east-asian-width": "^1.0.0", "strip-ansi": "^7.1.0" } }, "sha512-tsaTIkKW9b4N+AEj+SVA+WhJzV7/zMhcSu78mLKWSk7cXMOSHsBKFWUs0fWwq8QyK3MgJBQRX6Gbi4kYbdvGkQ=="],
+
+    "@urban/pi-memory-capture/@types/bun/bun-types": ["bun-types@1.3.14", "", { "dependencies": { "@types/node": "*" } }, "sha512-4N0ig0fEomHt5R0KCFWjovxow98rIoRwKolrYdCcknNwMekCXRnWEUvgu5soYV8QXtVsrUD8B95MBOZGPvr6KQ=="],
   }
 }

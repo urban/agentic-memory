@@ -1,0 +1,14 @@
+[
+  {
+    "id": "alpha-retry-latency-and-options",
+    "projectSlug": "alpha-product",
+    "prompt": "In Alpha Product, I need to tune the retry scheduler. What latency budget decision should I follow, and how should I present options back to Urban?",
+    "requiredFiles": ["projects/alpha-product.md", "notes/alpha-latency-budget.md", "USER.md"],
+    "requiredFacts": [
+      "Alpha Product interactive retry scheduling should use a 200ms p95 latency budget.",
+      "Prioritization options should be presented as stack-ranked capital-letter choices."
+    ],
+    "forbiddenFiles": ["notes/beta-retry-policy.md"],
+    "forbiddenFacts": ["Beta Platform uses a 5 second batch retry window."]
+  }
+]
