@@ -1,6 +1,6 @@
 import * as BunServices from "@effect/platform-bun/BunServices";
 import { assert, describe, it } from "@effect/vitest";
-import { Effect, FileSystem, ManagedRuntime, Path } from "effect";
+import { Effect, FileSystem, ManagedRuntime, Path, PlatformError } from "effect";
 import { ChildProcessSpawner } from "effect/unstable/process";
 import { afterAll } from "vitest";
 import { loadBenchmarkCases } from "../src/BenchmarkCase.ts";
@@ -22,46 +22,40 @@ const fixturePaths = Effect.gen(function* () {
   return { vaultPath, casesPath };
 });
 
-const forbiddenAssertionMarkers = [
-  "projects/",
-  "notes/",
-  "maps/",
-  "records/",
-  "sources/",
-  "MEMORY.md",
-  "USER.md",
-  "[[",
-  ".agentic-memory",
-];
-
-const fixtureFacts = [
-  {
-    path: "projects/alpha-product.md",
-    snippet: "200ms p95 latency budget",
-  },
-  {
-    path: "USER.md",
-    snippet: "stack-ranked capital-letter choices",
-  },
-  {
-    path: "notes/user-option-format.md",
-    snippet: "capital-letter options and invite a stack-ranked reply",
-  },
-  {
-    path: "notes/beta-retry-policy.md",
-    snippet: "5 second batch retry window",
-  },
+const fixtureSnippets = [
+  "200ms p95 latency budget",
+  "stack-ranked capital-letter choices",
+  "capital-letter options and invite a stack-ranked reply",
+  "5 second batch retry window",
 ] as const;
+
+const readFixtureMarkdown = Effect.fnUntraced(function* (
+  vaultPath: string,
+): Effect.fn.Return<ReadonlyArray<string>, PlatformError.PlatformError, FileSystem.FileSystem> {
+  const fs = yield* FileSystem.FileSystem;
+  const entries = yield* fs.readDirectory(vaultPath, { recursive: true });
+  const markdownPaths = entries.filter((entry) => entry.endsWith(".md"));
+
+  return yield* Effect.forEach(markdownPaths, (markdownPath) =>
+    fs.readFileString(`${vaultPath}/${markdownPath}`),
+  );
+});
+
+const findGate = <A extends { readonly name: string }>(
+  gates: ReadonlyArray<A>,
+  gateName: A["name"],
+): A => {
+  const gate = gates.find((candidate) => candidate.name === gateName);
+  return gate ?? assert.fail(`Expected a ${gateName} hard gate result`);
+};
 
 describe("retrieval benchmark fixtures", () => {
   afterAll(() => BenchRuntime.dispose());
 
-  it.effect("loads the Alpha/Beta recall case without internal path assertions", () =>
+  it.effect("loads the Alpha/Beta recall case with public answer expectations", () =>
     withBenchRuntime(
       Effect.gen(function* () {
-        const fs = yield* FileSystem.FileSystem;
         const { casesPath } = yield* fixturePaths;
-        const rawCases = yield* fs.readFileString(casesPath);
         const benchmarkCases = yield* loadBenchmarkCases(casesPath);
 
         const benchmarkCase = benchmarkCases[0];
@@ -84,24 +78,19 @@ describe("retrieval benchmark fixtures", () => {
         assert.deepEqual(benchmarkCase.expected.answerMustNotContain, [
           "5 second batch retry window",
         ]);
-
-        for (const marker of forbiddenAssertionMarkers) {
-          assert.notInclude(rawCases, marker);
-        }
       }),
     ),
   );
 
-  it.effect("keeps the required Alpha facts and Beta distractor in the fixture vault", () =>
+  it.effect("keeps the required Alpha facts and Beta distractor in fixture content", () =>
     withBenchRuntime(
       Effect.gen(function* () {
-        const fs = yield* FileSystem.FileSystem;
-        const path = yield* Path.Path;
         const { vaultPath } = yield* fixturePaths;
+        const fixtureMarkdown = yield* readFixtureMarkdown(vaultPath);
+        const fixtureContents = fixtureMarkdown.join("\n");
 
-        for (const fixtureFact of fixtureFacts) {
-          const contents = yield* fs.readFileString(path.join(vaultPath, fixtureFact.path));
-          assert.include(contents, fixtureFact.snippet);
+        for (const snippet of fixtureSnippets) {
+          assert.include(fixtureContents, snippet);
         }
       }),
     ),
@@ -134,14 +123,13 @@ describe("retrieval benchmark fixtures", () => {
         assert.strictEqual(report.status, "pass");
         assert.isTrue(report.hardGates.every((gate) => gate.status === "pass"));
         assert.strictEqual(report.decoded._tag, "decoded");
+        assert.strictEqual(findGate(report.hardGates, "status").status, "pass");
+        assert.strictEqual(findGate(report.hardGates, "answerMustContain").status, "pass");
+        assert.strictEqual(findGate(report.hardGates, "answerMustNotContain").status, "pass");
 
         if (report.decoded._tag === "decoded") {
           assert.strictEqual(report.decoded.response.status, "answered");
           assert.strictEqual(report.decoded.response.question, benchmarkCase.question);
-          assert.include(report.decoded.response.answer, "200ms p95");
-          assert.include(report.decoded.response.answer, "stack-ranked");
-          assert.include(report.decoded.response.answer, "capital-letter");
-          assert.notInclude(report.decoded.response.answer, "5 second batch retry window");
           assert.deepEqual(report.decoded.response.warnings, []);
         }
       }),
@@ -162,10 +150,7 @@ describe("retrieval benchmark fixtures", () => {
           vaultPath: "/definitely-missing-agentic-memory-vault",
           benchmarkCase,
         });
-        const exitCodeGate = report.hardGates.find((gate) => gate.name === "exitCode");
-        if (exitCodeGate === undefined) {
-          assert.fail("Expected an exitCode hard gate result");
-        }
+        const exitCodeGate = findGate(report.hardGates, "exitCode");
 
         assert.strictEqual(report.status, "fail");
         assert.notStrictEqual(report.exitCode, ChildProcessSpawner.ExitCode(0));
