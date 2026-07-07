@@ -1,23 +1,38 @@
+import { ChildProcessSpawner } from "effect/unstable/process";
+
+type RecallSuccessResponse = import("./RecallSuccessJson.ts").RecallSuccessResponse;
+
 export type GateStatus = "pass" | "fail";
 
 export type HardGateName =
-  | "mustInclude"
-  | "mustNotInclude"
-  | "preferredTop1"
-  | "sourceLeakage"
-  | "vaultRelativePaths";
+  | "exitCode"
+  | "stdoutJson"
+  | "status"
+  | "answerMustContain"
+  | "answerMustNotContain";
+
+export type DecodedRecallOutput =
+  | {
+      readonly _tag: "decoded";
+      readonly response: RecallSuccessResponse;
+    }
+  | {
+      readonly _tag: "decode_failed";
+      readonly message: string;
+    };
 
 export type HardGateBenchmarkCase = {
-  readonly includeSources?: boolean | undefined;
   readonly expected: {
-    readonly mustInclude: ReadonlyArray<string>;
-    readonly mustNotInclude: ReadonlyArray<string>;
-    readonly preferredTop1?: string | undefined;
+    readonly status: "answered";
+    readonly answerMustContain: ReadonlyArray<string>;
+    readonly answerMustNotContain: ReadonlyArray<string>;
   };
 };
 
-export type HardGateRetrievalResult = {
-  readonly path: string;
+export type HardGateExecution = {
+  readonly exitCode: ChildProcessSpawner.ExitCode;
+  readonly stdout: string;
+  readonly decoded: DecodedRecallOutput;
 };
 
 export type HardGateResult = {
@@ -32,8 +47,6 @@ export type HardGateReport = {
   readonly status: GateStatus;
   readonly gates: ReadonlyArray<HardGateResult>;
 };
-
-const managedPrefixes = ["maps/", "projects/", "notes/", "people/", "records/", "sources/"];
 
 const gateStatus = (violations: ReadonlyArray<string>): GateStatus =>
   violations.length === 0 ? "pass" : "fail";
@@ -53,91 +66,75 @@ const makeGate = (
   message: violations.length === 0 ? passMessage : failMessage,
 });
 
-const isVaultRelativeMarkdownPath = (relativePath: string): boolean => {
-  const segments = relativePath.split("/");
-
-  return (
-    relativePath.endsWith(".md") &&
-    !relativePath.startsWith("/") &&
-    !relativePath.startsWith(".") &&
-    !relativePath.includes("\\") &&
-    !segments.includes("..") &&
-    segments.every((segment) => segment.length > 0)
-  );
-};
-
-const isManagedMemoryPath = (relativePath: string): boolean =>
-  isVaultRelativeMarkdownPath(relativePath) &&
-  (relativePath === "MEMORY.md" ||
-    relativePath === "USER.md" ||
-    managedPrefixes.some((prefix) => relativePath.startsWith(prefix)));
-
-const preferredTop1Gate = (
-  preferredTop1: string | undefined,
-  topPath: string | undefined,
-): ReadonlyArray<HardGateResult> =>
-  preferredTop1 === undefined
-    ? []
-    : [
-        makeGate(
-          "preferredTop1",
-          topPath === preferredTop1 ? [] : [preferredTop1],
-          [preferredTop1],
-          topPath === undefined ? [] : [topPath],
-          "Preferred top-1 result matched.",
-          "Preferred top-1 result did not match.",
-        ),
-      ];
+const normalizeAnswerText = (input: string): string =>
+  input.toLowerCase().replace(/\s+/gu, " ").trim();
 
 export const evaluateHardGates = (input: {
   readonly benchmarkCase: HardGateBenchmarkCase;
-  readonly results: ReadonlyArray<HardGateRetrievalResult>;
+  readonly execution: HardGateExecution;
 }): HardGateReport => {
-  const paths = input.results.map((result) => result.path);
-  const missingRequired = input.benchmarkCase.expected.mustInclude.filter(
-    (expectedPath) => !paths.includes(expectedPath),
-  );
-  const presentForbidden = input.benchmarkCase.expected.mustNotInclude.filter((forbiddenPath) =>
-    paths.includes(forbiddenPath),
-  );
-  const sourceLeaks =
-    input.benchmarkCase.includeSources === true
-      ? []
-      : paths.filter((resultPath) => resultPath.startsWith("sources/"));
-  const invalidPaths = paths.filter((relativePath) => !isManagedMemoryPath(relativePath));
+  const decodedResponse =
+    input.execution.decoded._tag === "decoded" ? input.execution.decoded.response : undefined;
+  const normalizedAnswer =
+    decodedResponse === undefined ? undefined : normalizeAnswerText(decodedResponse.answer);
+  const missingRequired =
+    normalizedAnswer === undefined
+      ? [...input.benchmarkCase.expected.answerMustContain]
+      : input.benchmarkCase.expected.answerMustContain.filter(
+          (requiredFact) => !normalizedAnswer.includes(normalizeAnswerText(requiredFact)),
+        );
+  const presentForbidden =
+    normalizedAnswer === undefined
+      ? [...input.benchmarkCase.expected.answerMustNotContain]
+      : input.benchmarkCase.expected.answerMustNotContain.filter((forbiddenFact) =>
+          normalizedAnswer.includes(normalizeAnswerText(forbiddenFact)),
+        );
   const gates = [
     makeGate(
-      "mustInclude",
+      "exitCode",
+      input.execution.exitCode === ChildProcessSpawner.ExitCode(0)
+        ? []
+        : [String(input.execution.exitCode)],
+      ["0"],
+      [String(input.execution.exitCode)],
+      "CLI exited with code 0.",
+      "CLI exited with a nonzero code.",
+    ),
+    makeGate(
+      "stdoutJson",
+      input.execution.decoded._tag === "decoded" ? [] : [input.execution.decoded.message],
+      ["RecallSuccessJson"],
+      input.execution.decoded._tag === "decoded"
+        ? ["RecallSuccessJson"]
+        : [input.execution.decoded.message],
+      "stdout decoded as RecallSuccessJson.",
+      "stdout did not decode as RecallSuccessJson.",
+    ),
+    makeGate(
+      "status",
+      decodedResponse?.status === input.benchmarkCase.expected.status
+        ? []
+        : [input.benchmarkCase.expected.status],
+      [input.benchmarkCase.expected.status],
+      decodedResponse === undefined ? [] : [decodedResponse.status],
+      "Recall status matched the benchmark expectation.",
+      "Recall status did not match the benchmark expectation.",
+    ),
+    makeGate(
+      "answerMustContain",
       missingRequired,
-      input.benchmarkCase.expected.mustInclude,
-      paths,
-      "All required files were returned.",
-      "One or more required files were missing.",
+      input.benchmarkCase.expected.answerMustContain,
+      decodedResponse === undefined ? [] : [decodedResponse.answer],
+      "Answer included every required fact.",
+      "Answer did not include every required fact.",
     ),
     makeGate(
-      "mustNotInclude",
+      "answerMustNotContain",
       presentForbidden,
-      input.benchmarkCase.expected.mustNotInclude,
-      presentForbidden,
-      "No forbidden files were returned.",
-      "One or more forbidden files were returned.",
-    ),
-    ...preferredTop1Gate(input.benchmarkCase.expected.preferredTop1, paths[0]),
-    makeGate(
-      "sourceLeakage",
-      sourceLeaks,
-      [],
-      sourceLeaks,
-      "No source files leaked into default retrieval.",
-      "Source files leaked into default retrieval.",
-    ),
-    makeGate(
-      "vaultRelativePaths",
-      invalidPaths,
-      [],
-      invalidPaths,
-      "All result paths were valid vault-relative managed memory paths.",
-      "One or more result paths were invalid.",
+      input.benchmarkCase.expected.answerMustNotContain,
+      decodedResponse === undefined ? [] : [decodedResponse.answer],
+      "Answer excluded every forbidden fact.",
+      "Answer included forbidden facts or could not be inspected.",
     ),
   ];
 

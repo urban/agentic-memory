@@ -1,148 +1,186 @@
-import { Effect, FileSystem, Path, PlatformError } from "effect";
-import { evaluateHardGates } from "./HardGates.ts";
+import { Effect, Path, PlatformError, Stream } from "effect";
+import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+import {
+  evaluateHardGates,
+  type DecodedRecallOutput,
+  type GateStatus,
+  type HardGateResult,
+} from "./HardGates.ts";
+import { decodeRecallSuccessJson } from "./RecallSuccessJson.ts";
 
-type GateStatus = import("./HardGates.ts").GateStatus;
-type HardGateResult = import("./HardGates.ts").HardGateResult;
+type BenchmarkCase = import("./BenchmarkCase.ts").BenchmarkCase;
 
-type RunnerBenchmarkCase = {
-  readonly id: string;
-  readonly query: string;
-  readonly projectSlug?: string | undefined;
-  readonly includeSources?: boolean | undefined;
-  readonly topK?: number | undefined;
-  readonly expected: {
-    readonly mustInclude: ReadonlyArray<string>;
-    readonly mustNotInclude: ReadonlyArray<string>;
-    readonly preferredTop1?: string | undefined;
-  };
-};
+const cliEntrypointFileUrl = new URL("../../cli/src/main.ts", import.meta.url);
+const repoRootFileUrl = new URL("../../..", import.meta.url);
+const benchRunnerName = "agentic-memory recall";
 
-type RunnerRetrievalRequest = {
-  readonly vaultPath: string;
-  readonly query: string;
-  readonly limit: number;
-  readonly includeSources: boolean;
-  readonly projectSlug?: string;
-};
+const fileUrlToKnownPath = (path: Path.Path, url: URL): Effect.Effect<string, never> =>
+  path.fromFileUrl(url).pipe(Effect.catchTag("BadArgument", (error) => Effect.die(error)));
 
-export type RunnerRetrievalResult = {
-  readonly path: string;
-  readonly memoryLayer: string;
-  readonly score: number;
-  readonly snippet: string;
-};
-
-export type RunnerRetrievalProvider = {
-  readonly name: string;
-  readonly retrieve: (
-    request: RunnerRetrievalRequest,
-  ) => Effect.Effect<
-    ReadonlyArray<RunnerRetrievalResult>,
-    PlatformError.PlatformError,
-    FileSystem.FileSystem | Path.Path
-  >;
+type RecallCliExecution = {
+  readonly command: ReadonlyArray<string>;
+  readonly exitCode: ChildProcessSpawner.ExitCode;
+  readonly stdout: string;
+  readonly stderr: string;
+  readonly decoded: DecodedRecallOutput;
 };
 
 export type BenchmarkCaseReport = {
   readonly id: string;
   readonly status: GateStatus;
-  readonly provider: string;
-  readonly results: ReadonlyArray<RunnerRetrievalResult>;
+  readonly command: ReadonlyArray<string>;
+  readonly exitCode: ChildProcessSpawner.ExitCode;
+  readonly stdout: string;
+  readonly stderr: string;
+  readonly decoded: DecodedRecallOutput;
   readonly hardGates: ReadonlyArray<HardGateResult>;
 };
 
 export type BenchmarkSuiteReport = {
   readonly status: GateStatus;
-  readonly provider: string;
+  readonly runner: string;
   readonly cases: ReadonlyArray<BenchmarkCaseReport>;
 };
 
-const defaultTopK = 5;
+const resolveCliPaths = Effect.fnUntraced(function* (): Effect.fn.Return<
+  {
+    readonly cliEntrypointPath: string;
+    readonly repoRootPath: string;
+  },
+  never,
+  Path.Path
+> {
+  const path = yield* Path.Path;
+  const cliEntrypointPath = yield* fileUrlToKnownPath(path, cliEntrypointFileUrl);
+  const repoRootPath = yield* fileUrlToKnownPath(path, repoRootFileUrl);
 
-const makeRetrievalRequest = (input: {
+  return { cliEntrypointPath, repoRootPath };
+});
+
+const decodeRecallOutput = (stdout: string): Effect.Effect<DecodedRecallOutput, never> =>
+  decodeRecallSuccessJson(stdout.trim()).pipe(
+    Effect.map(
+      (response) =>
+        ({
+          _tag: "decoded",
+          response,
+        }) satisfies DecodedRecallOutput,
+    ),
+    Effect.catch((cause) =>
+      Effect.succeed({
+        _tag: "decode_failed",
+        message: cause.message,
+      } satisfies DecodedRecallOutput),
+    ),
+  );
+
+const invokeRecallCli = Effect.fnUntraced(function* (input: {
   readonly vaultPath: string;
-  readonly benchmarkCase: RunnerBenchmarkCase;
-}): RunnerRetrievalRequest => {
-  const limit = input.benchmarkCase.topK ?? defaultTopK;
-  const includeSources = input.benchmarkCase.includeSources === true;
+  readonly benchmarkCase: BenchmarkCase;
+}): Effect.fn.Return<
+  RecallCliExecution,
+  PlatformError.PlatformError,
+  ChildProcessSpawner.ChildProcessSpawner | Path.Path
+> {
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  const { cliEntrypointPath, repoRootPath } = yield* resolveCliPaths();
+  const cliArgs = [
+    cliEntrypointPath,
+    "recall",
+    input.benchmarkCase.question,
+    "--vault",
+    input.vaultPath,
+    "--json",
+  ] satisfies ReadonlyArray<string>;
+  const command = ChildProcess.make("bun", [...cliArgs], {
+    cwd: repoRootPath,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
 
-  return input.benchmarkCase.projectSlug === undefined
-    ? {
-        vaultPath: input.vaultPath,
-        query: input.benchmarkCase.query,
-        limit,
-        includeSources,
-      }
-    : {
-        vaultPath: input.vaultPath,
-        query: input.benchmarkCase.query,
-        projectSlug: input.benchmarkCase.projectSlug,
-        limit,
-        includeSources,
+  return yield* Effect.scoped(
+    Effect.gen(function* () {
+      const handle = yield* spawner.spawn(command);
+      const result = yield* Effect.all(
+        {
+          stdout: handle.stdout.pipe(Stream.decodeText(), Stream.mkString),
+          stderr: handle.stderr.pipe(Stream.decodeText(), Stream.mkString),
+          exitCode: handle.exitCode,
+        },
+        { concurrency: 3 },
+      );
+      const decoded = yield* decodeRecallOutput(result.stdout);
+
+      return {
+        command: ["bun", ...cliArgs],
+        exitCode: result.exitCode,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        decoded,
       };
-};
+    }),
+  );
+});
 
 const makeCaseReport = (input: {
-  readonly providerName: string;
-  readonly benchmarkCase: RunnerBenchmarkCase;
-  readonly results: ReadonlyArray<RunnerRetrievalResult>;
+  readonly benchmarkCase: BenchmarkCase;
+  readonly execution: RecallCliExecution;
 }): BenchmarkCaseReport => {
   const hardGateReport = evaluateHardGates({
     benchmarkCase: input.benchmarkCase,
-    results: input.results,
+    execution: {
+      exitCode: input.execution.exitCode,
+      stdout: input.execution.stdout,
+      decoded: input.execution.decoded,
+    },
   });
 
   return {
     id: input.benchmarkCase.id,
     status: hardGateReport.status,
-    provider: input.providerName,
-    results: input.results,
+    command: input.execution.command,
+    exitCode: input.execution.exitCode,
+    stdout: input.execution.stdout,
+    stderr: input.execution.stderr,
+    decoded: input.execution.decoded,
     hardGates: hardGateReport.gates,
   };
 };
 
 export const runBenchmarkCase = (input: {
-  readonly provider: RunnerRetrievalProvider;
   readonly vaultPath: string;
-  readonly benchmarkCase: RunnerBenchmarkCase;
+  readonly benchmarkCase: BenchmarkCase;
 }): Effect.Effect<
   BenchmarkCaseReport,
   PlatformError.PlatformError,
-  FileSystem.FileSystem | Path.Path
+  ChildProcessSpawner.ChildProcessSpawner | Path.Path
 > =>
-  input.provider
-    .retrieve(
-      makeRetrievalRequest({ vaultPath: input.vaultPath, benchmarkCase: input.benchmarkCase }),
-    )
-    .pipe(
-      Effect.map((results) =>
-        makeCaseReport({
-          providerName: input.provider.name,
-          benchmarkCase: input.benchmarkCase,
-          results,
-        }),
-      ),
-    );
+  invokeRecallCli(input).pipe(
+    Effect.map((execution) =>
+      makeCaseReport({
+        benchmarkCase: input.benchmarkCase,
+        execution,
+      }),
+    ),
+  );
 
 export const runBenchmarkSuite = (input: {
-  readonly provider: RunnerRetrievalProvider;
   readonly vaultPath: string;
-  readonly benchmarkCases: ReadonlyArray<RunnerBenchmarkCase>;
+  readonly benchmarkCases: ReadonlyArray<BenchmarkCase>;
 }): Effect.Effect<
   BenchmarkSuiteReport,
   PlatformError.PlatformError,
-  FileSystem.FileSystem | Path.Path
+  ChildProcessSpawner.ChildProcessSpawner | Path.Path
 > =>
   Effect.forEach(input.benchmarkCases, (benchmarkCase) =>
     runBenchmarkCase({
-      provider: input.provider,
       vaultPath: input.vaultPath,
       benchmarkCase,
     }),
   ).pipe(
     Effect.map((cases) => ({
       status: cases.every((benchmarkCase) => benchmarkCase.status === "pass") ? "pass" : "fail",
-      provider: input.provider.name,
+      runner: benchRunnerName,
       cases,
     })),
   );
