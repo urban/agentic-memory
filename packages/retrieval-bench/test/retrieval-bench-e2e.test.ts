@@ -111,18 +111,18 @@ describe("retrieval benchmark fixtures", () => {
           benchmarkCase,
         });
 
-        assert.strictEqual(report.command[0], "bun");
-        assert.match(report.command[1] ?? "", /packages\/cli\/src\/main\.ts$/u);
-        assert.strictEqual(report.command[2], "recall");
-        assert.strictEqual(report.command[3], benchmarkCase.question);
-        assert.strictEqual(report.command[4], "--vault");
-        assert.strictEqual(report.command[5], vaultPath);
-        assert.strictEqual(report.command[6], "--json");
+        assert.strictEqual(report.command[0], "agentic-memory");
+        assert.strictEqual(report.command[1], "recall");
+        assert.strictEqual(report.command[2], benchmarkCase.question);
+        assert.strictEqual(report.command[3], "--vault");
+        assert.strictEqual(report.command[4], vaultPath);
+        assert.strictEqual(report.command[5], "--json");
         assert.strictEqual(report.exitCode, ChildProcessSpawner.ExitCode(0));
         assert.strictEqual(report.stderr, "");
         assert.strictEqual(report.status, "pass");
         assert.isTrue(report.hardGates.every((gate) => gate.status === "pass"));
         assert.strictEqual(report.decoded._tag, "decoded");
+        assert.strictEqual(findGate(report.hardGates, "stdoutJson").status, "pass");
         assert.strictEqual(findGate(report.hardGates, "status").status, "pass");
         assert.strictEqual(findGate(report.hardGates, "answerMustContain").status, "pass");
         assert.strictEqual(findGate(report.hardGates, "answerMustNotContain").status, "pass");

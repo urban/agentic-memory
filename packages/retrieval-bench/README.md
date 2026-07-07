@@ -29,7 +29,7 @@ bun run check
 The current vertical slice runs one end-to-end benchmark case against `fixtures/basic-vault/` by invoking:
 
 ```sh
-bun packages/cli/src/main.ts recall "<question>" --vault <fixture-vault> --json
+agentic-memory recall "<question>" --vault <fixture-vault> --json
 ```
 
 The fixture asks a combined project/user-preference question:

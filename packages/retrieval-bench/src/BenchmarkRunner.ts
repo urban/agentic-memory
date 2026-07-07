@@ -1,4 +1,5 @@
-import { Effect, Path, PlatformError, Stream } from "effect";
+import { decodeRecallSuccessJson } from "@urban/agentic-memory-core/recall/Recall";
+import { Config as EffectConfig, Effect, Option, Path, PlatformError, Stream } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import {
   evaluateHardGates,
@@ -6,16 +7,34 @@ import {
   type GateStatus,
   type HardGateResult,
 } from "./HardGates.ts";
-import { decodeRecallSuccessJson } from "./RecallSuccessJson.ts";
 
 type BenchmarkCase = import("./BenchmarkCase.ts").BenchmarkCase;
 
-const cliEntrypointFileUrl = new URL("../../cli/src/main.ts", import.meta.url);
+const benchLauncherDirectoryFileUrl = new URL("../bin/", import.meta.url);
 const repoRootFileUrl = new URL("../../..", import.meta.url);
 const benchRunnerName = "agentic-memory recall";
 
 const fileUrlToKnownPath = (path: Path.Path, url: URL): Effect.Effect<string, never> =>
   path.fromFileUrl(url).pipe(Effect.catchTag("BadArgument", (error) => Effect.die(error)));
+
+const optionalEnvironmentVariable = Effect.fn("BenchmarkRunner.optionalEnvironmentVariable")(
+  function* (name: string) {
+    const value = yield* EffectConfig.string(name).pipe(EffectConfig.option);
+    return Option.getOrUndefined(value);
+  },
+  Effect.catch(() => Effect.sync((): string | undefined => undefined)),
+);
+
+const pathWithPrependedBin = (
+  path: Path.Path,
+  binDirectoryPath: string,
+  currentPath: string | undefined,
+): string => {
+  const pathListSeparator = path.sep === "\\" ? ";" : ":";
+  return currentPath === undefined || currentPath.length === 0
+    ? binDirectoryPath
+    : `${binDirectoryPath}${pathListSeparator}${currentPath}`;
+};
 
 type RecallCliExecution = {
   readonly command: ReadonlyArray<string>;
@@ -44,17 +63,23 @@ export type BenchmarkSuiteReport = {
 
 const resolveCliPaths = Effect.fnUntraced(function* (): Effect.fn.Return<
   {
-    readonly cliEntrypointPath: string;
+    readonly benchLauncherDirectoryPath: string;
     readonly repoRootPath: string;
+    readonly commandPath: string;
   },
   never,
   Path.Path
 > {
   const path = yield* Path.Path;
-  const cliEntrypointPath = yield* fileUrlToKnownPath(path, cliEntrypointFileUrl);
+  const benchLauncherDirectoryPath = yield* fileUrlToKnownPath(path, benchLauncherDirectoryFileUrl);
   const repoRootPath = yield* fileUrlToKnownPath(path, repoRootFileUrl);
+  const currentPath = yield* optionalEnvironmentVariable("PATH");
 
-  return { cliEntrypointPath, repoRootPath };
+  return {
+    benchLauncherDirectoryPath,
+    repoRootPath,
+    commandPath: pathWithPrependedBin(path, benchLauncherDirectoryPath, currentPath),
+  };
 });
 
 const decodeRecallOutput = (stdout: string): Effect.Effect<DecodedRecallOutput, never> =>
@@ -83,17 +108,20 @@ const invokeRecallCli = Effect.fnUntraced(function* (input: {
   ChildProcessSpawner.ChildProcessSpawner | Path.Path
 > {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-  const { cliEntrypointPath, repoRootPath } = yield* resolveCliPaths();
+  const { commandPath, repoRootPath } = yield* resolveCliPaths();
   const cliArgs = [
-    cliEntrypointPath,
     "recall",
     input.benchmarkCase.question,
     "--vault",
     input.vaultPath,
     "--json",
   ] satisfies ReadonlyArray<string>;
-  const command = ChildProcess.make("bun", [...cliArgs], {
+  const command = ChildProcess.make("agentic-memory", [...cliArgs], {
     cwd: repoRootPath,
+    env: {
+      PATH: commandPath,
+    },
+    extendEnv: true,
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -112,7 +140,7 @@ const invokeRecallCli = Effect.fnUntraced(function* (input: {
       const decoded = yield* decodeRecallOutput(result.stdout);
 
       return {
-        command: ["bun", ...cliArgs],
+        command: ["agentic-memory", ...cliArgs],
         exitCode: result.exitCode,
         stdout: result.stdout,
         stderr: result.stderr,

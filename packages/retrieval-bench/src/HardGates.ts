@@ -1,6 +1,6 @@
 import { ChildProcessSpawner } from "effect/unstable/process";
 
-type RecallSuccessResponse = import("./RecallSuccessJson.ts").RecallSuccessResponse;
+type RecallSuccessResponse = import("@urban/agentic-memory-core/recall/Recall").RecallResponse;
 
 export type GateStatus = "pass" | "fail";
 
