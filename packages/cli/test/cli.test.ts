@@ -1,3 +1,4 @@
+import { decodeRecallSuccessJson } from "@urban/agentic-memory-core/recall/Recall";
 import { assert, describe, it } from "@effect/vitest";
 import { Cause, Console, Effect, Exit, FileSystem, ManagedRuntime, Path, Runtime } from "effect";
 import { afterAll } from "vitest";
@@ -83,6 +84,17 @@ const runCapturedEffect = (args: ReadonlyArray<string>) =>
 
 describe("agentic-memory cli", () => {
   afterAll(() => AgenticMemoryCliRuntime.dispose());
+
+  it.effect("can import the public recall contract from core exports", () =>
+    Effect.gen(function* () {
+      const decoded = yield* decodeRecallSuccessJson(
+        '{"status":"answered","question":"What should I follow?","answer":"Follow the contract.","warnings":[]}',
+      );
+
+      assert.strictEqual(decoded.status, "answered");
+      assert.strictEqual(decoded.answer, "Follow the contract.");
+    }),
+  );
 
   it.effect("emits JSON command errors to stdout", () =>
     withCliRuntime(

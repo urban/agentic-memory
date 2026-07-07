@@ -24,6 +24,11 @@ import {
   extractStewardSessionPointer,
   PiProcessRunnerLayer,
 } from "../src/steward/PiProcessRunner.ts";
+import {
+  decodeRecallRequest,
+  decodeRecallResponse,
+  decodeRecallSuccessJson,
+} from "../src/recall/Recall.ts";
 import { StewardRunner } from "../src/steward/StewardExecution.ts";
 import { decodeStewardResultJson } from "../src/steward/StewardResult.ts";
 import { ensureProjectFile, ensureProjectRouteInMemory } from "../src/vault/ProjectRoute.ts";
@@ -195,6 +200,47 @@ describe("core contracts", () => {
         assert.strictEqual(missingSummary._tag, "Failure");
         assert.strictEqual(missingDecisionReport._tag, "Failure");
       }),
+  );
+
+  it.effect("defines the core recall request and response contract", () =>
+    Effect.gen(function* () {
+      const request = yield* decodeRecallRequest({
+        vaultPath: "/vault",
+        question: "What should I remember?",
+      });
+      const response = yield* decodeRecallResponse({
+        status: "answered",
+        question: request.question,
+        answer: "Remember the answer.",
+        warnings: [],
+      });
+      const missingQuestion = yield* decodeRecallRequest({ vaultPath: "/vault" }).pipe(Effect.exit);
+
+      assert.strictEqual(request.vaultPath, "/vault");
+      assert.strictEqual(request.question, "What should I remember?");
+      assert.strictEqual(response.status, "answered");
+      assert.deepStrictEqual(response.warnings, []);
+      assert.strictEqual(missingQuestion._tag, "Failure");
+    }),
+  );
+
+  it.effect("rejects excess fields in public recall success JSON", () =>
+    Effect.gen(function* () {
+      const decoded = yield* decodeRecallSuccessJson(
+        '{"status":"answered","question":"Where is the fact?","answer":"It is here.","warnings":[]}',
+      );
+      const withTrace = yield* decodeRecallSuccessJson(
+        '{"status":"answered","question":"Where is the fact?","answer":"It is here.","warnings":[],"selectedFiles":["notes/example.md"]}',
+      ).pipe(Effect.exit);
+
+      assert.deepStrictEqual(decoded, {
+        status: "answered",
+        question: "Where is the fact?",
+        answer: "It is here.",
+        warnings: [],
+      });
+      assert.strictEqual(withTrace._tag, "Failure");
+    }),
   );
 
   it.effect("validates bounded steward decision reports", () =>

@@ -11,6 +11,7 @@
     "./capture/PayloadShaping": "./src/capture/PayloadShaping.ts",
     "./link/LinkConfig": "./src/link/LinkConfig.ts",
     "./link/ProjectSlug": "./src/link/ProjectSlug.ts",
+    "./recall/Recall": "./src/recall/Recall.ts",
     "./vault/VaultStatus": "./src/vault/VaultStatus.ts",
     "./vault/VaultTemplate": "./src/vault/VaultTemplate.ts",
     "./vault/ProjectRoute": "./src/vault/ProjectRoute.ts",
