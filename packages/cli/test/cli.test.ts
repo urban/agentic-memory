@@ -1,6 +1,7 @@
 import { decodeRecallSuccessJson } from "@urban/agentic-memory-core/recall/Recall";
 import { assert, describe, it } from "@effect/vitest";
 import { Cause, Console, Effect, Exit, FileSystem, ManagedRuntime, Path, Runtime } from "effect";
+import { fileURLToPath } from "node:url";
 import { afterAll } from "vitest";
 import { appLayer, runAgenticMemoryCommand } from "../src/cli.ts";
 
@@ -58,6 +59,12 @@ const makeCaptureConsole = (capture: { stdout: string; stderr: string }): Consol
 
 const exitCodeFromExit = (exit: Exit.Exit<void, unknown>): number =>
   Exit.isSuccess(exit) ? 0 : Runtime.getErrorExitCode(Cause.squash(exit.cause));
+
+const recallFixtureVaultPath = fileURLToPath(
+  new URL("../../core/test/fixtures/retrieval/basic-vault/", import.meta.url),
+);
+const recallQuestion =
+  "In Alpha Product, what latency budget should I follow, and how should I present options back to Urban?";
 
 const AgenticMemoryCliRuntime = ManagedRuntime.make(appLayer);
 
@@ -399,6 +406,39 @@ describe("agentic-memory cli", () => {
         assert.strictEqual(output.exitCode, 1);
         assert.include(output.stdout, '"code":"ProjectFileFailed"');
         assert.isFalse(configExists);
+      }),
+    ),
+  );
+
+  it.effect("parses recall with a natural-language question and required flags", () =>
+    withCliRuntime(
+      runCapturedEffect(["recall", recallQuestion, "--vault", recallFixtureVaultPath, "--json"]),
+    ).pipe(
+      Effect.map((output) => {
+        assert.strictEqual(output.exitCode, 0);
+        assert.strictEqual(output.stdout, "");
+        assert.strictEqual(output.stderr, "");
+      }),
+    ),
+  );
+
+  it.effect("reports a missing recall question with existing positional-argument wording", () =>
+    withCliRuntime(runCapturedEffect(["recall", "--vault", recallFixtureVaultPath, "--json"])).pipe(
+      Effect.map((output) => {
+        assert.strictEqual(output.exitCode, 1);
+        assert.include(output.stdout, "agentic-memory recall [flags] <question>");
+        assert.include(output.stderr, "Missing required argument: question");
+      }),
+    ),
+  );
+
+  it.effect("reports a missing recall vault flag with existing required-flag wording", () =>
+    withCliRuntime(runCapturedEffect(["recall", recallQuestion, "--json"])).pipe(
+      Effect.map((output) => {
+        assert.strictEqual(output.exitCode, 1);
+        assert.include(output.stdout, "agentic-memory recall [flags] <question>");
+        assert.include(output.stderr, "Missing required flag");
+        assert.include(output.stderr, "--vault");
       }),
     ),
   );

@@ -6,6 +6,7 @@ import { Layer } from "effect";
 import { Command } from "effect/unstable/cli";
 import { commandInit } from "./commands/init.ts";
 import { commandLink } from "./commands/link.ts";
+import { commandRecall } from "./commands/recall.ts";
 import { commandRoot } from "./commands/root.ts";
 import { commandRunSteward } from "./commands/run-steward.ts";
 import { commandStatus } from "./commands/status.ts";
@@ -32,6 +33,7 @@ export const agenticMemoryCommand = commandRoot.pipe(
   Command.withSubcommands([
     commandInit,
     commandLink,
+    commandRecall,
     commandStatus,
     commandStewardContext,
     commandRunSteward,
