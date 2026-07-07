@@ -152,13 +152,23 @@ const lastPathSegment = (target: string): string => {
   return segments.at(-1) ?? target;
 };
 
-const cleanMarkup = (input: string): string =>
+const sanitizeInternalReferences = (input: string): string =>
   input
-    .replace(
-      /\[\[([^[\]|]+)(?:\|([^[\]]+))?\]\]/gu,
-      (_match, target: string, label?: string) => label ?? lastPathSegment(target),
-    )
-    .replace(/[*_`]/gu, "")
+    .replace(/\.agentic-memory/giu, "control plane")
+    .replace(/\bMEMORY\.md\b/gu, "memory")
+    .replace(/\bUSER\.md\b/gu, "user memory")
+    .replace(/\b(?:projects|notes|maps|records|sources)\//giu, "")
+    .replace(/\b([A-Za-z0-9._-]+)\.md\b/gu, "$1");
+
+const cleanMarkup = (input: string): string =>
+  sanitizeInternalReferences(
+    input
+      .replace(
+        /\[\[([^[\]|]+)(?:\|([^[\]]+))?\]\]/gu,
+        (_match, target: string, label?: string) => label ?? lastPathSegment(target),
+      )
+      .replace(/[*_`]/gu, ""),
+  )
     .replace(/\s+/gu, " ")
     .trim();
 
@@ -499,6 +509,12 @@ const assembleAnswer = (rankedCandidates: ReadonlyArray<RecallCandidate>): strin
   ).join(" ");
 };
 
+const sanitizeGeneratedFields = (response: RecallResponse): RecallResponse => ({
+  ...response,
+  answer: cleanMarkup(response.answer),
+  warnings: response.warnings.map(cleanMarkup),
+});
+
 export const recall = Effect.fnUntraced(function* (
   request: RecallRequest,
 ): Effect.fn.Return<RecallResponse, RecallError, FileSystem.FileSystem | Path.Path> {
@@ -519,5 +535,5 @@ export const recall = Effect.fnUntraced(function* (
     warnings: [],
   } satisfies RecallResponse;
 
-  return response;
+  return sanitizeGeneratedFields(response);
 });

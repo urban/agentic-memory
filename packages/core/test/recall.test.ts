@@ -10,6 +10,18 @@ const fixtureVaultPath = fileURLToPath(
 );
 const alphaQuestion =
   "In Alpha Product, I need to tune the retry scheduler. What latency budget decision should I follow, and how should I present options back to Urban?";
+const leakProbeQuestion = `${alphaQuestion} Should I reread MEMORY.md, USER.md, [[projects/alpha-product]], or .agentic-memory before answering?`;
+const forbiddenGeneratedSubstrings = [
+  "projects/",
+  "notes/",
+  "maps/",
+  "records/",
+  "sources/",
+  "MEMORY.md",
+  "USER.md",
+  "[[",
+  ".agentic-memory",
+] satisfies ReadonlyArray<string>;
 
 const CoreRecallRuntime = ManagedRuntime.make(BunServices.layer);
 
@@ -17,6 +29,18 @@ const withCoreRecallRuntime = <A, E, R>(effect: Effect.Effect<A, E, R | BunServi
   CoreRecallRuntime.contextEffect.pipe(
     Effect.flatMap((context) => Effect.provideContext(effect, context)),
   );
+
+const assertGeneratedFieldsDoNotLeak = (response: {
+  readonly answer: string;
+  readonly warnings: ReadonlyArray<string>;
+}): void => {
+  for (const forbiddenSubstring of forbiddenGeneratedSubstrings) {
+    assert.notInclude(response.answer, forbiddenSubstring);
+    for (const warning of response.warnings) {
+      assert.notInclude(warning, forbiddenSubstring);
+    }
+  }
+};
 
 describe("core recall", () => {
   afterAll(() => CoreRecallRuntime.dispose());
@@ -123,6 +147,78 @@ Alpha Product interactive retry scheduling should use a **1ms p95 latency budget
         assert.include(response.answer, "capital-letter");
         assert.notInclude(response.answer, "100ms p95");
         assert.notInclude(response.answer, "1ms p95");
+      }),
+    ),
+  );
+
+  it.effect("keeps generated answers free of managed paths and wikilink syntax", () =>
+    withCoreRecallRuntime(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const vaultPath = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-core-recall-leaks-",
+          });
+
+          yield* Effect.forEach(
+            [
+              ".agentic-memory",
+              "maps",
+              "notes",
+              "projects",
+              "records",
+              "sources",
+            ] satisfies ReadonlyArray<string>,
+            (relativePath) =>
+              fs.makeDirectory(path.join(vaultPath, relativePath), { recursive: true }),
+          );
+          yield* fs.writeFileString(path.join(vaultPath, "MEMORY.md"), "# MEMORY\n");
+          yield* fs.writeFileString(path.join(vaultPath, "USER.md"), "# USER\n");
+          yield* fs.writeFileString(
+            path.join(vaultPath, "notes", "alpha-latency-budget.md"),
+            `# Alpha Latency Budget
+
+MEMORY.md, maps/alpha-product.md, records/2026-07-01-alpha-scheduler-decision.md, and sources/alpha-scheduler-source.md all confirm Alpha Product interactive retry scheduling should follow a **200ms p95 latency budget**.
+`,
+          );
+          yield* fs.writeFileString(
+            path.join(vaultPath, "projects", "alpha-product.md"),
+            `# Alpha Product
+
+USER.md, projects/alpha-product.md, notes/user-option-format.md, [[notes/user-option-format]], and .agentic-memory guidance all say to present options as **stack-ranked capital-letter choices**.
+`,
+          );
+
+          return yield* recall({
+            vaultPath,
+            question: leakProbeQuestion,
+          });
+        }),
+      ),
+    ).pipe(
+      Effect.map((response) => {
+        assert.include(response.question, "MEMORY.md");
+        assert.include(response.question, ".agentic-memory");
+        assert.include(response.answer, "200ms p95");
+        assert.include(response.answer, "stack-ranked");
+        assert.include(response.answer, "capital-letter");
+        assertGeneratedFieldsDoNotLeak(response);
+      }),
+    ),
+  );
+
+  it.effect("keeps generated warnings free of control-plane names", () =>
+    withCoreRecallRuntime(
+      recall({
+        vaultPath: fixtureVaultPath,
+        question: leakProbeQuestion,
+      }),
+    ).pipe(
+      Effect.map((response) => {
+        assert.include(response.question, ".agentic-memory");
+        assert.deepStrictEqual(response.warnings, []);
+        assertGeneratedFieldsDoNotLeak(response);
       }),
     ),
   );
