@@ -410,14 +410,35 @@ describe("agentic-memory cli", () => {
     ),
   );
 
-  it.effect("parses recall with a natural-language question and required flags", () =>
+  it.effect("emits public recall success JSON for answered recall", () =>
     withCliRuntime(
-      runCapturedEffect(["recall", recallQuestion, "--vault", recallFixtureVaultPath, "--json"]),
+      runCapturedEffect([
+        "recall",
+        recallQuestion,
+        "--vault",
+        recallFixtureVaultPath,
+        "--json",
+      ]).pipe(
+        Effect.flatMap((output) =>
+          decodeRecallSuccessJson(output.stdout.trim()).pipe(
+            Effect.map((decoded) => ({
+              decoded,
+              output,
+            })),
+          ),
+        ),
+      ),
     ).pipe(
-      Effect.map((output) => {
+      Effect.map(({ decoded, output }) => {
         assert.strictEqual(output.exitCode, 0);
-        assert.strictEqual(output.stdout, "");
         assert.strictEqual(output.stderr, "");
+        assert.strictEqual(decoded.status, "answered");
+        assert.strictEqual(decoded.question, recallQuestion);
+        assert.include(decoded.answer, "200ms p95");
+        assert.include(decoded.answer, "stack-ranked");
+        assert.include(decoded.answer, "capital-letter");
+        assert.notInclude(decoded.answer, "5 second batch retry window");
+        assert.deepStrictEqual(decoded.warnings, []);
       }),
     ),
   );

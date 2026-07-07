@@ -1,5 +1,27 @@
-import { Effect } from "effect";
+import {
+  encodeRecallSuccessJson,
+  recall,
+  type RecallError,
+} from "@urban/agentic-memory-core/recall/Recall";
+import { Console, Effect } from "effect";
 import { Argument, Command, Flag } from "effect/unstable/cli";
+import { toFailure, withCliFailureOutput } from "../output.ts";
+import { commandRoot } from "./root.ts";
+
+const toRecallFailure = (cause: RecallError) => {
+  switch (cause.reason) {
+    case "InvalidQuestion":
+      return toFailure({
+        code: "InvalidRecallQuestion",
+        message: cause.message,
+      });
+    case "ReadVaultFailed":
+      return toFailure({
+        code: "ReadVaultFailed",
+        message: cause.message,
+      });
+  }
+};
 
 export const commandRecall = Command.make(
   "recall",
@@ -11,7 +33,20 @@ export const commandRecall = Command.make(
       Flag.withDescription("Absolute path to the Agentic Memory vault"),
     ),
   },
-  () => Effect.void,
+  Effect.fnUntraced(function* ({ question, vaultPath }) {
+    const root = yield* commandRoot;
+    const result = yield* recall({ question, vaultPath }).pipe(Effect.mapError(toRecallFailure));
+    const jsonText = yield* encodeRecallSuccessJson(result).pipe(
+      Effect.mapError((cause) =>
+        toFailure({
+          code: "EncodeResultFailed",
+          message: `Failed to encode recall result: ${cause.message}`,
+        }),
+      ),
+    );
+
+    return yield* Console.log(root.json ? jsonText : result.answer);
+  }, withCliFailureOutput),
 ).pipe(
   Command.withDescription("Recall an answer from an Agentic Memory vault"),
   Command.withExamples([
