@@ -36,3 +36,9 @@ storybook-static
 
 # Repos for AI reference
 /.dotai/repos/
+
+.codex/
+CONTEXT.md
+TODO.md
+docs/adr/
+specs/
