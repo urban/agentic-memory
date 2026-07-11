@@ -12,7 +12,12 @@ import type {
   RecallCandidate,
   SupportedCandidate,
 } from "./RecallModel.ts";
-import { cleanMarkup, countUniqueTokenMatches, tokenize, uniqueStrings } from "./RecallText.ts";
+import {
+  cleanMarkup,
+  countUniqueTokenMatches,
+  normalizeForDeduplication,
+  tokenize,
+} from "./RecallText.ts";
 
 const notFoundAnswer = "I don't know based on the available Agentic Memory.";
 const projectSupportFloor = 45;
@@ -120,7 +125,14 @@ const normalizeAnswerSentence = (sentence: string): string => {
 };
 
 const answerPartSentences = (parts: ReadonlyArray<AnswerPart>): ReadonlyArray<string> =>
-  uniqueStrings(parts.map((part) => part.sentence).filter((sentence) => sentence.length > 0));
+  Array.from(
+    parts.reduce((sentences, part) => {
+      const normalized = normalizeForDeduplication(part.sentence);
+      return normalized.length === 0 || sentences.has(normalized)
+        ? sentences
+        : new Map(sentences).set(normalized, part.sentence);
+    }, new Map<string, string>()),
+  ).map(([, sentence]) => sentence);
 
 export const assembleAnswer = (input: {
   readonly analysis: QuestionAnalysis;

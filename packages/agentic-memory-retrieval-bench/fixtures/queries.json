@@ -153,5 +153,14 @@
       "answerMustContain": ["interaction-design constraints", "not background-job tuning"],
       "answerMustNotContain": ["Read when", "5 second batch retry window"]
     }
+  },
+  {
+    "id": "alpha-duplicate-heavy-combined",
+    "question": "For Alpha Product retry scheduling, what latency budget should I use, and how should I present prioritization options?",
+    "expected": {
+      "status": "answered",
+      "answerMustContain": ["200ms p95", "stack-ranked", "capital-letter"],
+      "answerMustNotContain": ["Read when", "5 second batch retry window"]
+    }
   }
 ]

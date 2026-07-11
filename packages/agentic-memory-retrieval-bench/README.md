@@ -41,7 +41,7 @@ The current vertical slice runs nine end-to-end benchmark cases against `fixture
 agentic-memory recall "<question>" --vault <fixture-vault> --json
 ```
 
-The fixtures cover Alpha-only, Beta-only, user-preference-only, combined, unknown-project, off-topic, source policy, status demotion, route-to-note and route-to-record discovery, project decision/resume sections, root routes, and map framing. Cases that set `includeSources: true` invoke recall with `--include-sources`; all other cases use curated memory only.
+The fixtures cover Alpha-only, Beta-only, user-preference-only, combined, unknown-project, off-topic, source policy, status demotion, route-to-note and route-to-record discovery, project decision/resume sections, root routes, map framing, and duplicate-heavy recall. Cases that set `includeSources: true` invoke recall with `--include-sources`; all other cases use curated memory only.
 
 The hard gates assert that recall:
 

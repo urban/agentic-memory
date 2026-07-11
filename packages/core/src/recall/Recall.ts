@@ -1,6 +1,7 @@
 import { Effect, FileSystem, Path } from "effect";
 
 import { assembleAnswer, sanitizeGeneratedFields } from "./AnswerAssembly.ts";
+import { maxPoolCandidatesForAnswer } from "./CandidatePooling.ts";
 import { rankCandidates } from "./CandidateRanking.ts";
 import { parseRecallDocument, readRecallDocuments } from "./RecallDocuments.ts";
 import { RecallError } from "./RecallContract.ts";
@@ -38,7 +39,8 @@ export const recall = Effect.fnUntraced(function* (
     documents: parsedDocuments,
     projectEntities,
   });
-  const assembled = assembleAnswer({ analysis, rankedCandidates });
+  const pooledCandidates = maxPoolCandidatesForAnswer({ analysis, rankedCandidates });
+  const assembled = assembleAnswer({ analysis, rankedCandidates: pooledCandidates });
   const response = {
     status: assembled.status,
     question: request.question,

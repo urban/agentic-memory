@@ -4,6 +4,7 @@ import { Cause, Effect, FileSystem, ManagedRuntime, Path } from "effect";
 import { afterAll } from "vitest";
 import { fileURLToPath } from "node:url";
 import { recall } from "../src/recall/Recall.ts";
+import { normalizeForDeduplication } from "../src/recall/RecallText.ts";
 
 const fixtureVaultPath = fileURLToPath(
   new URL("./fixtures/retrieval/basic-vault/", import.meta.url),
@@ -35,6 +36,9 @@ const forbiddenGeneratedSubstrings = [
 
 const CoreRecallRuntime = ManagedRuntime.make(BunServices.layer);
 
+const occurrenceCount = (text: string, fragment: string): number =>
+  text.toLocaleLowerCase().split(fragment.toLocaleLowerCase()).length - 1;
+
 const withCoreRecallRuntime = <A, E, R>(effect: Effect.Effect<A, E, R | BunServices.BunServices>) =>
   CoreRecallRuntime.contextEffect.pipe(
     Effect.flatMap((context) => Effect.provideContext(effect, context)),
@@ -55,6 +59,13 @@ const assertGeneratedFieldsDoNotLeak = (response: {
 describe("core recall", () => {
   afterAll(() => CoreRecallRuntime.dispose());
 
+  it("normalizes Markdown and wikilinks before case-insensitive de-duplication", () => {
+    assert.strictEqual(
+      normalizeForDeduplication("  **Use** `[[notes/alpha-latency-budget|Alpha budget]]`  "),
+      normalizeForDeduplication("use Alpha budget"),
+    );
+  });
+
   it.effect("answers the combined Alpha fixture question with applicable user preference", () =>
     withCoreRecallRuntime(
       recall({
@@ -68,6 +79,7 @@ describe("core recall", () => {
         assert.strictEqual(response.question, alphaQuestion);
         assert.deepStrictEqual(response.warnings, []);
         assert.include(response.answer, "200ms p95");
+        assert.strictEqual(occurrenceCount(response.answer, "200ms p95"), 1);
         assert.include(response.answer, "stack-ranked");
         assert.include(response.answer, "capital-letter");
         assert.notInclude(response.answer, "5 second batch retry window");
@@ -120,6 +132,48 @@ Delta Service requests should use a 750ms timeout ceiling.
         assert.include(response.answer, "750ms timeout ceiling");
         assert.include(response.answer, "numbered options");
         assert.include(response.answer, "one-line rationale");
+      }),
+    ),
+  );
+
+  it.effect("allows one file to answer distinct requested fact categories", () =>
+    withCoreRecallRuntime(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const vaultPath = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-core-recall-categories-",
+          });
+
+          yield* fs.makeDirectory(path.join(vaultPath, "projects"), { recursive: true });
+          yield* fs.writeFileString(path.join(vaultPath, "MEMORY.md"), "# MEMORY\n");
+          yield* fs.writeFileString(
+            path.join(vaultPath, "USER.md"),
+            `# User
+
+Alpha Product retry scheduling should use a **200ms p95 latency budget**. When presenting prioritization options, use **stack-ranked capital-letter choices**.
+`,
+          );
+          yield* fs.writeFileString(
+            path.join(vaultPath, "projects", "alpha-product.md"),
+            "# Alpha Product\n",
+          );
+
+          return yield* recall({
+            vaultPath,
+            question:
+              "For Alpha Product retry scheduling, what latency budget should I use, and how should I present prioritization options?",
+            includeSources: false,
+          });
+        }),
+      ),
+    ).pipe(
+      Effect.map((response) => {
+        assert.strictEqual(response.status, "answered");
+        assert.include(response.answer, "200ms p95");
+        assert.include(response.answer, "stack-ranked capital-letter choices");
+        assert.strictEqual(occurrenceCount(response.answer, "200ms p95"), 1);
       }),
     ),
   );
@@ -233,6 +287,10 @@ Delta Service requests should use a 750ms timeout ceiling.
         Effect.map((response) => {
           assert.strictEqual(response.status, "answered");
           assert.include(response.answer, "180ms observed p95 verification threshold");
+          assert.strictEqual(
+            occurrenceCount(response.answer, "180ms observed p95 verification threshold"),
+            1,
+          );
           assert.notInclude(response.answer, "120ms p95");
           assert.deepStrictEqual(Object.keys(response).toSorted(), [
             "answer",
@@ -374,6 +432,7 @@ An archived record used a **400ms p95 latency budget** for the Alpha Product ret
       Effect.map((response) => {
         assert.strictEqual(response.status, "answered");
         assert.include(response.answer, "200ms p95");
+        assert.strictEqual(occurrenceCount(response.answer, "200ms p95"), 1);
         assert.notInclude(response.answer, "Read when");
         assert.notInclude(response.answer, "changing scheduler timing");
         assert.notInclude(response.answer, "5 second batch retry window");

@@ -99,7 +99,7 @@ const findBenchmarkCase = (
 describe("retrieval benchmark fixtures", () => {
   afterAll(() => BenchRuntime.dispose());
 
-  it.effect("loads Phase 1 through Phase 3 recall cases with public answer expectations", () =>
+  it.effect("loads Phase 1 through Phase 5 recall cases with public answer expectations", () =>
     withBenchRuntime(
       Effect.gen(function* () {
         const { casesPath } = yield* fixturePaths;
@@ -130,8 +130,12 @@ describe("retrieval benchmark fixtures", () => {
         const resumeContextCase = findBenchmarkCase(benchmarkCases, "alpha-project-resume-context");
         const rootRouteCase = findBenchmarkCase(benchmarkCases, "alpha-root-route-discovery");
         const mapFramingCase = findBenchmarkCase(benchmarkCases, "alpha-map-framing");
+        const duplicateHeavyCase = findBenchmarkCase(
+          benchmarkCases,
+          "alpha-duplicate-heavy-combined",
+        );
 
-        assert.isAtLeast(benchmarkCases.length, 15);
+        assert.isAtLeast(benchmarkCases.length, 16);
         assert.strictEqual(
           combinedCase.question,
           "In Alpha Product, I need to tune the retry scheduler. What latency budget decision should I follow, and how should I present options back to Urban?",
@@ -172,6 +176,11 @@ describe("retrieval benchmark fixtures", () => {
           "interaction-design constraints",
           "not background-job tuning",
         ]);
+        assert.deepEqual(duplicateHeavyCase.expected.answerMustContain, [
+          "200ms p95",
+          "stack-ranked",
+          "capital-letter",
+        ]);
       }),
     ),
   );
@@ -209,7 +218,7 @@ describe("retrieval benchmark fixtures", () => {
             ),
           );
 
-          assert.isAtLeast(reports.length, 15);
+          assert.isAtLeast(reports.length, 16);
           for (const { benchmarkCase, report } of reports) {
             const expectedCommand = [
               "agentic-memory",
@@ -254,6 +263,17 @@ describe("retrieval benchmark fixtures", () => {
           );
           assert.isDefined(sourceVerificationReport);
           assert.include(sourceVerificationReport?.report.command ?? [], "--include-sources");
+
+          const duplicateHeavyReport = reports.find(
+            ({ benchmarkCase }) => benchmarkCase.id === "alpha-duplicate-heavy-combined",
+          );
+          assert.isDefined(duplicateHeavyReport);
+          if (duplicateHeavyReport?.report.decoded._tag === "decoded") {
+            const answer = duplicateHeavyReport.report.decoded.response.answer.toLocaleLowerCase();
+            assert.strictEqual(answer.split("200ms p95").length - 1, 1);
+            assert.include(answer, "stack-ranked");
+            assert.include(answer, "capital-letter");
+          }
         }),
       ),
   );

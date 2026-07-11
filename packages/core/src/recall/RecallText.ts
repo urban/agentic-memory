@@ -93,6 +93,9 @@ export const cleanMarkup = (input: string): string =>
     .replace(/\s+/gu, " ")
     .trim();
 
+export const normalizeForDeduplication = (input: string): string =>
+  cleanMarkup(input).toLowerCase();
+
 export const countTokenMatches = (
   queryTokens: ReadonlyArray<string>,
   candidateTokens: ReadonlyArray<string>,

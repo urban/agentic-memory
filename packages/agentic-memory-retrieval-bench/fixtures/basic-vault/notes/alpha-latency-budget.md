@@ -24,6 +24,12 @@ Alpha Product interactive retry scheduling should use a **200ms p95 latency budg
 
 The decision favors perceived responsiveness over batch throughput.
 
+## Supporting reminders
+
+- Alpha Product interactive retry scheduling should use a **200ms p95 latency budget**.
+- Alpha Product interactive retry scheduling should use a `200ms p95 latency budget`.
+- Alpha Product interactive retry scheduling should use a 200ms p95 latency budget.
+
 ## Use when
 
 Use this note when tuning Alpha Product retry scheduler timing, choosing retry backoff defaults, or answering prompts about Alpha Product latency constraints.
