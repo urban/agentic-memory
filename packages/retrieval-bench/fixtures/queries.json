@@ -95,5 +95,63 @@
       "answerMustContain": ["200ms p95"],
       "answerMustNotContain": ["120ms p95", "350ms p95", "400ms p95"]
     }
+  },
+  {
+    "id": "alpha-route-to-note",
+    "question": "I am changing Alpha retry scheduler timing. What constraint matters?",
+    "expected": {
+      "status": "answered",
+      "answerMustContain": ["200ms p95"],
+      "answerMustNotContain": [
+        "Read when",
+        "changing scheduler timing",
+        "5 second batch retry window"
+      ]
+    }
+  },
+  {
+    "id": "alpha-route-to-record-rationale",
+    "question": "Why was the Alpha scheduler latency budget chosen?",
+    "expected": {
+      "status": "answered",
+      "answerMustContain": ["user-facing flows"],
+      "answerMustNotContain": ["Read when", "5 second batch retry window"]
+    }
+  },
+  {
+    "id": "alpha-project-decision-log",
+    "question": "What accepted Alpha retry scheduler latency budget is in the decision log?",
+    "expected": {
+      "status": "answered",
+      "answerMustContain": ["200ms p95"],
+      "answerMustNotContain": ["Read when", "5 second batch retry window"]
+    }
+  },
+  {
+    "id": "alpha-project-resume-context",
+    "question": "Before resuming Alpha scheduler work, what constraint matters for user-facing scheduling?",
+    "expected": {
+      "status": "answered",
+      "answerMustContain": ["preserve responsiveness over throughput"],
+      "answerMustNotContain": ["Read when", "5 second batch retry window"]
+    }
+  },
+  {
+    "id": "alpha-root-route-discovery",
+    "question": "For Alpha user-facing planning context, what scheduler constraint should I follow?",
+    "expected": {
+      "status": "answered",
+      "answerMustContain": ["interaction-design constraints"],
+      "answerMustNotContain": ["Root routes", "Read when", "5 second batch retry window"]
+    }
+  },
+  {
+    "id": "alpha-map-framing",
+    "question": "How does Alpha frame scheduler choices: interaction design or background jobs?",
+    "expected": {
+      "status": "answered",
+      "answerMustContain": ["interaction-design constraints", "not background-job tuning"],
+      "answerMustNotContain": ["Read when", "5 second batch retry window"]
+    }
   }
 ]

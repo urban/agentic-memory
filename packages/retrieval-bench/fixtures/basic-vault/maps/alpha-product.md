@@ -10,6 +10,8 @@ aliases:
 
 # Alpha Product Map
 
+Alpha scheduler memory treats scheduler choices as interaction-design constraints, not background-job tuning.
+
 ## Routing
 
 - [[projects/alpha-product]] — active Alpha Product project state and decisions. Read when: working on Alpha Product.

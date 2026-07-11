@@ -363,6 +363,109 @@ An archived record used a **400ms p95 latency budget** for the Alpha Product ret
     ),
   );
 
+  it.effect("uses route-only timing terms to answer from the linked note", () =>
+    withCoreRecallRuntime(
+      recall({
+        vaultPath: fixtureVaultPath,
+        question: "I am changing Alpha retry scheduler timing. What constraint matters?",
+        includeSources: false,
+      }),
+    ).pipe(
+      Effect.map((response) => {
+        assert.strictEqual(response.status, "answered");
+        assert.include(response.answer, "200ms p95");
+        assert.notInclude(response.answer, "Read when");
+        assert.notInclude(response.answer, "changing scheduler timing");
+        assert.notInclude(response.answer, "5 second batch retry window");
+      }),
+    ),
+  );
+
+  it.effect("follows a rationale route to the linked decision record", () =>
+    withCoreRecallRuntime(
+      recall({
+        vaultPath: fixtureVaultPath,
+        question: "Why was the Alpha scheduler latency budget chosen?",
+        includeSources: false,
+      }),
+    ).pipe(
+      Effect.map((response) => {
+        assert.strictEqual(response.status, "answered");
+        assert.include(response.answer, "user-facing flows");
+        assert.notInclude(response.answer, "Read when");
+        assert.notInclude(response.answer, "5 second batch retry window");
+      }),
+    ),
+  );
+
+  it.effect("answers directly from the project decision log", () =>
+    withCoreRecallRuntime(
+      recall({
+        vaultPath: fixtureVaultPath,
+        question: "What accepted Alpha retry scheduler latency budget is in the decision log?",
+        includeSources: false,
+      }),
+    ).pipe(
+      Effect.map((response) => {
+        assert.strictEqual(response.status, "answered");
+        assert.include(response.answer, "200ms p95");
+        assert.notInclude(response.answer, "Read when");
+      }),
+    ),
+  );
+
+  it.effect("answers directly from project resume context when it is the best block", () =>
+    withCoreRecallRuntime(
+      recall({
+        vaultPath: fixtureVaultPath,
+        question:
+          "Before resuming Alpha scheduler work, what constraint matters for user-facing scheduling?",
+        includeSources: false,
+      }),
+    ).pipe(
+      Effect.map((response) => {
+        assert.strictEqual(response.status, "answered");
+        assert.include(response.answer, "preserve responsiveness over throughput");
+        assert.notInclude(response.answer, "Read when");
+      }),
+    ),
+  );
+
+  it.effect("uses a root route to discover answer-bearing downstream context", () =>
+    withCoreRecallRuntime(
+      recall({
+        vaultPath: fixtureVaultPath,
+        question:
+          "For Alpha user-facing planning context, what scheduler constraint should I follow?",
+        includeSources: false,
+      }),
+    ).pipe(
+      Effect.map((response) => {
+        assert.strictEqual(response.status, "answered");
+        assert.include(response.answer, "interaction-design constraints");
+        assert.notInclude(response.answer, "Root routes");
+        assert.notInclude(response.answer, "5 second batch retry window");
+      }),
+    ),
+  );
+
+  it.effect("allows answer-worthy map framing to win", () =>
+    withCoreRecallRuntime(
+      recall({
+        vaultPath: fixtureVaultPath,
+        question: "How does Alpha frame scheduler choices: interaction design or background jobs?",
+        includeSources: false,
+      }),
+    ).pipe(
+      Effect.map((response) => {
+        assert.strictEqual(response.status, "answered");
+        assert.include(response.answer, "interaction-design constraints");
+        assert.include(response.answer, "not background-job tuning");
+        assert.notInclude(response.answer, "Read when");
+      }),
+    ),
+  );
+
   it.effect("rejects whitespace-only questions before reading the vault", () =>
     withCoreRecallRuntime(
       recall({

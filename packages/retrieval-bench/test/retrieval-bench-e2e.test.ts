@@ -33,6 +33,8 @@ const fixtureSnippets = [
   "180ms observed p95 verification threshold",
   "350ms p95",
   "400ms p95",
+  "preserve responsiveness over throughput",
+  "interaction-design constraints, not background-job tuning",
 ] as const;
 
 const readFixtureMarkdown = Effect.fnUntraced(function* (
@@ -66,7 +68,7 @@ const findBenchmarkCase = (
 describe("retrieval benchmark fixtures", () => {
   afterAll(() => BenchRuntime.dispose());
 
-  it.effect("loads Phase 1 and Phase 2 recall cases with public answer expectations", () =>
+  it.effect("loads Phase 1 through Phase 3 recall cases with public answer expectations", () =>
     withBenchRuntime(
       Effect.gen(function* () {
         const { casesPath } = yield* fixturePaths;
@@ -88,8 +90,17 @@ describe("retrieval benchmark fixtures", () => {
           benchmarkCases,
           "alpha-active-status-demotion",
         );
+        const routeToNoteCase = findBenchmarkCase(benchmarkCases, "alpha-route-to-note");
+        const routeToRecordCase = findBenchmarkCase(
+          benchmarkCases,
+          "alpha-route-to-record-rationale",
+        );
+        const decisionLogCase = findBenchmarkCase(benchmarkCases, "alpha-project-decision-log");
+        const resumeContextCase = findBenchmarkCase(benchmarkCases, "alpha-project-resume-context");
+        const rootRouteCase = findBenchmarkCase(benchmarkCases, "alpha-root-route-discovery");
+        const mapFramingCase = findBenchmarkCase(benchmarkCases, "alpha-map-framing");
 
-        assert.isAtLeast(benchmarkCases.length, 9);
+        assert.isAtLeast(benchmarkCases.length, 15);
         assert.strictEqual(
           combinedCase.question,
           "In Alpha Product, I need to tune the retry scheduler. What latency budget decision should I follow, and how should I present options back to Urban?",
@@ -116,6 +127,19 @@ describe("retrieval benchmark fixtures", () => {
           "120ms p95",
           "350ms p95",
           "400ms p95",
+        ]);
+        assert.deepEqual(routeToNoteCase.expected.answerMustContain, ["200ms p95"]);
+        assert.deepEqual(routeToRecordCase.expected.answerMustContain, ["user-facing flows"]);
+        assert.deepEqual(decisionLogCase.expected.answerMustContain, ["200ms p95"]);
+        assert.deepEqual(resumeContextCase.expected.answerMustContain, [
+          "preserve responsiveness over throughput",
+        ]);
+        assert.deepEqual(rootRouteCase.expected.answerMustContain, [
+          "interaction-design constraints",
+        ]);
+        assert.deepEqual(mapFramingCase.expected.answerMustContain, [
+          "interaction-design constraints",
+          "not background-job tuning",
         ]);
       }),
     ),
@@ -154,7 +178,7 @@ describe("retrieval benchmark fixtures", () => {
             ),
           );
 
-          assert.isAtLeast(reports.length, 9);
+          assert.isAtLeast(reports.length, 15);
           for (const { benchmarkCase, report } of reports) {
             const expectedCommand = [
               "agentic-memory",
