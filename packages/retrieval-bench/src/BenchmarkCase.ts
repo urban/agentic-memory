@@ -1,7 +1,7 @@
 import { Effect, FileSystem, PlatformError, Schema } from "effect";
 
 export const BenchmarkExpectation = Schema.Struct({
-  status: Schema.Literal("answered"),
+  status: Schema.Literals(["answered", "not_found"]),
   answerMustContain: Schema.Array(Schema.String),
   answerMustNotContain: Schema.Array(Schema.String),
 }).annotate({ identifier: "BenchmarkExpectation" });
@@ -10,6 +10,7 @@ export type BenchmarkExpectation = typeof BenchmarkExpectation.Type;
 export const BenchmarkCase = Schema.Struct({
   id: Schema.String,
   question: Schema.String,
+  includeSources: Schema.optional(Schema.Boolean),
   expected: BenchmarkExpectation,
 }).annotate({ identifier: "BenchmarkCase" });
 export type BenchmarkCase = typeof BenchmarkCase.Type;

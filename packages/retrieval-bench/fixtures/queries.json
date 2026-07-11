@@ -7,5 +7,93 @@
       "answerMustContain": ["200ms p95", "stack-ranked", "capital-letter"],
       "answerMustNotContain": ["5 second batch retry window"]
     }
+  },
+  {
+    "id": "alpha-latency-only",
+    "question": "In Alpha Product, what latency budget should I follow for the retry scheduler?",
+    "expected": {
+      "status": "answered",
+      "answerMustContain": ["200ms p95"],
+      "answerMustNotContain": ["5 second batch retry window", "stack-ranked", "capital-letter"]
+    }
+  },
+  {
+    "id": "beta-retry-policy",
+    "question": "In Beta Platform, what retry policy should I follow?",
+    "expected": {
+      "status": "answered",
+      "answerMustContain": ["5 second batch retry window"],
+      "answerMustNotContain": ["200ms p95", "stack-ranked", "capital-letter"]
+    }
+  },
+  {
+    "id": "user-option-format-only",
+    "question": "How should I present prioritization options?",
+    "expected": {
+      "status": "answered",
+      "answerMustContain": ["stack-ranked", "capital-letter"],
+      "answerMustNotContain": ["200ms p95", "5 second batch retry window"]
+    }
+  },
+  {
+    "id": "unknown-project-not-found",
+    "question": "What launch window did Gamma Project choose?",
+    "expected": {
+      "status": "not_found",
+      "answerMustContain": [],
+      "answerMustNotContain": [
+        "200ms p95",
+        "5 second batch retry window",
+        "stack-ranked",
+        "capital-letter"
+      ]
+    }
+  },
+  {
+    "id": "off-topic-not-found",
+    "question": "What coffee grinder setting should I use tomorrow morning?",
+    "expected": {
+      "status": "not_found",
+      "answerMustContain": [],
+      "answerMustNotContain": [
+        "200ms p95",
+        "5 second batch retry window",
+        "stack-ranked",
+        "capital-letter"
+      ]
+    }
+  },
+  {
+    "id": "alpha-source-conflict-default",
+    "question": "For Alpha Product, what current p95 latency budget applies to the retry scheduler?",
+    "expected": {
+      "status": "answered",
+      "answerMustContain": ["200ms p95"],
+      "answerMustNotContain": [
+        "120ms p95",
+        "180ms observed p95 verification threshold",
+        "350ms p95",
+        "400ms p95"
+      ]
+    }
+  },
+  {
+    "id": "alpha-source-verification",
+    "question": "What source verification evidence did the Alpha Product responsiveness trial record for the latency decision?",
+    "includeSources": true,
+    "expected": {
+      "status": "answered",
+      "answerMustContain": ["180ms observed p95 verification threshold"],
+      "answerMustNotContain": ["120ms p95", "sources/", "[[", "alpha-trial-raw.md"]
+    }
+  },
+  {
+    "id": "alpha-active-status-demotion",
+    "question": "What is the current Alpha Product retry scheduler latency budget?",
+    "expected": {
+      "status": "answered",
+      "answerMustContain": ["200ms p95"],
+      "answerMustNotContain": ["120ms p95", "350ms p95", "400ms p95"]
+    }
   }
 ]

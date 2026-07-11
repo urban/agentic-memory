@@ -10,4 +10,6 @@ aliases:
 
 # Alpha Scheduler Source
 
-Fixture source excerpt: Alpha Product retry scheduling is interactive and should keep p95 scheduler latency at 200ms. Batch-oriented retry windows, such as the Beta Platform 5 second window, are not appropriate for Alpha Product.
+An outdated planning draft proposed a **120ms p95 latency budget** for Alpha Product before the team curated the current decision.
+
+Source verification evidence for the accepted Alpha Product latency decision: the responsiveness trial recorded a **180ms observed p95 verification threshold**, supporting the curated 200ms p95 budget. See [[sources/alpha-trial-raw]] and `sources/alpha-trial-raw.md` for the raw capture.

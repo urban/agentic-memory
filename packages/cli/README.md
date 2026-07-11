@@ -82,7 +82,7 @@ agentic-memory recall "What should I remember about Example Project?" \
   --vault /absolute/path/to/agentic-memory-vault
 ```
 
-Answers a natural-language question using the Agentic Memory vault.
+Answers a natural-language question using curated Agentic Memory content. Source files are excluded by default. Add `--include-sources` when a verification question explicitly needs source evidence; public JSON still contains only `status`, `question`, `answer`, and `warnings`.
 
 ### Build Steward context
 
@@ -117,7 +117,7 @@ agentic-memory run-steward \
 | `agentic-memory init <vault-path>`                                           | Initialize a vault from the bundled template. |
 | `agentic-memory link --vault <vault> --project <slug> --project-root <path>` | Link a project root to a vault project.       |
 | `agentic-memory status --project-root <path>`                                | Inspect project-local link and vault health.  |
-| `agentic-memory recall <question> --vault <vault>`                           | Answer a memory question from a vault.        |
+| `agentic-memory recall <question> --vault <vault> [--include-sources]`       | Answer a memory question from a vault.        |
 | `agentic-memory steward-context --payload <path-or->`                        | Build Steward context for a capture payload.  |
 | `agentic-memory run-steward --payload <path-or->`                            | Execute the Memory Steward capture boundary.  |
 

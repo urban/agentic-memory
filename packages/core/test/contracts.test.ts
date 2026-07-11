@@ -207,6 +207,7 @@ describe("core contracts", () => {
       const request = yield* decodeRecallRequest({
         vaultPath: "/vault",
         question: "What should I remember?",
+        includeSources: false,
       });
       const response = yield* decodeRecallResponse({
         status: "answered",
@@ -214,13 +215,29 @@ describe("core contracts", () => {
         answer: "Remember the answer.",
         warnings: [],
       });
-      const missingQuestion = yield* decodeRecallRequest({ vaultPath: "/vault" }).pipe(Effect.exit);
+      const notFoundResponse = yield* decodeRecallResponse({
+        status: "not_found",
+        question: request.question,
+        answer: "I don't know based on the available Agentic Memory.",
+        warnings: [],
+      });
+      const missingQuestion = yield* decodeRecallRequest({
+        vaultPath: "/vault",
+        includeSources: false,
+      }).pipe(Effect.exit);
+      const missingSourcePolicy = yield* decodeRecallRequest({
+        vaultPath: "/vault",
+        question: "What should I remember?",
+      }).pipe(Effect.exit);
 
       assert.strictEqual(request.vaultPath, "/vault");
       assert.strictEqual(request.question, "What should I remember?");
+      assert.isFalse(request.includeSources);
       assert.strictEqual(response.status, "answered");
+      assert.strictEqual(notFoundResponse.status, "not_found");
       assert.deepStrictEqual(response.warnings, []);
       assert.strictEqual(missingQuestion._tag, "Failure");
+      assert.strictEqual(missingSourcePolicy._tag, "Failure");
     }),
   );
 
@@ -230,7 +247,7 @@ describe("core contracts", () => {
         '{"status":"answered","question":"Where is the fact?","answer":"It is here.","warnings":[]}',
       );
       const withTrace = yield* decodeRecallSuccessJson(
-        '{"status":"answered","question":"Where is the fact?","answer":"It is here.","warnings":[],"selectedFiles":["notes/example.md"]}',
+        '{"status":"answered","question":"Where is the fact?","answer":"It is here.","warnings":[],"selectedFiles":["notes/example.md"],"provider":"lexical","snippets":[],"scores":[],"trace":{}}',
       ).pipe(Effect.exit);
 
       assert.deepStrictEqual(decoded, {

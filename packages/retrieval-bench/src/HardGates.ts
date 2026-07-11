@@ -1,6 +1,7 @@
 import { ChildProcessSpawner } from "effect/unstable/process";
 
 type RecallSuccessResponse = import("@urban/agentic-memory-core/recall/Recall").RecallResponse;
+type RecallStatus = RecallSuccessResponse["status"];
 
 export type GateStatus = "pass" | "fail";
 
@@ -23,7 +24,7 @@ export type DecodedRecallOutput =
 
 export type HardGateBenchmarkCase = {
   readonly expected: {
-    readonly status: "answered";
+    readonly status: RecallStatus;
     readonly answerMustContain: ReadonlyArray<string>;
     readonly answerMustNotContain: ReadonlyArray<string>;
   };

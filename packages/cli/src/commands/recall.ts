@@ -32,10 +32,15 @@ export const commandRecall = Command.make(
     vaultPath: Flag.string("vault").pipe(
       Flag.withDescription("Absolute path to the Agentic Memory vault"),
     ),
+    includeSources: Flag.boolean("include-sources").pipe(
+      Flag.withDescription("Include source files as eligible recall material"),
+    ),
   },
-  Effect.fnUntraced(function* ({ question, vaultPath }) {
+  Effect.fnUntraced(function* ({ includeSources, question, vaultPath }) {
     const root = yield* commandRoot;
-    const result = yield* recall({ question, vaultPath }).pipe(Effect.mapError(toRecallFailure));
+    const result = yield* recall({ includeSources, question, vaultPath }).pipe(
+      Effect.mapError(toRecallFailure),
+    );
     const jsonText = yield* encodeRecallSuccessJson(result).pipe(
       Effect.mapError((cause) =>
         toFailure({
@@ -54,6 +59,11 @@ export const commandRecall = Command.make(
       command:
         'agentic-memory recall "In Alpha Product, what latency budget should I follow?" --vault /absolute/path/to/vault --json',
       description: "Parse the public recall CLI shape used by the benchmark",
+    },
+    {
+      command:
+        'agentic-memory recall "What source evidence supports the Alpha decision?" --vault /absolute/path/to/vault --include-sources --json',
+      description: "Explicitly make source files eligible for recall",
     },
   ]),
 );

@@ -9,13 +9,13 @@ This package is the first feedback loop for future `agentic-memory search`, `que
 From the repository root:
 
 ```sh
-bun --filter='./packages/agentic-memory-retrieval-bench' run test
+bun --filter='@urban/agentic-memory-retrieval-bench' run test
 ```
 
 Run package lint, typecheck, and tests:
 
 ```sh
-bun --filter='./packages/agentic-memory-retrieval-bench' run check
+bun --filter='@urban/agentic-memory-retrieval-bench' run check
 ```
 
 Run the full monorepo validation:
@@ -26,23 +26,21 @@ bun run check
 
 ## What it tests today
 
-The current vertical slice runs one end-to-end benchmark case against `fixtures/basic-vault/` by invoking:
+The current vertical slice runs nine end-to-end benchmark cases against `fixtures/basic-vault/` by invoking:
 
 ```sh
 agentic-memory recall "<question>" --vault <fixture-vault> --json
 ```
 
-The fixture asks a combined project/user-preference question:
+The fixtures cover Alpha-only, Beta-only, user-preference-only, combined, unknown-project, off-topic, default source-conflict exclusion, explicit source verification, and stale/archived demotion questions. Cases that set `includeSources: true` invoke recall with `--include-sources`; all other cases use curated memory only.
 
-> In Alpha Product, I need to tune the retry scheduler. What latency budget decision should I follow, and how should I present options back to Urban?
+The hard gates assert that recall:
 
-The initial hard gates assert that recall:
-
-- exits with code `0`
+- exits with code `0` for both `answered` and `not_found`
 - emits stdout that decodes as `RecallSuccessJson`
-- returns status `answered`
-- includes the Alpha latency and user-option facts in the answer text
-- excludes the Beta distractor fact from the answer text
+- returns the status expected by each case
+- includes every case-specific required fact
+- excludes competing-project and unrelated preference facts
 
 It does **not** inspect internal retrieval candidates, internal file names, or aggregate metrics yet. Metrics such as Recall@K, MRR, nDCG, latency, layer accuracy, and duplicate crowding are intentionally later phases.
 

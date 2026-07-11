@@ -7,6 +7,8 @@ import { loadBenchmarkCases } from "../src/BenchmarkCase.ts";
 import { runBenchmarkCase } from "../src/BenchmarkRunner.ts";
 import { evaluateHardGates } from "../src/HardGates.ts";
 
+type BenchmarkCase = import("../src/BenchmarkCase.ts").BenchmarkCase;
+
 const BenchRuntime = ManagedRuntime.make(BunServices.layer);
 
 const withBenchRuntime = <A, E, R>(effect: Effect.Effect<A, E, R | BunServices.BunServices>) =>
@@ -27,6 +29,10 @@ const fixtureSnippets = [
   "stack-ranked capital-letter choices",
   "capital-letter options and invite a stack-ranked reply",
   "5 second batch retry window",
+  "120ms p95 latency budget",
+  "180ms observed p95 verification threshold",
+  "350ms p95",
+  "400ms p95",
 ] as const;
 
 const readFixtureMarkdown = Effect.fnUntraced(function* (
@@ -49,34 +55,67 @@ const findGate = <A extends { readonly name: string }>(
   return gate ?? assert.fail(`Expected a ${gateName} hard gate result`);
 };
 
+const findBenchmarkCase = (
+  benchmarkCases: ReadonlyArray<BenchmarkCase>,
+  caseId: string,
+): BenchmarkCase => {
+  const benchmarkCase = benchmarkCases.find((candidate) => candidate.id === caseId);
+  return benchmarkCase ?? assert.fail(`Expected benchmark case ${caseId}`);
+};
+
 describe("retrieval benchmark fixtures", () => {
   afterAll(() => BenchRuntime.dispose());
 
-  it.effect("loads the Alpha/Beta recall case with public answer expectations", () =>
+  it.effect("loads Phase 1 and Phase 2 recall cases with public answer expectations", () =>
     withBenchRuntime(
       Effect.gen(function* () {
         const { casesPath } = yield* fixturePaths;
         const benchmarkCases = yield* loadBenchmarkCases(casesPath);
+        const combinedCase = findBenchmarkCase(benchmarkCases, "alpha-retry-latency-and-options");
+        const alphaOnlyCase = findBenchmarkCase(benchmarkCases, "alpha-latency-only");
+        const betaOnlyCase = findBenchmarkCase(benchmarkCases, "beta-retry-policy");
+        const userOnlyCase = findBenchmarkCase(benchmarkCases, "user-option-format-only");
+        const unknownCase = findBenchmarkCase(benchmarkCases, "unknown-project-not-found");
+        const sourceConflictCase = findBenchmarkCase(
+          benchmarkCases,
+          "alpha-source-conflict-default",
+        );
+        const sourceVerificationCase = findBenchmarkCase(
+          benchmarkCases,
+          "alpha-source-verification",
+        );
+        const statusDemotionCase = findBenchmarkCase(
+          benchmarkCases,
+          "alpha-active-status-demotion",
+        );
 
-        const benchmarkCase = benchmarkCases[0];
-        if (benchmarkCase === undefined) {
-          assert.fail("Expected one recall benchmark case");
-        }
-
-        assert.strictEqual(benchmarkCases.length, 1);
-        assert.strictEqual(benchmarkCase.id, "alpha-retry-latency-and-options");
+        assert.isAtLeast(benchmarkCases.length, 9);
         assert.strictEqual(
-          benchmarkCase.question,
+          combinedCase.question,
           "In Alpha Product, I need to tune the retry scheduler. What latency budget decision should I follow, and how should I present options back to Urban?",
         );
-        assert.strictEqual(benchmarkCase.expected.status, "answered");
-        assert.deepEqual(benchmarkCase.expected.answerMustContain, [
+        assert.strictEqual(combinedCase.expected.status, "answered");
+        assert.deepEqual(combinedCase.expected.answerMustContain, [
           "200ms p95",
           "stack-ranked",
           "capital-letter",
         ]);
-        assert.deepEqual(benchmarkCase.expected.answerMustNotContain, [
-          "5 second batch retry window",
+        assert.deepEqual(alphaOnlyCase.expected.answerMustContain, ["200ms p95"]);
+        assert.deepEqual(betaOnlyCase.expected.answerMustContain, ["5 second batch retry window"]);
+        assert.deepEqual(userOnlyCase.expected.answerMustContain, [
+          "stack-ranked",
+          "capital-letter",
+        ]);
+        assert.strictEqual(unknownCase.expected.status, "not_found");
+        assert.isUndefined(sourceConflictCase.includeSources);
+        assert.isTrue(sourceVerificationCase.includeSources);
+        assert.deepEqual(sourceVerificationCase.expected.answerMustContain, [
+          "180ms observed p95 verification threshold",
+        ]);
+        assert.deepEqual(statusDemotionCase.expected.answerMustNotContain, [
+          "120ms p95",
+          "350ms p95",
+          "400ms p95",
         ]);
       }),
     ),
@@ -96,44 +135,67 @@ describe("retrieval benchmark fixtures", () => {
     ),
   );
 
-  it.effect("invokes the public recall CLI and evaluates answer-level hard gates", () =>
-    withBenchRuntime(
-      Effect.gen(function* () {
-        const { vaultPath, casesPath } = yield* fixturePaths;
-        const benchmarkCases = yield* loadBenchmarkCases(casesPath);
-        const benchmarkCase = benchmarkCases[0];
-        if (benchmarkCase === undefined) {
-          assert.fail("Expected one recall benchmark case");
-        }
+  it.effect(
+    "invokes the public recall CLI for every case and evaluates answer-level hard gates",
+    () =>
+      withBenchRuntime(
+        Effect.gen(function* () {
+          const { vaultPath, casesPath } = yield* fixturePaths;
+          const benchmarkCases = yield* loadBenchmarkCases(casesPath);
+          const reports = yield* Effect.forEach(benchmarkCases, (benchmarkCase) =>
+            runBenchmarkCase({
+              vaultPath,
+              benchmarkCase,
+            }).pipe(
+              Effect.map((report) => ({
+                benchmarkCase,
+                report,
+              })),
+            ),
+          );
 
-        const report = yield* runBenchmarkCase({
-          vaultPath,
-          benchmarkCase,
-        });
+          assert.isAtLeast(reports.length, 9);
+          for (const { benchmarkCase, report } of reports) {
+            const expectedCommand = [
+              "agentic-memory",
+              "recall",
+              benchmarkCase.question,
+              "--vault",
+              vaultPath,
+              ...(benchmarkCase.includeSources === true ? ["--include-sources"] : []),
+              "--json",
+            ];
+            assert.deepEqual(report.command, expectedCommand);
+            assert.strictEqual(report.exitCode, ChildProcessSpawner.ExitCode(0));
+            assert.strictEqual(report.stderr, "");
+            assert.strictEqual(report.status, "pass", `${benchmarkCase.id} should pass`);
+            assert.isTrue(report.hardGates.every((gate) => gate.status === "pass"));
+            assert.strictEqual(report.decoded._tag, "decoded");
+            assert.strictEqual(findGate(report.hardGates, "stdoutJson").status, "pass");
+            assert.strictEqual(findGate(report.hardGates, "status").status, "pass");
+            assert.strictEqual(findGate(report.hardGates, "answerMustContain").status, "pass");
+            assert.strictEqual(findGate(report.hardGates, "answerMustNotContain").status, "pass");
 
-        assert.strictEqual(report.command[0], "agentic-memory");
-        assert.strictEqual(report.command[1], "recall");
-        assert.strictEqual(report.command[2], benchmarkCase.question);
-        assert.strictEqual(report.command[3], "--vault");
-        assert.strictEqual(report.command[4], vaultPath);
-        assert.strictEqual(report.command[5], "--json");
-        assert.strictEqual(report.exitCode, ChildProcessSpawner.ExitCode(0));
-        assert.strictEqual(report.stderr, "");
-        assert.strictEqual(report.status, "pass");
-        assert.isTrue(report.hardGates.every((gate) => gate.status === "pass"));
-        assert.strictEqual(report.decoded._tag, "decoded");
-        assert.strictEqual(findGate(report.hardGates, "stdoutJson").status, "pass");
-        assert.strictEqual(findGate(report.hardGates, "status").status, "pass");
-        assert.strictEqual(findGate(report.hardGates, "answerMustContain").status, "pass");
-        assert.strictEqual(findGate(report.hardGates, "answerMustNotContain").status, "pass");
+            if (report.decoded._tag === "decoded") {
+              assert.strictEqual(report.decoded.response.status, benchmarkCase.expected.status);
+              assert.strictEqual(report.decoded.response.question, benchmarkCase.question);
+              assert.deepEqual(report.decoded.response.warnings, []);
+              assert.deepEqual(Object.keys(report.decoded.response).toSorted(), [
+                "answer",
+                "question",
+                "status",
+                "warnings",
+              ]);
+            }
+          }
 
-        if (report.decoded._tag === "decoded") {
-          assert.strictEqual(report.decoded.response.status, "answered");
-          assert.strictEqual(report.decoded.response.question, benchmarkCase.question);
-          assert.deepEqual(report.decoded.response.warnings, []);
-        }
-      }),
-    ),
+          const sourceVerificationReport = reports.find(
+            ({ benchmarkCase }) => benchmarkCase.id === "alpha-source-verification",
+          );
+          assert.isDefined(sourceVerificationReport);
+          assert.include(sourceVerificationReport?.report.command ?? [], "--include-sources");
+        }),
+      ),
   );
 
   it.effect("fails the case when the public recall CLI exits nonzero", () =>
