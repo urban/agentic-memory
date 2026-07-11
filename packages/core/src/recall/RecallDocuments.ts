@@ -42,7 +42,7 @@ const isVaultRelativeMarkdownPath = (relativePath: string): boolean => {
   );
 };
 
-const isManagedRecallPath = (relativePath: string, includeSources: boolean): boolean =>
+export const isManagedRecallPath = (relativePath: string, includeSources: boolean): boolean =>
   isVaultRelativeMarkdownPath(relativePath) &&
   classifyRecallLayer(relativePath) !== undefined &&
   (includeSources || !relativePath.startsWith("sources/"));
