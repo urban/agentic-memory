@@ -1,10 +1,14 @@
 import * as BunServices from "@effect/platform-bun/BunServices";
 import { assert, describe, it } from "@effect/vitest";
-import { Effect, FileSystem, ManagedRuntime, Path, PlatformError } from "effect";
-import { ChildProcessSpawner } from "effect/unstable/process";
+import { Effect, FileSystem, ManagedRuntime, Path, PlatformError, Stream } from "effect";
+import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { afterAll } from "vitest";
 import { loadBenchmarkCases } from "../src/BenchmarkCase.ts";
-import { runBenchmarkCase } from "../src/BenchmarkRunner.ts";
+import { runBenchmarkCase, runBenchmarkSuite } from "../src/BenchmarkRunner.ts";
+import {
+  decodeBenchmarkSuiteResultJson,
+  encodeBenchmarkSuiteResultJson,
+} from "../src/BenchmarkReport.ts";
 import { evaluateHardGates } from "../src/HardGates.ts";
 
 type BenchmarkCase = import("../src/BenchmarkCase.ts").BenchmarkCase;
@@ -18,10 +22,37 @@ const withBenchRuntime = <A, E, R>(effect: Effect.Effect<A, E, R | BunServices.B
 
 const fixturePaths = Effect.gen(function* () {
   const path = yield* Path.Path;
+  const packagePath = yield* path.fromFileUrl(new URL("..", import.meta.url));
   const vaultPath = yield* path.fromFileUrl(new URL("../fixtures/basic-vault", import.meta.url));
   const casesPath = yield* path.fromFileUrl(new URL("../fixtures/queries.json", import.meta.url));
 
-  return { vaultPath, casesPath };
+  return { packagePath, vaultPath, casesPath };
+});
+
+const invokeBenchmarkCli = Effect.fnUntraced(function* (
+  packagePath: string,
+  args: ReadonlyArray<string>,
+) {
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  const command = ChildProcess.make("bun", ["src/bench.ts", ...args], {
+    cwd: packagePath,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  return yield* Effect.scoped(
+    Effect.gen(function* () {
+      const handle = yield* spawner.spawn(command);
+      return yield* Effect.all(
+        {
+          stdout: handle.stdout.pipe(Stream.decodeText(), Stream.mkString),
+          stderr: handle.stderr.pipe(Stream.decodeText(), Stream.mkString),
+          exitCode: handle.exitCode,
+        },
+        { concurrency: 3 },
+      );
+    }),
+  );
 });
 
 const fixtureSnippets = [
@@ -192,6 +223,11 @@ describe("retrieval benchmark fixtures", () => {
             assert.deepEqual(report.command, expectedCommand);
             assert.strictEqual(report.exitCode, ChildProcessSpawner.ExitCode(0));
             assert.strictEqual(report.stderr, "");
+            assert.isAtLeast(report.durationMs, 0);
+            assert.deepEqual(report.failedGates, []);
+            assert.deepEqual(report.requiredFactsMissing, []);
+            assert.deepEqual(report.forbiddenFactsPresent, []);
+            assert.strictEqual(report.recallStatus, benchmarkCase.expected.status);
             assert.strictEqual(report.status, "pass", `${benchmarkCase.id} should pass`);
             assert.isTrue(report.hardGates.every((gate) => gate.status === "pass"));
             assert.strictEqual(report.decoded._tag, "decoded");
@@ -241,7 +277,87 @@ describe("retrieval benchmark fixtures", () => {
         assert.strictEqual(report.status, "fail");
         assert.notStrictEqual(report.exitCode, ChildProcessSpawner.ExitCode(0));
         assert.strictEqual(report.decoded._tag, "decode_failed");
+        assert.isAtLeast(report.durationMs, 0);
+        assert.include(report.failedGates, "exitCode");
+        assert.include(report.failedGates, "stdoutJson");
+        assert.deepEqual(report.requiredFactsMissing, benchmarkCase.expected.answerMustContain);
         assert.strictEqual(exitCodeGate.status, "fail");
+      }),
+    ),
+  );
+
+  it.effect("aggregates suite counts, latency, and schema-backed JSON", () =>
+    withBenchRuntime(
+      Effect.gen(function* () {
+        const { vaultPath, casesPath } = yield* fixturePaths;
+        const benchmarkCases = yield* loadBenchmarkCases(casesPath);
+        const report = yield* runBenchmarkSuite({ vaultPath, benchmarkCases });
+        const json = yield* encodeBenchmarkSuiteResultJson(report);
+        const decoded = yield* decodeBenchmarkSuiteResultJson(json);
+
+        assert.strictEqual(report.status, "pass");
+        assert.strictEqual(report.caseCount, benchmarkCases.length);
+        assert.strictEqual(report.passCount, benchmarkCases.length);
+        assert.strictEqual(report.failCount, 0);
+        assert.isAtLeast(report.latency.p50Ms, 0);
+        assert.isAtLeast(report.latency.p95Ms, report.latency.p50Ms);
+        assert.deepEqual(decoded, {
+          status: report.status,
+          runner: report.runner,
+          caseCount: report.caseCount,
+          passCount: report.passCount,
+          failCount: report.failCount,
+          latency: report.latency,
+          cases: report.cases.map((benchmarkCase) => ({
+            id: benchmarkCase.id,
+            status: benchmarkCase.status,
+            durationMs: benchmarkCase.durationMs,
+            failedGates: benchmarkCase.failedGates,
+            requiredFactsMissing: benchmarkCase.requiredFactsMissing,
+            forbiddenFactsPresent: benchmarkCase.forbiddenFactsPresent,
+            command: benchmarkCase.command,
+            recallStatus: benchmarkCase.recallStatus,
+          })),
+        });
+      }),
+    ),
+  );
+
+  it.effect("emits valid JSON from the benchmark CLI", () =>
+    withBenchRuntime(
+      Effect.gen(function* () {
+        const { packagePath } = yield* fixturePaths;
+        const result = yield* invokeBenchmarkCli(packagePath, ["--json"]);
+        const report = yield* decodeBenchmarkSuiteResultJson(result.stdout.trim());
+
+        assert.strictEqual(result.exitCode, ChildProcessSpawner.ExitCode(0));
+        assert.strictEqual(result.stderr, "");
+        assert.strictEqual(report.status, "pass");
+        assert.strictEqual(report.failCount, 0);
+      }),
+    ),
+  );
+
+  it.effect("exits nonzero with a valid failed suite JSON report", () =>
+    withBenchRuntime(
+      Effect.gen(function* () {
+        const { packagePath } = yield* fixturePaths;
+        const result = yield* invokeBenchmarkCli(packagePath, [
+          "--json",
+          "--vault",
+          "/definitely-missing-agentic-memory-vault",
+        ]);
+        const report = yield* decodeBenchmarkSuiteResultJson(result.stdout.trim());
+
+        assert.notStrictEqual(result.exitCode, ChildProcessSpawner.ExitCode(0));
+        assert.strictEqual(report.status, "fail");
+        assert.strictEqual(report.passCount, 0);
+        assert.strictEqual(report.failCount, report.caseCount);
+        assert.isAbove(result.stderr.length, 0);
+        assert.isTrue(report.cases.every((benchmarkCase) => benchmarkCase.status === "fail"));
+        assert.isTrue(
+          report.cases.every((benchmarkCase) => benchmarkCase.failedGates.includes("exitCode")),
+        );
       }),
     ),
   );

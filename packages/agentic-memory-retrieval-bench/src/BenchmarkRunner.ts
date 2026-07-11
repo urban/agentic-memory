@@ -1,5 +1,5 @@
 import { decodeRecallSuccessJson } from "@urban/agentic-memory-core/recall/Recall";
-import { Config as EffectConfig, Effect, Option, Path, PlatformError, Stream } from "effect";
+import { Clock, Config as EffectConfig, Effect, Option, Path, PlatformError, Stream } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import {
   evaluateHardGates,
@@ -7,6 +7,7 @@ import {
   type GateStatus,
   type HardGateResult,
 } from "./HardGates.ts";
+import type { BenchmarkHardGateName } from "./BenchmarkReport.ts";
 
 type BenchmarkCase = import("./BenchmarkCase.ts").BenchmarkCase;
 
@@ -53,11 +54,23 @@ export type BenchmarkCaseReport = {
   readonly stderr: string;
   readonly decoded: DecodedRecallOutput;
   readonly hardGates: ReadonlyArray<HardGateResult>;
+  readonly durationMs: number;
+  readonly failedGates: ReadonlyArray<BenchmarkHardGateName>;
+  readonly requiredFactsMissing: ReadonlyArray<string>;
+  readonly forbiddenFactsPresent: ReadonlyArray<string>;
+  readonly recallStatus?: "answered" | "not_found";
 };
 
 export type BenchmarkSuiteReport = {
   readonly status: GateStatus;
   readonly runner: string;
+  readonly caseCount: number;
+  readonly passCount: number;
+  readonly failCount: number;
+  readonly latency: {
+    readonly p50Ms: number;
+    readonly p95Ms: number;
+  };
   readonly cases: ReadonlyArray<BenchmarkCaseReport>;
 };
 
@@ -151,9 +164,15 @@ const invokeRecallCli = Effect.fnUntraced(function* (input: {
   );
 });
 
+const violationsForGate = (
+  hardGates: ReadonlyArray<HardGateResult>,
+  name: BenchmarkHardGateName,
+): ReadonlyArray<string> => hardGates.find((gate) => gate.name === name)?.violations ?? [];
+
 const makeCaseReport = (input: {
   readonly benchmarkCase: BenchmarkCase;
   readonly execution: RecallCliExecution;
+  readonly durationMs: number;
 }): BenchmarkCaseReport => {
   const hardGateReport = evaluateHardGates({
     benchmarkCase: input.benchmarkCase,
@@ -173,6 +192,15 @@ const makeCaseReport = (input: {
     stderr: input.execution.stderr,
     decoded: input.execution.decoded,
     hardGates: hardGateReport.gates,
+    durationMs: Math.max(0, input.durationMs),
+    failedGates: hardGateReport.gates
+      .filter((gate) => gate.status === "fail")
+      .map((gate) => gate.name),
+    requiredFactsMissing: violationsForGate(hardGateReport.gates, "answerMustContain"),
+    forbiddenFactsPresent: violationsForGate(hardGateReport.gates, "answerMustNotContain"),
+    ...(input.execution.decoded._tag === "decoded"
+      ? { recallStatus: input.execution.decoded.response.status }
+      : {}),
   };
 };
 
@@ -184,14 +212,48 @@ export const runBenchmarkCase = (input: {
   PlatformError.PlatformError,
   ChildProcessSpawner.ChildProcessSpawner | Path.Path
 > =>
-  invokeRecallCli(input).pipe(
-    Effect.map((execution) =>
-      makeCaseReport({
-        benchmarkCase: input.benchmarkCase,
-        execution,
-      }),
-    ),
-  );
+  Effect.gen(function* () {
+    const startedAt = yield* Clock.currentTimeMillis;
+    const execution = yield* invokeRecallCli(input);
+    const finishedAt = yield* Clock.currentTimeMillis;
+
+    return makeCaseReport({
+      benchmarkCase: input.benchmarkCase,
+      execution,
+      durationMs: finishedAt - startedAt,
+    });
+  });
+
+const percentile = (percent: number, durations: ReadonlyArray<number>): number => {
+  const sortedDurations = durations.toSorted((left, right) => left - right);
+  if (sortedDurations.length === 0) {
+    return 0;
+  }
+
+  const index = Math.max(0, Math.ceil(percent * sortedDurations.length) - 1);
+  return sortedDurations[index] ?? 0;
+};
+
+export const aggregateBenchmarkReports = (
+  cases: ReadonlyArray<BenchmarkCaseReport>,
+): BenchmarkSuiteReport => {
+  const passCount = cases.filter((benchmarkCase) => benchmarkCase.status === "pass").length;
+  const failCount = cases.length - passCount;
+  const durations = cases.map((benchmarkCase) => benchmarkCase.durationMs);
+
+  return {
+    status: failCount === 0 ? "pass" : "fail",
+    runner: benchRunnerName,
+    caseCount: cases.length,
+    passCount,
+    failCount,
+    latency: {
+      p50Ms: percentile(0.5, durations),
+      p95Ms: percentile(0.95, durations),
+    },
+    cases,
+  };
+};
 
 export const runBenchmarkSuite = (input: {
   readonly vaultPath: string;
@@ -206,10 +268,4 @@ export const runBenchmarkSuite = (input: {
       vaultPath: input.vaultPath,
       benchmarkCase,
     }),
-  ).pipe(
-    Effect.map((cases) => ({
-      status: cases.every((benchmarkCase) => benchmarkCase.status === "pass") ? "pass" : "fail",
-      runner: benchRunnerName,
-      cases,
-    })),
-  );
+  ).pipe(Effect.map(aggregateBenchmarkReports));

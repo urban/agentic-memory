@@ -9,13 +9,22 @@ This package is the first feedback loop for future `agentic-memory search`, `que
 From the repository root:
 
 ```sh
-bun --filter='@urban/agentic-memory-retrieval-bench' run test
+bun --filter='./packages/agentic-memory-retrieval-bench' run test
 ```
+
+Run the reportable benchmark suite in human or JSON mode:
+
+```sh
+bun --filter='./packages/agentic-memory-retrieval-bench' run bench
+bun --filter='./packages/agentic-memory-retrieval-bench' run bench -- --json
+```
+
+The suite exits nonzero when any case fails. JSON mode reserves stdout for the schema-backed report and writes failure diagnostics to stderr.
 
 Run package lint, typecheck, and tests:
 
 ```sh
-bun --filter='@urban/agentic-memory-retrieval-bench' run check
+bun --filter='./packages/agentic-memory-retrieval-bench' run check
 ```
 
 Run the full monorepo validation:
@@ -42,7 +51,7 @@ The hard gates assert that recall:
 - includes every case-specific required fact
 - excludes competing-project and unrelated preference facts
 
-It does **not** inspect internal retrieval candidates, internal file names, or aggregate metrics yet. Metrics such as Recall@K, MRR, nDCG, latency, layer accuracy, and duplicate crowding are intentionally later phases.
+It does **not** inspect internal retrieval candidates or expose retrieval internals through public recall JSON. The benchmark report includes suite/case pass counts, failed gates, missing and forbidden facts, commands, decoded recall statuses, per-case durations, and p50/p95 latency. Retrieval metrics such as Recall@K, MRR, nDCG, layer accuracy, and duplicate crowding remain later work.
 
 ## Why this exists
 
@@ -64,7 +73,9 @@ fixtures/
 src/
   BenchmarkCase.ts  Case schema and fixture loader
   BenchmarkRunner.ts
-  HardGates.ts      Initial pass/fail hard gates for CLI output
+  BenchmarkReport.ts Schema-backed stable suite report
+  bench.ts           Human/JSON benchmark CLI
+  HardGates.ts       Pass/fail hard gates for recall output
   RetrievalProvider.ts
   providers/
     LexicalProvider.ts

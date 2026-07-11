@@ -1,16 +1,11 @@
 import { ChildProcessSpawner } from "effect/unstable/process";
+import type { BenchmarkHardGateName, BenchmarkStatus } from "./BenchmarkReport.ts";
 
 type RecallSuccessResponse = import("@urban/agentic-memory-core/recall/Recall").RecallResponse;
 type RecallStatus = RecallSuccessResponse["status"];
 
-export type GateStatus = "pass" | "fail";
-
-export type HardGateName =
-  | "exitCode"
-  | "stdoutJson"
-  | "status"
-  | "answerMustContain"
-  | "answerMustNotContain";
+export type GateStatus = BenchmarkStatus;
+export type HardGateName = BenchmarkHardGateName;
 
 export type DecodedRecallOutput =
   | {
@@ -41,6 +36,7 @@ export type HardGateResult = {
   readonly status: GateStatus;
   readonly expected: ReadonlyArray<string>;
   readonly actual: ReadonlyArray<string>;
+  readonly violations: ReadonlyArray<string>;
   readonly message: string;
 };
 
@@ -64,6 +60,7 @@ const makeGate = (
   status: gateStatus(violations),
   expected,
   actual,
+  violations,
   message: violations.length === 0 ? passMessage : failMessage,
 });
 
