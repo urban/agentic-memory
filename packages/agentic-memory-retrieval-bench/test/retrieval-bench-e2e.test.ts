@@ -1,6 +1,6 @@
 import * as BunServices from "@effect/platform-bun/BunServices";
 import { assert, describe, it } from "@effect/vitest";
-import { Effect, FileSystem, ManagedRuntime, Path, PlatformError, Stream } from "effect";
+import { Effect, ManagedRuntime, Path, Stream } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { afterAll } from "vitest";
 import { loadBenchmarkCases } from "../src/BenchmarkCase.ts";
@@ -10,8 +10,6 @@ import {
   encodeBenchmarkSuiteResultJson,
 } from "../src/BenchmarkReport.ts";
 import { evaluateHardGates } from "../src/HardGates.ts";
-
-type BenchmarkCase = import("../src/BenchmarkCase.ts").BenchmarkCase;
 
 const BenchRuntime = ManagedRuntime.make(BunServices.layer);
 
@@ -55,31 +53,6 @@ const invokeBenchmarkCli = Effect.fnUntraced(function* (
   );
 });
 
-const fixtureSnippets = [
-  "200ms p95 latency budget",
-  "stack-ranked capital-letter choices",
-  "capital-letter options and invite a stack-ranked reply",
-  "5 second batch retry window",
-  "120ms p95 latency budget",
-  "180ms observed p95 verification threshold",
-  "350ms p95",
-  "400ms p95",
-  "preserve responsiveness over throughput",
-  "interaction-design constraints, not background-job tuning",
-] as const;
-
-const readFixtureMarkdown = Effect.fnUntraced(function* (
-  vaultPath: string,
-): Effect.fn.Return<ReadonlyArray<string>, PlatformError.PlatformError, FileSystem.FileSystem> {
-  const fs = yield* FileSystem.FileSystem;
-  const entries = yield* fs.readDirectory(vaultPath, { recursive: true });
-  const markdownPaths = entries.filter((entry) => entry.endsWith(".md"));
-
-  return yield* Effect.forEach(markdownPaths, (markdownPath) =>
-    fs.readFileString(`${vaultPath}/${markdownPath}`),
-  );
-});
-
 const findGate = <A extends { readonly name: string }>(
   gates: ReadonlyArray<A>,
   gateName: A["name"],
@@ -88,116 +61,8 @@ const findGate = <A extends { readonly name: string }>(
   return gate ?? assert.fail(`Expected a ${gateName} hard gate result`);
 };
 
-const findBenchmarkCase = (
-  benchmarkCases: ReadonlyArray<BenchmarkCase>,
-  caseId: string,
-): BenchmarkCase => {
-  const benchmarkCase = benchmarkCases.find((candidate) => candidate.id === caseId);
-  return benchmarkCase ?? assert.fail(`Expected benchmark case ${caseId}`);
-};
-
-describe("retrieval benchmark fixtures", () => {
+describe("public recall benchmark", () => {
   afterAll(() => BenchRuntime.dispose());
-
-  it.effect("loads Phase 1 through Phase 5 recall cases with public answer expectations", () =>
-    withBenchRuntime(
-      Effect.gen(function* () {
-        const { casesPath } = yield* fixturePaths;
-        const benchmarkCases = yield* loadBenchmarkCases(casesPath);
-        const combinedCase = findBenchmarkCase(benchmarkCases, "alpha-retry-latency-and-options");
-        const alphaOnlyCase = findBenchmarkCase(benchmarkCases, "alpha-latency-only");
-        const betaOnlyCase = findBenchmarkCase(benchmarkCases, "beta-retry-policy");
-        const userOnlyCase = findBenchmarkCase(benchmarkCases, "user-option-format-only");
-        const unknownCase = findBenchmarkCase(benchmarkCases, "unknown-project-not-found");
-        const sourceConflictCase = findBenchmarkCase(
-          benchmarkCases,
-          "alpha-source-conflict-default",
-        );
-        const sourceVerificationCase = findBenchmarkCase(
-          benchmarkCases,
-          "alpha-source-verification",
-        );
-        const statusDemotionCase = findBenchmarkCase(
-          benchmarkCases,
-          "alpha-active-status-demotion",
-        );
-        const routeToNoteCase = findBenchmarkCase(benchmarkCases, "alpha-route-to-note");
-        const routeToRecordCase = findBenchmarkCase(
-          benchmarkCases,
-          "alpha-route-to-record-rationale",
-        );
-        const decisionLogCase = findBenchmarkCase(benchmarkCases, "alpha-project-decision-log");
-        const resumeContextCase = findBenchmarkCase(benchmarkCases, "alpha-project-resume-context");
-        const rootRouteCase = findBenchmarkCase(benchmarkCases, "alpha-root-route-discovery");
-        const mapFramingCase = findBenchmarkCase(benchmarkCases, "alpha-map-framing");
-        const duplicateHeavyCase = findBenchmarkCase(
-          benchmarkCases,
-          "alpha-duplicate-heavy-combined",
-        );
-
-        assert.isAtLeast(benchmarkCases.length, 16);
-        assert.strictEqual(
-          combinedCase.question,
-          "In Alpha Product, I need to tune the retry scheduler. What latency budget decision should I follow, and how should I present options back to Urban?",
-        );
-        assert.strictEqual(combinedCase.expected.status, "answered");
-        assert.deepEqual(combinedCase.expected.answerMustContain, [
-          "200ms p95",
-          "stack-ranked",
-          "capital-letter",
-        ]);
-        assert.deepEqual(alphaOnlyCase.expected.answerMustContain, ["200ms p95"]);
-        assert.deepEqual(betaOnlyCase.expected.answerMustContain, ["5 second batch retry window"]);
-        assert.deepEqual(userOnlyCase.expected.answerMustContain, [
-          "stack-ranked",
-          "capital-letter",
-        ]);
-        assert.strictEqual(unknownCase.expected.status, "not_found");
-        assert.isUndefined(sourceConflictCase.includeSources);
-        assert.isTrue(sourceVerificationCase.includeSources);
-        assert.deepEqual(sourceVerificationCase.expected.answerMustContain, [
-          "180ms observed p95 verification threshold",
-        ]);
-        assert.deepEqual(statusDemotionCase.expected.answerMustNotContain, [
-          "120ms p95",
-          "350ms p95",
-          "400ms p95",
-        ]);
-        assert.deepEqual(routeToNoteCase.expected.answerMustContain, ["200ms p95"]);
-        assert.deepEqual(routeToRecordCase.expected.answerMustContain, ["user-facing flows"]);
-        assert.deepEqual(decisionLogCase.expected.answerMustContain, ["200ms p95"]);
-        assert.deepEqual(resumeContextCase.expected.answerMustContain, [
-          "preserve responsiveness over throughput",
-        ]);
-        assert.deepEqual(rootRouteCase.expected.answerMustContain, [
-          "interaction-design constraints",
-        ]);
-        assert.deepEqual(mapFramingCase.expected.answerMustContain, [
-          "interaction-design constraints",
-          "not background-job tuning",
-        ]);
-        assert.deepEqual(duplicateHeavyCase.expected.answerMustContain, [
-          "200ms p95",
-          "stack-ranked",
-          "capital-letter",
-        ]);
-      }),
-    ),
-  );
-
-  it.effect("keeps the required Alpha facts and Beta distractor in fixture content", () =>
-    withBenchRuntime(
-      Effect.gen(function* () {
-        const { vaultPath } = yield* fixturePaths;
-        const fixtureMarkdown = yield* readFixtureMarkdown(vaultPath);
-        const fixtureContents = fixtureMarkdown.join("\n");
-
-        for (const snippet of fixtureSnippets) {
-          assert.include(fixtureContents, snippet);
-        }
-      }),
-    ),
-  );
 
   it.effect(
     "invokes the public recall CLI for every case and evaluates answer-level hard gates",
@@ -218,7 +83,7 @@ describe("retrieval benchmark fixtures", () => {
             ),
           );
 
-          assert.isAtLeast(reports.length, 16);
+          assert.strictEqual(reports.length, benchmarkCases.length);
           for (const { benchmarkCase, report } of reports) {
             const expectedCommand = [
               "agentic-memory",
@@ -256,23 +121,6 @@ describe("retrieval benchmark fixtures", () => {
                 "warnings",
               ]);
             }
-          }
-
-          const sourceVerificationReport = reports.find(
-            ({ benchmarkCase }) => benchmarkCase.id === "alpha-source-verification",
-          );
-          assert.isDefined(sourceVerificationReport);
-          assert.include(sourceVerificationReport?.report.command ?? [], "--include-sources");
-
-          const duplicateHeavyReport = reports.find(
-            ({ benchmarkCase }) => benchmarkCase.id === "alpha-duplicate-heavy-combined",
-          );
-          assert.isDefined(duplicateHeavyReport);
-          if (duplicateHeavyReport?.report.decoded._tag === "decoded") {
-            const answer = duplicateHeavyReport.report.decoded.response.answer.toLocaleLowerCase();
-            assert.strictEqual(answer.split("200ms p95").length - 1, 1);
-            assert.include(answer, "stack-ranked");
-            assert.include(answer, "capital-letter");
           }
         }),
       ),

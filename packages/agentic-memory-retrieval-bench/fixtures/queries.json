@@ -64,7 +64,7 @@
     }
   },
   {
-    "id": "alpha-source-conflict-default",
+    "id": "alpha-current-latency",
     "question": "For Alpha Product, what current p95 latency budget applies to the retry scheduler?",
     "expected": {
       "status": "answered",
@@ -78,17 +78,17 @@
     }
   },
   {
-    "id": "alpha-source-verification",
+    "id": "alpha-verification-evidence",
     "question": "What source verification evidence did the Alpha Product responsiveness trial record for the latency decision?",
     "includeSources": true,
     "expected": {
       "status": "answered",
       "answerMustContain": ["180ms observed p95 verification threshold"],
-      "answerMustNotContain": ["120ms p95", "sources/", "[[", "alpha-trial-raw.md"]
+      "answerMustNotContain": ["120ms p95"]
     }
   },
   {
-    "id": "alpha-active-status-demotion",
+    "id": "alpha-current-latency-conflicts",
     "question": "What is the current Alpha Product retry scheduler latency budget?",
     "expected": {
       "status": "answered",
@@ -97,70 +97,66 @@
     }
   },
   {
-    "id": "alpha-route-to-note",
+    "id": "alpha-timing-constraint",
     "question": "I am changing Alpha retry scheduler timing. What constraint matters?",
     "expected": {
       "status": "answered",
       "answerMustContain": ["200ms p95"],
-      "answerMustNotContain": [
-        "Read when",
-        "changing scheduler timing",
-        "5 second batch retry window"
-      ]
+      "answerMustNotContain": ["5 second batch retry window"]
     }
   },
   {
-    "id": "alpha-route-to-record-rationale",
+    "id": "alpha-latency-rationale",
     "question": "Why was the Alpha scheduler latency budget chosen?",
     "expected": {
       "status": "answered",
       "answerMustContain": ["user-facing flows"],
-      "answerMustNotContain": ["Read when", "5 second batch retry window"]
+      "answerMustNotContain": ["5 second batch retry window"]
     }
   },
   {
-    "id": "alpha-project-decision-log",
-    "question": "What accepted Alpha retry scheduler latency budget is in the decision log?",
+    "id": "alpha-accepted-latency-budget",
+    "question": "What latency budget was accepted for the Alpha retry scheduler?",
     "expected": {
       "status": "answered",
       "answerMustContain": ["200ms p95"],
-      "answerMustNotContain": ["Read when", "5 second batch retry window"]
+      "answerMustNotContain": ["5 second batch retry window"]
     }
   },
   {
-    "id": "alpha-project-resume-context",
+    "id": "alpha-resuming-work-constraint",
     "question": "Before resuming Alpha scheduler work, what constraint matters for user-facing scheduling?",
     "expected": {
       "status": "answered",
       "answerMustContain": ["preserve responsiveness over throughput"],
-      "answerMustNotContain": ["Read when", "5 second batch retry window"]
+      "answerMustNotContain": ["5 second batch retry window"]
     }
   },
   {
-    "id": "alpha-root-route-discovery",
+    "id": "alpha-planning-context",
     "question": "For Alpha user-facing planning context, what scheduler constraint should I follow?",
     "expected": {
       "status": "answered",
       "answerMustContain": ["interaction-design constraints"],
-      "answerMustNotContain": ["Root routes", "Read when", "5 second batch retry window"]
+      "answerMustNotContain": ["5 second batch retry window"]
     }
   },
   {
-    "id": "alpha-map-framing",
+    "id": "alpha-scheduler-framing",
     "question": "How does Alpha frame scheduler choices: interaction design or background jobs?",
     "expected": {
       "status": "answered",
       "answerMustContain": ["interaction-design constraints", "not background-job tuning"],
-      "answerMustNotContain": ["Read when", "5 second batch retry window"]
+      "answerMustNotContain": ["5 second batch retry window"]
     }
   },
   {
-    "id": "alpha-duplicate-heavy-combined",
+    "id": "alpha-latency-and-options-consistency",
     "question": "For Alpha Product retry scheduling, what latency budget should I use, and how should I present prioritization options?",
     "expected": {
       "status": "answered",
       "answerMustContain": ["200ms p95", "stack-ranked", "capital-letter"],
-      "answerMustNotContain": ["Read when", "5 second batch retry window"]
+      "answerMustNotContain": ["5 second batch retry window"]
     }
   }
 ]

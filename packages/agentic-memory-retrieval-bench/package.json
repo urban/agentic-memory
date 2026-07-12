@@ -11,9 +11,7 @@
     "./BenchmarkCase": "./src/BenchmarkCase.ts",
     "./BenchmarkRunner": "./src/BenchmarkRunner.ts",
     "./BenchmarkReport": "./src/BenchmarkReport.ts",
-    "./HardGates": "./src/HardGates.ts",
-    "./RetrievalProvider": "./src/RetrievalProvider.ts",
-    "./providers/LexicalProvider": "./src/providers/LexicalProvider.ts"
+    "./HardGates": "./src/HardGates.ts"
   },
   "scripts": {
     "bench": "bun src/bench.ts",

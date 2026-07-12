@@ -1,105 +1,65 @@
 # Agentic Memory Retrieval Bench
 
-Private workspace package for black-box Agentic Memory recall evaluation.
-
-This package is the first feedback loop for future `agentic-memory search`, `query`, and `get` work. It tests the public `agentic-memory recall` behavior against synthetic fixture vaults before production retrieval ranking is tuned.
+Private workspace package for evaluating the public `agentic-memory recall` command against a synthetic Agentic Memory vault.
 
 ## Run it
 
-From the repository root:
+From the repository root, run the test suite:
 
 ```sh
 bun --filter='./packages/agentic-memory-retrieval-bench' run test
 ```
 
-Run the reportable benchmark suite in human or JSON mode:
+Run the reportable benchmark in human-readable or JSON mode:
 
 ```sh
 bun --filter='./packages/agentic-memory-retrieval-bench' run bench
 bun --filter='./packages/agentic-memory-retrieval-bench' run bench -- --json
 ```
 
-The suite exits nonzero when any case fails. JSON mode reserves stdout for the schema-backed report and writes failure diagnostics to stderr.
-
-Run package lint, typecheck, and tests:
+Run all package checks:
 
 ```sh
 bun --filter='./packages/agentic-memory-retrieval-bench' run check
 ```
 
-Run the full monorepo validation:
+Run the full repository validation:
 
 ```sh
 bun run check
 ```
 
-## What it tests today
+## What it evaluates
 
-The current vertical slice runs nine end-to-end benchmark cases against `fixtures/basic-vault/` by invoking:
+The benchmark runs recall cases against a synthetic vault by invoking:
 
 ```sh
 agentic-memory recall "<question>" --vault <fixture-vault> --json
 ```
 
-The fixtures cover Alpha-only, Beta-only, user-preference-only, combined, unknown-project, off-topic, source policy, status demotion, route-to-note and route-to-record discovery, project decision/resume sections, root routes, map framing, and duplicate-heavy recall. Cases that set `includeSources: true` invoke recall with `--include-sources`; all other cases use curated memory only.
+Cases cover:
 
-The hard gates assert that recall:
+- project-specific facts and competing-project distractors
+- user preferences and combined questions
+- unknown and unrelated questions
+- default recall and explicit `--include-sources` recall
+- current facts when conflicting historical facts exist
+- rationale and work-resumption questions
+- consistent answers when facts appear more than once
 
-- exits with code `0` for both `answered` and `not_found`
-- emits stdout that decodes as `RecallSuccessJson`
-- returns the status expected by each case
-- includes every case-specific required fact
-- excludes competing-project and unrelated preference facts
+Each case verifies that recall:
 
-It does **not** inspect internal retrieval candidates or expose retrieval internals through public recall JSON. The benchmark report includes suite/case pass counts, failed gates, missing and forbidden facts, commands, decoded recall statuses, per-case durations, and p50/p95 latency. Retrieval metrics such as Recall@K, MRR, nDCG, layer accuracy, and duplicate crowding remain later work.
+- exits successfully
+- emits valid public recall JSON
+- returns the expected `answered` or `not_found` status
+- includes all required facts
+- excludes forbidden or competing facts
 
-## Why this exists
+The benchmark exits with a nonzero status when any case fails. In JSON mode, stdout contains only the benchmark report and failure diagnostics are written to stderr.
 
-Agentic Memory retrieval should preserve the vault model instead of becoming generic document search. The benchmark exists to make retrieval changes measurable before adding QMD-backed search/query/get commands or tuning Agentic Memory ranking.
+## Adding a benchmark case
 
-The first suite focuses on behavior that should remain stable across retrieval providers:
-
-- the public CLI should answer from the fixture vault without exposing implementation details
-- project-specific distractors should be excluded from the answer
-- user preferences should be discoverable through the public recall answer
-- answer-level behavior should stay stable even if internal retrieval changes
-
-## Package layout
-
-```text
-fixtures/
-  basic-vault/      Synthetic Agentic Memory vault with Alpha/Beta distractors
-  queries.json      Gold benchmark cases
-src/
-  BenchmarkCase.ts  Case schema and fixture loader
-  BenchmarkRunner.ts
-  BenchmarkReport.ts Schema-backed stable suite report
-  bench.ts           Human/JSON benchmark CLI
-  HardGates.ts       Pass/fail hard gates for recall output
-  RetrievalProvider.ts
-  providers/
-    LexicalProvider.ts
-test/
-  retrieval-bench-e2e.test.ts
-```
-
-## Lower-level providers
-
-`LexicalProvider` remains available for lower-level retrieval experiments. It does not require QMD, embeddings, model downloads, or external services.
-
-Future providers can implement the same retrieval provider shape, for example:
-
-- static/fake provider for schema tests
-- QMD lexical provider
-- QMD hybrid/query provider for opt-in local evaluation
-
-## Adding the next vertical slice
-
-Prefer small increments:
-
-1. Add or update a fixture case in `fixtures/queries.json`.
-2. Add only the minimum fixture vault content needed to make the case meaningful.
-3. Extend hard gates only if the new behavior is a deterministic pass/fail requirement.
-4. Add metrics later as report fields, not as the first slice.
-
-When production retrieval work starts, benchmark failures should be captured here before ranking weights or graph behavior are changed.
+1. Add the case to `fixtures/queries.json`.
+2. Add only the fixture memory needed by the case to `fixtures/basic-vault/`.
+3. Specify the expected status, required answer facts, and forbidden answer facts.
+4. Run the package test and benchmark commands.
