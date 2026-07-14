@@ -1,10 +1,8 @@
 import { DateTime, Effect, FileSystem, Option, Path, Schema, Stream } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
-import {
-  projectFileRelativePathFromSlug,
-  projectWikiLinkFromSlug,
-  type ProjectSlug,
-} from "../link/ProjectSlug.ts";
+import { projectFileRelativePathFromSlug, projectWikiLinkFromSlug } from "../link/ProjectSlug.ts";
+
+type ProjectSlug = import("../link/ProjectSlug.ts").ProjectSlug;
 
 export const GIT_EXCLUDE_ENTRY = ".agentic-memory-link/";
 

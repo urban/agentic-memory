@@ -1,18 +1,17 @@
 import { extractBodyCandidates } from "./CandidateExtraction.ts";
 import { scoreCandidate, selectedProjectSet } from "./CandidateScoring.ts";
 import { classifyRecallLayer } from "./RecallDocuments.ts";
-import type {
-  CandidateDraft,
-  ParsedRecallDocument,
-  ProjectEntity,
-  QuestionAnalysis,
-  RecallCandidate,
-  RecallCandidateOrigin,
-  RouteEntry,
-  RouteExpansion,
-} from "./RecallModel.ts";
 import { detectProjectKeys } from "./QuestionAnalysis.ts";
 import { cleanMarkup, countUniqueTokenMatches, tokenize, uniqueStrings } from "./RecallText.ts";
+
+type CandidateDraft = import("./RecallModel.ts").CandidateDraft;
+type ParsedRecallDocument = import("./RecallModel.ts").ParsedRecallDocument;
+type ProjectEntity = import("./RecallModel.ts").ProjectEntity;
+type QuestionAnalysis = import("./RecallModel.ts").QuestionAnalysis;
+type RecallCandidate = import("./RecallModel.ts").RecallCandidate;
+type RecallCandidateOrigin = import("./RecallModel.ts").RecallCandidateOrigin;
+type RouteEntry = import("./RecallModel.ts").RouteEntry;
+type RouteExpansion = import("./RecallModel.ts").RouteExpansion;
 
 const documentProjectKeys = (
   document: ParsedRecallDocument,

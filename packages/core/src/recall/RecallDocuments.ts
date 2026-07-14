@@ -1,14 +1,13 @@
 import { Effect, FileSystem, Path } from "effect";
 
 import { RecallError } from "./RecallContract.ts";
-import type {
-  ParsedRecallDocument,
-  RecallContentStatus,
-  RecallDocument,
-  RecallLayer,
-  RecallProjectStatus,
-} from "./RecallModel.ts";
 import { cleanMarkup, lastPathSegment, tokenize, uniqueStrings } from "./RecallText.ts";
+
+type ParsedRecallDocument = import("./RecallModel.ts").ParsedRecallDocument;
+type RecallContentStatus = import("./RecallModel.ts").RecallContentStatus;
+type RecallDocument = import("./RecallModel.ts").RecallDocument;
+type RecallLayer = import("./RecallModel.ts").RecallLayer;
+type RecallProjectStatus = import("./RecallModel.ts").RecallProjectStatus;
 
 const managedPrefixes = [
   ["maps/", "map"],

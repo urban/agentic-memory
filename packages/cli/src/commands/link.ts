@@ -1,7 +1,4 @@
-import {
-  encodeLinkCommandResultJson,
-  type LinkCommandResult,
-} from "@urban/agentic-memory-core/cli/CliResults";
+import { encodeLinkCommandResultJson } from "@urban/agentic-memory-core/cli/CliResults";
 import {
   decodeLinkConfig,
   loadLinkConfig,
@@ -20,6 +17,8 @@ import { Command, Flag } from "effect/unstable/cli";
 import { toFailure, withCliFailureOutput } from "../output.ts";
 import { commandRoot } from "./root.ts";
 import { projectRootFlag, resolveProjectRoot } from "./shared.ts";
+
+type LinkCommandResult = import("@urban/agentic-memory-core/cli/CliResults").LinkCommandResult;
 
 const configsMatch = (
   left: LinkCommandResult["config"],

@@ -1,12 +1,10 @@
-import {
-  encodeRecallSuccessJson,
-  recall,
-  type RecallError,
-} from "@urban/agentic-memory-core/recall/Recall";
+import { encodeRecallSuccessJson, recall } from "@urban/agentic-memory-core/recall/Recall";
 import { Console, Effect } from "effect";
 import { Argument, Command, Flag } from "effect/unstable/cli";
 import { toFailure, withCliFailureOutput } from "../output.ts";
 import { commandRoot } from "./root.ts";
+
+type RecallError = import("@urban/agentic-memory-core/recall/Recall").RecallError;
 
 const toRecallFailure = (cause: RecallError) => {
   switch (cause.reason) {

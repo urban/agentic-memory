@@ -6,8 +6,10 @@ import { rankCandidates } from "./CandidateRanking.ts";
 import { RecallCandidateRetrieval } from "./RecallCandidateRetrieval.ts";
 import { parseRecallDocument } from "./RecallDocuments.ts";
 import { RecallError } from "./RecallContract.ts";
-import type { RecallRequest, RecallResponse } from "./RecallContract.ts";
 import { analyzeQuestion, projectEntitiesFromDocuments } from "./QuestionAnalysis.ts";
+
+type RecallRequest = import("./RecallContract.ts").RecallRequest;
+type RecallResponse = import("./RecallContract.ts").RecallResponse;
 
 export const recallWithCandidateRetrieval = Effect.fnUntraced(function* (
   request: RecallRequest,

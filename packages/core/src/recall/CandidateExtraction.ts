@@ -1,5 +1,7 @@
-import type { RecallCandidateOrigin, RecallLayer } from "./RecallModel.ts";
 import { cleanMarkup } from "./RecallText.ts";
+
+type RecallCandidateOrigin = import("./RecallModel.ts").RecallCandidateOrigin;
+type RecallLayer = import("./RecallModel.ts").RecallLayer;
 
 type ExtractedCandidateText = {
   readonly text: string;

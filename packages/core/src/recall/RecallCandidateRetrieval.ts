@@ -1,8 +1,9 @@
 import { Context, Effect, FileSystem, Path } from "effect";
 
 import { readRecallDocuments } from "./RecallDocuments.ts";
-import type { RecallError } from "./RecallContract.ts";
-import type { RecallDocument } from "./RecallModel.ts";
+
+type RecallError = import("./RecallContract.ts").RecallError;
+type RecallDocument = import("./RecallModel.ts").RecallDocument;
 
 export type RecallCandidateRetrievalRequest = {
   readonly vaultPath: string;

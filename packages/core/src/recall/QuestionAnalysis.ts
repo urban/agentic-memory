@@ -1,6 +1,9 @@
 import { titleFromPath } from "./RecallDocuments.ts";
-import type { ParsedRecallDocument, ProjectEntity, QuestionAnalysis } from "./RecallModel.ts";
 import { tokenize, tokenSet, uniqueStrings } from "./RecallText.ts";
+
+type ParsedRecallDocument = import("./RecallModel.ts").ParsedRecallDocument;
+type ProjectEntity = import("./RecallModel.ts").ProjectEntity;
+type QuestionAnalysis = import("./RecallModel.ts").QuestionAnalysis;
 
 const genericEntityTokens = new Set([
   "active",

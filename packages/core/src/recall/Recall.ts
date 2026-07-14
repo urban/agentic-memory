@@ -4,8 +4,11 @@ import {
   filesystemRecallCandidateRetrieval,
   RecallCandidateRetrieval,
 } from "./RecallCandidateRetrieval.ts";
-import type { RecallError, RecallRequest, RecallResponse } from "./RecallContract.ts";
 import { recallWithCandidateRetrieval } from "./RecallWorkflow.ts";
+
+type RecallError = import("./RecallContract.ts").RecallError;
+type RecallRequest = import("./RecallContract.ts").RecallRequest;
+type RecallResponse = import("./RecallContract.ts").RecallResponse;
 
 export {
   decodeRecallRequest,

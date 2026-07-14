@@ -52,6 +52,14 @@ Before completing a change, check:
 3. Do cross-package tests know only public inputs and outputs?
 4. Have internal implementation details stayed behind their owning interface?
 
+## Reuse and Helper Placement
+
+- Treat DRY as single ownership of knowledge, rules, and transformations—not elimination of superficial repetition. Prefer small duplication over a premature or misplaced abstraction.
+- Keep one-off implementation details private and local. Extract only to centralize domain knowledge, hide meaningful complexity, or support proven reuse.
+- Keep domain behavior in its owning module. Place only truly domain-agnostic, pure, shared helpers in the owning package's established utility module; do not create catch-all utility folders or violate dependency direction.
+- Before adding a helper, find its proper owner and extend that module only when the behavior fits its responsibility.
+- Inline trivial one-off expressions. Avoid pass-through wrappers or aliases; extracted names must communicate behavior or domain intent.
+
 ## External Libraries
 
 This project vendors external repositories under `.dotai/repos/`
@@ -65,6 +73,18 @@ This project vendors external repositories under `.dotai/repos/`
 - Do not edit files under `.dotai/repos/`
 - Do not import from `.dotai/repos/` - application code should continue importing from normal package dependencies
 
-### Effect
+<!-- effect:start -->
 
-When writing Effect code, inspect `.dotai/repos/effect/` for examples of idiomatic usage, tests, module structure, and API design. The `.dotai/repos/effect/LLMS.md` is an authoritative source for information about Effect patterns. Treat it as the source of truth for Effect patterns.
+## Effect Best Practices
+
+**IMPORTANT:** Always consult the Effect v4 source mirror in `.repos/effect/`.
+
+The full source code for the `effect` library is in `.repos/effect/`. Agent instructions live in `.repos/effect/LLMS.md`. Native development patterns live in `.repos/effect/.patterns/`.
+
+For Effect v4, prefer imports from the main `effect` package, eg `effect/CLI` and `effect/Platform`. Avoid legacy standalone packages.
+
+Use this for learning the library instead of browsing `node_modules/`.
+
+Never guess at Effect patterns or APIs. Check the full source code.
+
+<!-- effect:end -->

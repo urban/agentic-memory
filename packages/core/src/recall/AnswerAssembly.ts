@@ -1,4 +1,3 @@
-import type { RecallResponse } from "./RecallContract.ts";
 import {
   candidateHasCompetingProject,
   candidateHasSelectedProject,
@@ -6,18 +5,18 @@ import {
   isAnswerWorthyCandidateText,
   isUserPreferenceCandidate,
 } from "./CandidateScoring.ts";
-import type {
-  AnswerPart,
-  QuestionAnalysis,
-  RecallCandidate,
-  SupportedCandidate,
-} from "./RecallModel.ts";
 import {
   cleanMarkup,
   countUniqueTokenMatches,
   normalizeForDeduplication,
   tokenize,
 } from "./RecallText.ts";
+
+type RecallResponse = import("./RecallContract.ts").RecallResponse;
+type AnswerPart = import("./RecallModel.ts").AnswerPart;
+type QuestionAnalysis = import("./RecallModel.ts").QuestionAnalysis;
+type RecallCandidate = import("./RecallModel.ts").RecallCandidate;
+type SupportedCandidate = import("./RecallModel.ts").SupportedCandidate;
 
 const notFoundAnswer = "I don't know based on the available Agentic Memory.";
 const projectSupportFloor = 45;

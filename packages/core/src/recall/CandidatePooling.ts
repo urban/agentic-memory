@@ -3,9 +3,11 @@ import {
   countCandidateTopicMatches,
   isUserPreferenceCandidate,
 } from "./CandidateScoring.ts";
-import type { AnswerPart, QuestionAnalysis, RecallCandidate } from "./RecallModel.ts";
 import { normalizeForDeduplication } from "./RecallText.ts";
 
+type AnswerPart = import("./RecallModel.ts").AnswerPart;
+type QuestionAnalysis = import("./RecallModel.ts").QuestionAnalysis;
+type RecallCandidate = import("./RecallModel.ts").RecallCandidate;
 type AnswerCategory = AnswerPart["category"];
 
 const categoryCandidates = (

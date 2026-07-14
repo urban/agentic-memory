@@ -2,11 +2,12 @@
 
 import { BunRuntime } from "@effect/platform-bun";
 import * as BunServices from "@effect/platform-bun/BunServices";
-import { Console, Effect, Path } from "effect";
+import { Console, Effect, ManagedRuntime, Path } from "effect";
 import { loadBenchmarkCases } from "./BenchmarkCase.ts";
-import { runBenchmarkSuite, type BenchmarkSuiteReport } from "./BenchmarkRunner.ts";
+import { runBenchmarkSuite } from "./BenchmarkRunner.ts";
 import { encodeBenchmarkSuiteResultJson } from "./BenchmarkReport.ts";
 
+type BenchmarkSuiteReport = import("./BenchmarkRunner.ts").BenchmarkSuiteReport;
 type BenchOptions = {
   readonly json: boolean;
   readonly vaultPath?: string;
@@ -87,6 +88,8 @@ const reportFailureDiagnostics = (report: BenchmarkSuiteReport): Effect.Effect<v
   return diagnostics.length === 0 ? Effect.void : Console.error(diagnostics.join("\n"));
 };
 
+const BenchmarkRuntime = ManagedRuntime.make(BunServices.layer);
+
 export const runBenchmarkCli = Effect.fnUntraced(function* (args: ReadonlyArray<string>) {
   const parsed = parseArguments(args);
   if (parsed._tag === "help") {
@@ -124,5 +127,12 @@ export const runBenchmarkCli = Effect.fnUntraced(function* (args: ReadonlyArray<
 });
 
 if (import.meta.main) {
-  BunRuntime.runMain(runBenchmarkCli(Bun.argv.slice(2)).pipe(Effect.provide(BunServices.layer)));
+  BunRuntime.runMain(
+    BenchmarkRuntime.contextEffect.pipe(
+      Effect.flatMap((context) =>
+        Effect.provideContext(runBenchmarkCli(Bun.argv.slice(2)), context),
+      ),
+      Effect.ensuring(BenchmarkRuntime.disposeEffect),
+    ),
+  );
 }

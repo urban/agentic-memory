@@ -1,15 +1,13 @@
 import { decodeRecallSuccessJson } from "@urban/agentic-memory-core/recall/Recall";
 import { Clock, Config as EffectConfig, Effect, Option, Path, PlatformError, Stream } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
-import {
-  evaluateHardGates,
-  type DecodedRecallOutput,
-  type GateStatus,
-  type HardGateResult,
-} from "./HardGates.ts";
-import type { BenchmarkHardGateName } from "./BenchmarkReport.ts";
+import { evaluateHardGates } from "./HardGates.ts";
 
 type BenchmarkCase = import("./BenchmarkCase.ts").BenchmarkCase;
+type DecodedRecallOutput = import("./HardGates.ts").DecodedRecallOutput;
+type GateStatus = import("./HardGates.ts").GateStatus;
+type HardGateResult = import("./HardGates.ts").HardGateResult;
+type BenchmarkHardGateName = import("./BenchmarkReport.ts").BenchmarkHardGateName;
 
 const benchLauncherDirectoryFileUrl = new URL("../bin/", import.meta.url);
 const repoRootFileUrl = new URL("../../..", import.meta.url);

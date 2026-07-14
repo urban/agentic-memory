@@ -1,12 +1,13 @@
-import { Effect, type FileSystem, type Path } from "effect";
+import { Effect, FileSystem, Path } from "effect";
 
 import {
   classifyRecallLayer,
   isManagedRecallPath,
   readRecallDocuments,
 } from "./RecallDocuments.ts";
-import type { RecallError } from "./RecallContract.ts";
-import type { RecallDocument, RecallLayer } from "./RecallModel.ts";
+type RecallError = import("./RecallContract.ts").RecallError;
+type RecallDocument = import("./RecallModel.ts").RecallDocument;
+type RecallLayer = import("./RecallModel.ts").RecallLayer;
 
 const defaultIgnorePatterns = [
   ".agentic-memory/**",

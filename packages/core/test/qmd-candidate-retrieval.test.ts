@@ -8,14 +8,16 @@ import {
   makeQmdRecallStoreOptions,
   normalizeQmdCandidateResults,
   readDocumentsForQmdCandidates,
-  type QmdLikeCandidateResult,
 } from "../src/recall/QmdCandidateRetrieval.ts";
-import {
-  RecallCandidateRetrieval,
-  type RecallCandidateRetrievalRequest,
-  type RecallCandidateRetrievalService,
-} from "../src/recall/RecallCandidateRetrieval.ts";
+import { RecallCandidateRetrieval } from "../src/recall/RecallCandidateRetrieval.ts";
 import { recallWithCandidateRetrieval } from "../src/recall/RecallWorkflow.ts";
+
+type QmdLikeCandidateResult =
+  import("../src/recall/QmdCandidateRetrieval.ts").QmdLikeCandidateResult;
+type RecallCandidateRetrievalRequest =
+  import("../src/recall/RecallCandidateRetrieval.ts").RecallCandidateRetrievalRequest;
+type RecallCandidateRetrievalService =
+  import("../src/recall/RecallCandidateRetrieval.ts").RecallCandidateRetrievalService;
 
 const fixtureVaultPath = fileURLToPath(
   new URL("./fixtures/retrieval/basic-vault/", import.meta.url),

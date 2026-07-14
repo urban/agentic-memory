@@ -1,6 +1,7 @@
 import { ChildProcessSpawner } from "effect/unstable/process";
-import type { BenchmarkHardGateName, BenchmarkStatus } from "./BenchmarkReport.ts";
 
+type BenchmarkHardGateName = import("./BenchmarkReport.ts").BenchmarkHardGateName;
+type BenchmarkStatus = import("./BenchmarkReport.ts").BenchmarkStatus;
 type RecallSuccessResponse = import("@urban/agentic-memory-core/recall/Recall").RecallResponse;
 type RecallStatus = RecallSuccessResponse["status"];
 

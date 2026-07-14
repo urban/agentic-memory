@@ -1,12 +1,11 @@
-import type {
-  CandidateDraft,
-  QuestionAnalysis,
-  RecallCandidateOrigin,
-  RecallContentStatus,
-  RecallLayer,
-  RecallProjectStatus,
-} from "./RecallModel.ts";
 import { countTokenMatches, countUniqueTokenMatches, tokenSet } from "./RecallText.ts";
+
+type CandidateDraft = import("./RecallModel.ts").CandidateDraft;
+type QuestionAnalysis = import("./RecallModel.ts").QuestionAnalysis;
+type RecallCandidateOrigin = import("./RecallModel.ts").RecallCandidateOrigin;
+type RecallContentStatus = import("./RecallModel.ts").RecallContentStatus;
+type RecallLayer = import("./RecallModel.ts").RecallLayer;
+type RecallProjectStatus = import("./RecallModel.ts").RecallProjectStatus;
 
 const layerScore = (memoryLayer: RecallLayer): number => {
   switch (memoryLayer) {
