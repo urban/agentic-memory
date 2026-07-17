@@ -42,3 +42,6 @@ CONTEXT.md
 TODO.md
 docs/adr/
 specs/
+/.ralph-tm/HANDOFF.md
+/.ralph-tm/HANDOFF.md.tmp
+/.ralph-snapshot-*/
