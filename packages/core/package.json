@@ -9,6 +9,7 @@
   "exports": {
     "./capture/CapturePayload": "./src/capture/CapturePayload.ts",
     "./capture/PayloadShaping": "./src/capture/PayloadShaping.ts",
+    "./link/GitExclude": "./src/link/GitExclude.ts",
     "./link/LinkConfig": "./src/link/LinkConfig.ts",
     "./link/ProjectSlug": "./src/link/ProjectSlug.ts",
     "./recall/Recall": "./src/recall/Recall.ts",

@@ -4,9 +4,9 @@ import {
   loadLinkConfig,
   writeLinkConfig,
 } from "@urban/agentic-memory-core/link/LinkConfig";
+import { ensureGitExcludeEntry } from "@urban/agentic-memory-core/link/GitExclude";
 import { decodeProjectSlug } from "@urban/agentic-memory-core/link/ProjectSlug";
 import {
-  ensureGitExcludeEntry,
   ensureMemoryRoute,
   ensureProjectFile,
   formatIsoDateFromMillis,
