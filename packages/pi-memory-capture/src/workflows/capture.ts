@@ -1,6 +1,5 @@
-import { Clock, Effect, Random, Semaphore } from "effect";
+import { Clock, DateTime, Effect, Random, Semaphore } from "effect";
 import { CAPTURE_BATCH_SIZE, MARKER_VERSION } from "../constants.ts";
-import { formatIsoFromMillis } from "../project.ts";
 import { decodeAttemptId } from "../schema.ts";
 import { CaptureConfig } from "../services/CaptureConfig.ts";
 import { Markers } from "../services/Markers.ts";
@@ -61,7 +60,7 @@ const captureSemaphoreFor = (cwd: string): Semaphore.Semaphore => {
 
 const nowValues = Clock.clockWith((clock) =>
   Effect.sync(() => ({
-    isoTimestamp: formatIsoFromMillis(clock.currentTimeMillisUnsafe()),
+    isoTimestamp: DateTime.formatIso(DateTime.makeUnsafe(clock.currentTimeMillisUnsafe())),
   })),
 );
 

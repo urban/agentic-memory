@@ -1,11 +1,10 @@
-import { Effect, Option, Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import {
   CapturePayloadJson,
   StewardResultEnvelopeJson,
   encodeCapturePayloadJson,
 } from "../src/schema.ts";
-import { applyProjectTemplate, ensureProjectRouteInMemory } from "../src/project.ts";
 import { buildCapturePrompt, sanitizeVisibleText, truncateMessageText } from "../src/text.ts";
 
 describe("domain helpers", () => {
@@ -39,68 +38,6 @@ hello
     expect(truncated.truncated).toBe(true);
     expect(truncated.text.length).toBeLessThanOrEqual(6_000);
     expect(truncated.text).toContain("[message truncated to 6000 chars]");
-  });
-
-  it("adds a projects route and updates frontmatter dates", () => {
-    const updated = ensureProjectRouteInMemory(
-      `---
-updated: 2026-01-01
----
-
-# Memory
-
-## Current
-
-- Work in progress.
-`,
-      "[[projects/capture-extension]]",
-      "capture-extension",
-      "2026-06-05",
-    );
-
-    expect(updated).toContain("updated: 2026-06-05");
-    expect(updated).toContain("## Projects");
-    expect(updated).toContain("- [[projects/capture-extension]] — capture-extension.");
-  });
-
-  it("renders project templates from fenced markdown when required sections exist", () => {
-    const rendered = applyProjectTemplate(
-      `# Template
-
-\`\`\`md
----
-type: project
-project_status: candidate
-summary: "One-line project summary."
----
-
-# Project Name
-
-## Resume context
-
-None.
-
-## Project timeline
-
-- YYYY-MM-DD: Started.
-
-## Decision log
-
-None.
-\`\`\`
-`,
-      {
-        projectLabel: "Capture Extension",
-        date: "2026-06-05",
-      },
-    );
-
-    expect(Option.isSome(rendered)).toBe(true);
-    if (Option.isSome(rendered)) {
-      expect(rendered.value).toContain("# Capture Extension");
-      expect(rendered.value).toContain("project_status: active");
-      expect(rendered.value).toContain("2026-06-05");
-    }
   });
 
   it("validates capture payload and steward result json contracts", () =>

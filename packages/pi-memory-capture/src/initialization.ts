@@ -1,11 +1,15 @@
 import { isProjectSlug } from "@urban/agentic-memory-core/link/ProjectSlug";
-import { Effect, Option } from "effect";
-import { projectSlugFromLink } from "./project.ts";
+import { Effect } from "effect";
 import { CaptureConfig } from "./services/CaptureConfig.ts";
 import { applyInitialization, planInitialization } from "./workflows/initialization.ts";
 
 type ExtensionCommandContext = import("@earendil-works/pi-coding-agent").ExtensionCommandContext;
 type ExtensionContext = import("@earendil-works/pi-coding-agent").ExtensionContext;
+
+const PROJECT_LINK_PATTERN = /^\[\[projects\/([a-z0-9][a-z0-9-]*)\]\]$/;
+
+const projectSlugFromLink = (value: string): string | undefined =>
+  value.match(PROJECT_LINK_PATTERN)?.[1];
 
 const normalizeProjectSlugInput = (value: string | undefined): string | undefined => {
   if (value === undefined) {
@@ -21,7 +25,7 @@ const normalizeProjectSlugInput = (value: string | undefined): string | undefine
     return trimmed;
   }
 
-  return Option.getOrUndefined(projectSlugFromLink(trimmed));
+  return projectSlugFromLink(trimmed);
 };
 
 const parseInitCommandArgs = (args: string) => {

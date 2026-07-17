@@ -1,6 +1,5 @@
 import { ensureGitExcludeEntry } from "@urban/agentic-memory-core/link/GitExclude";
-import { Clock, Effect } from "effect";
-import { formatIsoDateFromMillis } from "../project.ts";
+import { Clock, DateTime, Effect } from "effect";
 import { LoadConfigResult } from "../schema.ts";
 import { CaptureConfig } from "../services/CaptureConfig.ts";
 import { VaultProjects } from "../services/VaultProjects.ts";
@@ -33,7 +32,7 @@ export interface InitializationResult {
 
 const nowValues = Clock.clockWith((clock) =>
   Effect.sync(() => ({
-    isoDate: formatIsoDateFromMillis(clock.currentTimeMillisUnsafe()),
+    isoDate: DateTime.formatIsoDateUtc(DateTime.makeUnsafe(clock.currentTimeMillisUnsafe())),
   })),
 );
 

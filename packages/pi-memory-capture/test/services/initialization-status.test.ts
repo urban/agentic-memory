@@ -217,9 +217,25 @@ updated: 2026-01-01
           const firstInitialization = yield* applyInitialization(cwd, config);
           const secondInitialization = yield* applyInitialization(cwd, config);
           const status = yield* loadStatus(cwd, branch);
+          const projectDocument = yield* fs.readFileString(
+            join(vault, "projects", "capture-extension.md"),
+          );
+          const memoryDocument = yield* fs.readFileString(join(vault, "MEMORY.md"));
 
+          expect(firstInitialization.projectCreated).toBe(true);
+          expect(firstInitialization.routeAdded).toBe(true);
           expect(firstInitialization.gitExcludeUpdated).toBe(true);
+          expect(secondInitialization.projectCreated).toBe(false);
+          expect(secondInitialization.routeAdded).toBe(false);
           expect(secondInitialization.gitExcludeUpdated).toBe(false);
+          expect(projectDocument).toContain("# capture-extension");
+          expect(projectDocument).toContain("## Resume context");
+          expect(projectDocument).toContain("## Project timeline");
+          expect(projectDocument).toContain("## Decision log");
+          expect(projectDocument).toContain(
+            "Run agentic-memory capture after meaningful project work.",
+          );
+          expect(memoryDocument).toContain("- [[projects/capture-extension]] — capture-extension.");
           expect(yield* fs.readFileString(join(cwd, ".git", "info", "exclude"))).toContain(
             ".agentic-memory-link/",
           );
