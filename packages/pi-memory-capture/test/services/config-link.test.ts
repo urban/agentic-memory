@@ -1,15 +1,12 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off
 import { readFileSync, symlinkSync } from "node:fs";
-import * as BunServices from "@effect/platform-bun/BunServices";
 import * as BunFileSystem from "@effect/platform-bun/BunFileSystem";
 import * as BunPath from "@effect/platform-bun/BunPath";
 import { ConfigProvider, Effect, FileSystem, Layer, ManagedRuntime, PlatformError } from "effect";
 // @effect-diagnostics-next-line nodeBuiltinImport:off
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { GIT_EXCLUDE_ENTRY } from "../../src/constants.ts";
 import { CaptureConfig } from "../../src/services/CaptureConfig.ts";
-import { Git } from "../../src/services/Git.ts";
 import { VaultProjects } from "../../src/services/VaultProjects.ts";
 import { createTempDirectory, removeTempDirectory, writeFile } from "../helpers.ts";
 
@@ -21,12 +18,8 @@ const CaptureConfigTestLayer = CaptureConfig.layer.pipe(
   Layer.provide(InfrastructureLayer),
 );
 const VaultProjectsTestLayer = VaultProjects.layer.pipe(Layer.provide(InfrastructureLayer));
-const GitTestLayer = Git.layer.pipe(
-  Layer.provide(Layer.mergeAll(BunServices.layer, BunFileSystem.layer)),
-);
 const CaptureConfigRuntime = ManagedRuntime.make(CaptureConfigTestLayer);
 const VaultProjectsRuntime = ManagedRuntime.make(VaultProjectsTestLayer);
-const GitRuntime = ManagedRuntime.make(GitTestLayer);
 
 describe("CaptureConfig", () => {
   it("loads valid .agentic-memory-link config without overriding its stored vault path", () => {
@@ -282,72 +275,6 @@ updated: 2026-01-01
           };
           const result = yield* projects
             .ensureProjectFile(projectConfig, "2026-06-05")
-            .pipe(Effect.exit);
-
-          expect(result._tag).toBe("Failure");
-          expect(written).toHaveLength(0);
-        }),
-      )
-      .finally(() => runtime.dispose());
-  });
-});
-
-describe("Git", () => {
-  it("appends info exclude entries idempotently", () => {
-    const root = createTempDirectory("pi-memory-git-");
-    const gitDir = join(root, ".git");
-
-    writeFile(join(gitDir, "info", "exclude"), "");
-
-    return GitRuntime.runPromise(
-      Effect.gen(function* () {
-        const git = yield* Git;
-        const firstExclude = yield* git.ensureInfoExcludeEntry(gitDir, GIT_EXCLUDE_ENTRY);
-        const secondExclude = yield* git.ensureInfoExcludeEntry(gitDir, GIT_EXCLUDE_ENTRY);
-
-        expect(firstExclude).toBe(true);
-        expect(secondExclude).toBe(false);
-        expect(readFileSync(join(gitDir, "info", "exclude"), "utf8")).toContain(
-          ".agentic-memory-link/",
-        );
-      }),
-    ).finally(() => removeTempDirectory(root));
-  });
-
-  it("does not overwrite git excludes when the existing file cannot be read", () => {
-    const written: string[] = [];
-    const runtime = ManagedRuntime.make(
-      Git.layer.pipe(
-        Layer.provide(
-          Layer.mergeAll(
-            FileSystem.layerNoop({
-              makeDirectory: () => Effect.void,
-              readFileString: (path) =>
-                Effect.fail(
-                  PlatformError.systemError({
-                    module: "FileSystem",
-                    method: "readFileString",
-                    _tag: "PermissionDenied",
-                    pathOrDescriptor: path,
-                  }),
-                ),
-              writeFileString: (_path, content) =>
-                Effect.sync(() => {
-                  written.push(content);
-                }),
-            }),
-            BunServices.layer,
-          ),
-        ),
-      ),
-    );
-
-    return runtime
-      .runPromise(
-        Effect.gen(function* () {
-          const git = yield* Git;
-          const result = yield* git
-            .ensureInfoExcludeEntry("/repo/.git", GIT_EXCLUDE_ENTRY)
             .pipe(Effect.exit);
 
           expect(result._tag).toBe("Failure");

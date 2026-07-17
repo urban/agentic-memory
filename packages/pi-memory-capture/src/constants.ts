@@ -12,4 +12,3 @@ export const PAYLOAD_CHAR_LIMIT = 80_000;
 export const RESULT_SUMMARY_CHAR_LIMIT = 50;
 export const TRUNCATION_SUFFIX = " [truncated]";
 export const MESSAGE_TRUNCATION_SUFFIX = "\n[message truncated to 6000 chars]";
-export const GIT_EXCLUDE_ENTRY = ".agentic-memory-link/";

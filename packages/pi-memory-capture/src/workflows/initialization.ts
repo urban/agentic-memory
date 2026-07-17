@@ -1,9 +1,8 @@
+import { ensureGitExcludeEntry } from "@urban/agentic-memory-core/link/GitExclude";
 import { Clock, Effect } from "effect";
-import { GIT_EXCLUDE_ENTRY } from "../constants.ts";
 import { formatIsoDateFromMillis } from "../project.ts";
 import { LoadConfigResult } from "../schema.ts";
 import { CaptureConfig } from "../services/CaptureConfig.ts";
-import { Git } from "../services/Git.ts";
 import { VaultProjects } from "../services/VaultProjects.ts";
 
 type ResolvedProjectConfig = import("../schema.ts").ResolvedProjectConfig;
@@ -72,20 +71,17 @@ export const applyInitialization = Effect.fn("MemoryCapture.applyInitialization"
   configValue: ResolvedProjectConfig,
 ) {
   const captureConfig = yield* CaptureConfig;
-  const git = yield* Git;
   const vaultProjects = yield* VaultProjects;
   const time = yield* nowValues;
   const projectCreated = yield* vaultProjects.ensureProjectFile(configValue, time.isoDate);
   const routeAdded = yield* vaultProjects.ensureMemoryRoute(configValue, time.isoDate);
   yield* captureConfig.ensureLocalFiles(cwd, configValue);
-  const gitDir = yield* git.resolveGitDir(cwd);
-  const gitExcludeUpdated =
-    gitDir === undefined ? false : yield* git.ensureInfoExcludeEntry(gitDir, GIT_EXCLUDE_ENTRY);
+  const gitExclude = yield* ensureGitExcludeEntry(cwd);
 
   return {
     config: configValue,
     projectCreated,
     routeAdded,
-    gitExcludeUpdated,
+    gitExcludeUpdated: gitExclude.updated,
   } satisfies InitializationResult;
 });

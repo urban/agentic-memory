@@ -3,7 +3,6 @@ import * as BunServices from "@effect/platform-bun/BunServices";
 import { makeCaptureObservabilityLayer } from "@urban/agentic-memory-core/observability/CaptureTelemetry";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { CaptureConfig } from "./services/CaptureConfig.ts";
-import { Git } from "./services/Git.ts";
 import { Markers } from "./services/Markers.ts";
 import { MemorySteward, MemoryStewardError, StewardExecutor } from "./services/MemorySteward.ts";
 import { Preprocessor } from "./services/Preprocessor.ts";
@@ -78,11 +77,10 @@ export const makeMemoryCaptureRuntime = (pi: ExtensionAPI) => {
   const servicesLayer = Layer.mergeAll(
     VaultProjects.layer,
     captureConfigLayer,
-    Git.layer,
     Markers.layer,
     Preprocessor.layer,
     MemorySteward.layer.pipe(Layer.provideMerge(captureConfigLayer)),
-  ).pipe(Layer.provide(infrastructureLayer));
+  ).pipe(Layer.provideMerge(infrastructureLayer));
   const observabilityLayer = makeCaptureObservabilityLayer({
     serviceName: "agentic-memory-pi-capture",
     serviceVersion: packageJson.version,

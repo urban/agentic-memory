@@ -1,7 +1,7 @@
-import * as BunFileSystem from "@effect/platform-bun/BunFileSystem";
-import * as BunPath from "@effect/platform-bun/BunPath";
+import * as BunServices from "@effect/platform-bun/BunServices";
 import { AuthStorage, ModelRegistry, SessionManager } from "@earendil-works/pi-coding-agent";
-import { Effect, Layer, ManagedRuntime } from "effect";
+import { Effect, FileSystem, Layer, ManagedRuntime } from "effect";
+import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { theme } from "../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js";
 // @effect-diagnostics-next-line nodeBuiltinImport:off
 import { join } from "node:path";
@@ -9,7 +9,6 @@ import { describe, expect, it } from "vitest";
 import { encodeProjectConfigJson } from "../../src/schema.ts";
 import { runInitCommand } from "../../src/initialization.ts";
 import { CaptureConfig } from "../../src/services/CaptureConfig.ts";
-import { Git } from "../../src/services/Git.ts";
 import { Markers } from "../../src/services/Markers.ts";
 import { VaultProjects } from "../../src/services/VaultProjects.ts";
 import { applyInitialization } from "../../src/workflows/initialization.ts";
@@ -25,18 +24,22 @@ type ExtensionCommandContext = import("@earendil-works/pi-coding-agent").Extensi
 type ResolvedProjectConfig = import("../../src/schema.ts").ResolvedProjectConfig;
 
 const captureConfigLayer = CaptureConfig.layer.pipe(Layer.provideMerge(VaultProjects.layer));
-const runtimeLayer = Layer.mergeAll(
-  VaultProjects.layer,
-  captureConfigLayer,
-  Layer.succeed(
-    Git,
-    Git.of({
-      resolveGitDir: () => Effect.void.pipe(Effect.as(undefined)),
-      ensureInfoExcludeEntry: () => Effect.succeed(false),
+const runtimeLayer = Layer.mergeAll(VaultProjects.layer, captureConfigLayer, Markers.layer).pipe(
+  Layer.provideMerge(BunServices.layer),
+);
+
+const initializeGitRepository = Effect.fnUntraced(function* (cwd: string) {
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  const exitCode = yield* spawner.exitCode(
+    ChildProcess.make("git", ["init"], {
+      cwd,
+      stdout: "ignore",
+      stderr: "ignore",
     }),
-  ),
-  Markers.layer,
-).pipe(Layer.provide(Layer.mergeAll(BunFileSystem.layer, BunPath.layer)));
+  );
+
+  expect(exitCode).toBe(ChildProcessSpawner.ExitCode(0));
+});
 
 const makeCommandContext = (cwd: string) =>
   ({
@@ -209,9 +212,17 @@ updated: 2026-01-01
     return runtime
       .runPromise(
         Effect.gen(function* () {
-          yield* applyInitialization(cwd, config);
+          const fs = yield* FileSystem.FileSystem;
+          yield* initializeGitRepository(cwd);
+          const firstInitialization = yield* applyInitialization(cwd, config);
+          const secondInitialization = yield* applyInitialization(cwd, config);
           const status = yield* loadStatus(cwd, branch);
 
+          expect(firstInitialization.gitExcludeUpdated).toBe(true);
+          expect(secondInitialization.gitExcludeUpdated).toBe(false);
+          expect(yield* fs.readFileString(join(cwd, ".git", "info", "exclude"))).toContain(
+            ".agentic-memory-link/",
+          );
           expect(status.config._tag).toBe("valid");
           expect(status.latestObservationStatus).toBe("captured");
           expect(status.latestObservationSummary).toBe("Record capture setup");
