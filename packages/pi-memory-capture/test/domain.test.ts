@@ -5,41 +5,8 @@ import {
   StewardResultEnvelopeJson,
   encodeCapturePayloadJson,
 } from "../src/schema.ts";
-import { buildCapturePrompt, sanitizeVisibleText, truncateMessageText } from "../src/text.ts";
 
-describe("domain helpers", () => {
-  it("redacts secrets and normalizes visible text", () => {
-    const sanitized = sanitizeVisibleText(`
-Bearer sk-super-secret-token
-OPENAI_API_KEY=abc123
-
-
-
-hello
-`);
-
-    expect(sanitized).toContain("Bearer [REDACTED]");
-    expect(sanitized).toContain("OPENAI_API_KEY=[REDACTED]");
-    expect(sanitized).not.toContain("abc123");
-    expect(sanitized.endsWith("hello")).toBe(true);
-  });
-
-  it("redacts GitHub fine-grained personal access tokens", () => {
-    const token = "github_pat_11AA22BB33CC44DD55EE66FF77GG88HH99II00JJ11";
-    const sanitized = sanitizeVisibleText(`token=${token}`);
-
-    expect(sanitized).toContain("[REDACTED_GITHUB_TOKEN]");
-    expect(sanitized).not.toContain(token);
-  });
-
-  it("truncates oversized messages with the capture suffix", () => {
-    const truncated = truncateMessageText("x".repeat(7_000));
-
-    expect(truncated.truncated).toBe(true);
-    expect(truncated.text.length).toBeLessThanOrEqual(6_000);
-    expect(truncated.text).toContain("[message truncated to 6000 chars]");
-  });
-
+describe("domain contracts", () => {
   it("validates capture payload and steward result json contracts", () =>
     Effect.runPromise(
       Effect.gen(function* () {
@@ -98,12 +65,4 @@ hello
         expect(missingDecisionReport._tag).toBe("Failure");
       }),
     ));
-
-  it("builds a capture prompt that references the steward instruction", () => {
-    const prompt = buildCapturePrompt('{"version":1}', ["Payload reached the cap."]);
-
-    expect(prompt).toContain("instructions/session-capture.md");
-    expect(prompt).toContain("Payload warnings:");
-    expect(prompt).toContain('{"version":1}');
-  });
 });

@@ -151,6 +151,7 @@ describe("core contracts", () => {
 
   it.effect("validates capture payloads and shapes visible text", () =>
     Effect.gen(function* () {
+      const githubToken = "github_pat_11AA22BB33CC44DD55EE66FF77GG88HH99II00JJ11";
       const decoded = yield* decodeCapturePayloadJson(validPayloadJson);
       const empty = yield* decodeCapturePayloadJson(
         '{"version":1,"projectSlug":"agentic-memory-cli","messages":[]}',
@@ -160,7 +161,11 @@ describe("core contracts", () => {
         messages: [
           {
             role: "user",
-            text: `Bearer sk-ant-1234567890abcdefghijklmnopqrstuvwxyz\n${"x".repeat(7_000)}`,
+            text: "\r\n   ",
+          },
+          {
+            role: "assistant",
+            text: `Bearer sk-ant-1234567890abcdefghijklmnopqrstuvwxyz\r\n\r\n\r\n\r\nOPENAI_API_KEY=abc123\r\n${githubToken}\r\n${"x".repeat(7_000)}`,
           },
         ],
       });
@@ -172,6 +177,14 @@ describe("core contracts", () => {
           const text = shaped.payload?.messages[0]?.text ?? "";
           assert.isAtMost(text.length, MESSAGE_CHAR_LIMIT);
           assert.include(text, "Bearer [REDACTED]");
+          assert.include(text, "OPENAI_API_KEY=[REDACTED]");
+          assert.include(text, "[REDACTED_GITHUB_TOKEN]");
+          assert.notInclude(text, "abc123");
+          assert.notInclude(text, githubToken);
+          assert.notInclude(text, "\r");
+          assert.notInclude(text, "\n\n\n");
+          assert.strictEqual(shaped.coveredInputMessageCount, 2);
+          assert.isTrue(shaped.warnings.some((warning) => warning.includes("Whitespace-only")));
           assert.isTrue(shaped.warnings.some((warning) => warning.includes("truncated")));
           break;
         }

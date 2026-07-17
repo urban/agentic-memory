@@ -1,6 +1,6 @@
 import { Effect, ManagedRuntime } from "effect";
 import { describe, expect, it } from "vitest";
-import { MESSAGE_LIMIT } from "../../src/constants.ts";
+import { MESSAGE_LIMIT } from "@urban/agentic-memory-core/capture/PayloadShaping";
 import { MARKER_VERSION } from "../../src/constants.ts";
 import { Markers } from "../../src/services/Markers.ts";
 import { Preprocessor } from "../../src/services/Preprocessor.ts";
@@ -243,6 +243,29 @@ describe("Preprocessor", () => {
         ]);
 
         expect(result._tag).toBe("NoMessages");
+      }),
+    ));
+
+  it("keeps observation boundaries aligned when core omits whitespace-only messages", () =>
+    PreprocessorRuntime.runPromise(
+      Effect.gen(function* () {
+        const preprocessor = yield* Preprocessor;
+        const result = yield* preprocessor.buildPayload("agent_end", "capture-extension", [
+          makeUserEntry("u0", " \r\n "),
+          makeAssistantEntry("a0", [{ type: "text", text: "Visible answer" }], "u0"),
+        ]);
+
+        expect(result._tag).toBe("Payload");
+        if (result._tag === "Payload") {
+          expect(result.payload.messages).toEqual([{ role: "assistant", text: "Visible answer" }]);
+          expect(result.observation).toEqual({
+            fromEntryId: "u0",
+            toEntryId: "a0",
+            entryCount: 2,
+            messageCount: 1,
+          });
+          expect(result.warnings.some((warning) => warning.includes("Whitespace-only"))).toBe(true);
+        }
       }),
     ));
 

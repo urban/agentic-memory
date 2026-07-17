@@ -39,6 +39,7 @@ export type ShapeCapturePayloadResult =
   | {
       readonly _tag: "Payload";
       readonly payload: CapturePayload;
+      readonly coveredInputMessageCount: number;
       readonly warnings: ReadonlyArray<string>;
     };
 
@@ -95,8 +96,9 @@ export const shapeCapturePayload = Effect.fnUntraced(function* (input: ShapeCapt
   const messages: ShapeableCaptureMessage[] = [];
   const warnings: string[] = [];
   let payloadChars = 0;
+  let coveredInputMessageCount = 0;
 
-  for (const rawMessage of input.messages) {
+  for (const [inputIndex, rawMessage] of input.messages.entries()) {
     const sanitized = sanitizeVisibleText(rawMessage.text);
     if (sanitized.length === 0) {
       warnings.push("Whitespace-only message omitted from capture payload.");
@@ -125,6 +127,7 @@ export const shapeCapturePayload = Effect.fnUntraced(function* (input: ShapeCapt
       text: truncated.text,
     });
     payloadChars += truncated.text.length;
+    coveredInputMessageCount = inputIndex + 1;
   }
 
   if (messages.length === 0) {
@@ -143,6 +146,7 @@ export const shapeCapturePayload = Effect.fnUntraced(function* (input: ShapeCapt
   return {
     _tag: "Payload",
     payload,
+    coveredInputMessageCount,
     warnings,
   };
 });

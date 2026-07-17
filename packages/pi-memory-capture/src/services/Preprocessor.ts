@@ -1,6 +1,5 @@
 import { shapeCapturePayload } from "@urban/agentic-memory-core/capture/PayloadShaping";
 import { Context, Effect, Layer } from "effect";
-import { sanitizeVisibleText } from "../text.ts";
 
 type AssistantMessage = import("@earendil-works/pi-ai").AssistantMessage;
 type ImageContent = import("@earendil-works/pi-ai").ImageContent;
@@ -64,16 +63,11 @@ const extractAssistantText = (message: AssistantMessage): string =>
 
 const toPayloadMessage = (entry: SessionMessageEntry): ObservedPayloadMessage | undefined => {
   if (isUserMessage(entry.message)) {
-    const sanitized = sanitizeVisibleText(extractUserText(entry.message));
-    if (sanitized.length === 0) {
-      return undefined;
-    }
-
     return {
       entryId: entry.id,
       message: {
         role: "user",
-        text: sanitized,
+        text: extractUserText(entry.message),
       },
     };
   }
@@ -82,16 +76,11 @@ const toPayloadMessage = (entry: SessionMessageEntry): ObservedPayloadMessage | 
     return undefined;
   }
 
-  const sanitized = sanitizeVisibleText(extractAssistantText(entry.message));
-  if (sanitized.length === 0) {
-    return undefined;
-  }
-
   return {
     entryId: entry.id,
     message: {
       role: "assistant",
-      text: sanitized,
+      text: extractAssistantText(entry.message),
     },
   };
 };
@@ -144,8 +133,7 @@ export class Preprocessor extends Context.Service<
           }
 
           const payload = shaped.payload;
-          const coveredMessageCount = payload.messages.length;
-          const lastObservedId = observedMessages[coveredMessageCount - 1]?.entryId;
+          const lastObservedId = observedMessages[shaped.coveredInputMessageCount - 1]?.entryId;
           if (lastObservedId === undefined) {
             return {
               _tag: "NoMessages",
@@ -179,7 +167,7 @@ export class Preprocessor extends Context.Service<
               fromEntryId: firstObservedId,
               toEntryId: lastObservedId,
               entryCount: coveredEntries.length,
-              messageCount: coveredMessageCount,
+              messageCount: payload.messages.length,
             },
             warnings: shaped.warnings,
           };
