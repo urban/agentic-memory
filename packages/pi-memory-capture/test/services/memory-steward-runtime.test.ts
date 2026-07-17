@@ -14,7 +14,8 @@ import { Markers } from "../../src/services/Markers.ts";
 import { Preprocessor } from "../../src/services/Preprocessor.ts";
 import { VaultProjects } from "../../src/services/VaultProjects.ts";
 import { runCapturePass } from "../../src/workflows/capture.ts";
-import { decodeAttemptId, encodeProjectConfigJson } from "../../src/schema.ts";
+import { decodeAttemptId } from "../../src/markers/CaptureMarker.ts";
+import { encodeProjectConfigJson } from "../../src/schema.ts";
 import {
   createTempDirectory,
   makeAssistantEntry,

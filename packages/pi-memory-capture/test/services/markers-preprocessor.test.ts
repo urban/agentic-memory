@@ -35,6 +35,28 @@ const makeTurnEntries = (count: number): ReadonlyArray<SessionEntry> =>
   });
 
 describe("Markers", () => {
+  it("rejects invalid marker envelopes while scanning a branch", () =>
+    MarkersRuntime.runPromise(
+      Effect.gen(function* () {
+        const markers = yield* Markers;
+        const state = yield* markers.branchState([
+          makeCustomMarkerEntry("m1", {
+            markerVersion: MARKER_VERSION,
+            kind: "observation_result",
+            attemptId: "attempt-1",
+            timestamp: "2026-06-05T12:00:00Z",
+            triggerKind: "agent_end",
+            observation,
+            observationStatus: "captured",
+            summary: "Record first memory",
+          }),
+        ]);
+
+        expect(state.latestCapturedObservation).toBeUndefined();
+        expect(state.decodeWarnings).toEqual(["Ignoring invalid memory capture marker m1"]);
+      }),
+    ));
+
   it("selects observation after the latest captured observation marker only", () =>
     MarkersRuntime.runPromise(
       Effect.gen(function* () {

@@ -1,6 +1,6 @@
 import { Clock, DateTime, Effect, Random, Semaphore } from "effect";
 import { CAPTURE_BATCH_SIZE, MARKER_VERSION } from "../constants.ts";
-import { decodeAttemptId } from "../schema.ts";
+import { decodeAttemptId } from "../markers/CaptureMarker.ts";
 import { CaptureConfig } from "../services/CaptureConfig.ts";
 import { Markers } from "../services/Markers.ts";
 import { MemorySteward } from "../services/MemorySteward.ts";
@@ -11,10 +11,10 @@ type StewardSessionPointer =
   import("@urban/agentic-memory-core/steward/StewardExecution").StewardSessionPointer;
 type StewardDecisionReport =
   import("@urban/agentic-memory-core/steward/StewardResult").StewardDecisionReport;
-type AttemptId = import("../schema.ts").AttemptId;
-type CaptureMarker = import("../schema.ts").CaptureMarker;
-type PayloadObservation = import("../schema.ts").PayloadObservation;
-type TriggerKind = import("../schema.ts").TriggerKind;
+type AttemptId = import("../markers/CaptureMarker.ts").AttemptId;
+type CaptureMarker = import("../markers/CaptureMarker.ts").CaptureMarker;
+type PayloadObservation = import("../markers/CaptureMarker.ts").PayloadObservation;
+type TriggerKind = import("../markers/CaptureMarker.ts").TriggerKind;
 
 export type CaptureExecutionStatus =
   | "captured"

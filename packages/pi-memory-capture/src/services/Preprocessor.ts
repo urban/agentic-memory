@@ -11,8 +11,8 @@ type SessionEntry = import("@earendil-works/pi-coding-agent").SessionEntry;
 type SessionMessageEntry = import("@earendil-works/pi-coding-agent").SessionMessageEntry;
 type CapturePayload = import("../schema.ts").CapturePayload;
 type PayloadMessage = import("../schema.ts").PayloadMessage;
-type PayloadObservation = import("../schema.ts").PayloadObservation;
-type TriggerKind = import("../schema.ts").TriggerKind;
+type PayloadObservation = import("../markers/CaptureMarker.ts").PayloadObservation;
+type TriggerKind = import("../markers/CaptureMarker.ts").TriggerKind;
 
 type UserVisibleBlock = TextContent | ImageContent;
 type AssistantVisibleBlock = TextContent | ThinkingContent | ToolCall;

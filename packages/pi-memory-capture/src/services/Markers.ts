@@ -1,13 +1,13 @@
 import { Context, Effect, Layer, Option } from "effect";
 import { CUSTOM_ENTRY_TYPE } from "../constants.ts";
-import { decodeCaptureMarkerOption } from "../schema.ts";
+import { decodeCaptureMarkerOption } from "../markers/CaptureMarker.ts";
 
 type CustomEntry<T = unknown> = import("@earendil-works/pi-coding-agent").CustomEntry<T>;
 type SessionEntry = import("@earendil-works/pi-coding-agent").SessionEntry;
 type SessionMessageEntry = import("@earendil-works/pi-coding-agent").SessionMessageEntry;
-type CaptureMarker = import("../schema.ts").CaptureMarker;
-type ObservationResultMarker = import("../schema.ts").ObservationResultMarker;
-type ScheduleResultMarker = import("../schema.ts").ScheduleResultMarker;
+type CaptureMarker = import("../markers/CaptureMarker.ts").CaptureMarker;
+type ObservationResultMarker = import("../markers/CaptureMarker.ts").ObservationResultMarker;
+type ScheduleResultMarker = import("../markers/CaptureMarker.ts").ScheduleResultMarker;
 
 export interface MarkerEntry<TMarker extends CaptureMarker> {
   readonly entry: CustomEntry<unknown>;

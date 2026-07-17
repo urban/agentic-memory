@@ -9,9 +9,9 @@ type StewardSessionPointer =
 type StewardDecisionReport =
   import("@urban/agentic-memory-core/steward/StewardResult").StewardDecisionReport;
 type CapturePayload = import("../schema.ts").CapturePayload;
-type AttemptId = import("../schema.ts").AttemptId;
+type AttemptId = import("../markers/CaptureMarker.ts").AttemptId;
 type StewardResultStatus = import("../schema.ts").StewardResultStatus;
-type TriggerKind = import("../schema.ts").TriggerKind;
+type TriggerKind = import("../markers/CaptureMarker.ts").TriggerKind;
 
 export interface StewardObservationResult {
   readonly status: StewardResultStatus;
