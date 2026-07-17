@@ -1,4 +1,10 @@
 import {
+  LinkConfigError,
+  loadLinkConfig,
+  localLinkPaths,
+  writeLinkConfig,
+} from "@urban/agentic-memory-core/link/LinkConfig";
+import {
   Config as EffectConfig,
   Context,
   Effect,
@@ -8,13 +14,7 @@ import {
   Path,
   Schema,
 } from "effect";
-import { CONFIG_FILENAME, LINK_DIRECTORY } from "../constants.ts";
-import {
-  decodeProjectConfigJson,
-  encodeProjectConfigJson,
-  LoadConfigResult,
-  LocalPaths,
-} from "../schema.ts";
+import { LoadConfigResult, LocalPaths } from "../schema.ts";
 import { VaultProjects } from "./VaultProjects.ts";
 
 type ResolvedProjectConfig = import("../schema.ts").ResolvedProjectConfig;
@@ -34,8 +34,18 @@ export interface EnvironmentOverrides {
   readonly cliBinary: string | undefined;
 }
 
-const hasErrnoCode = (cause: unknown, code: string): boolean =>
-  typeof cause === "object" && cause !== null && "code" in cause && cause.code === code;
+const CORE_INVALID_CONFIG_PREFIX = "Invalid .agentic-memory-link/config.json:";
+
+const translateLoadErrorMessage = (message: string): string =>
+  message.startsWith(CORE_INVALID_CONFIG_PREFIX)
+    ? `Invalid config JSON:${message.slice(CORE_INVALID_CONFIG_PREFIX.length)}`
+    : message;
+
+const translateWriteError = (error: LinkConfigError): CaptureConfigServiceError =>
+  new CaptureConfigServiceError({
+    message: error.message,
+    cause: error,
+  });
 
 const optionalEnvironmentVariable = Effect.fn("CaptureConfig.optionalEnvironmentVariable")(
   function* (name: string) {
@@ -70,129 +80,37 @@ export class CaptureConfig extends Context.Service<
       }).pipe(Effect.withSpan("CaptureConfig.environmentOverrides"));
 
       const localPaths = Effect.fn("CaptureConfig.localPaths")((cwd: string) =>
-        Effect.succeed(
-          LocalPaths.make({
-            directory: path.join(cwd, LINK_DIRECTORY),
-            configFile: path.join(cwd, LINK_DIRECTORY, CONFIG_FILENAME),
-          }),
-        ),
+        localLinkPaths(cwd).pipe(Effect.provideService(Path.Path, path)),
       );
-
-      const ensureNotSymlink = Effect.fnUntraced(function* (
-        pathValue: string,
-        label: string,
-      ): Effect.fn.Return<void, CaptureConfigServiceError> {
-        const exists = yield* fs.exists(pathValue).pipe(Effect.catch(() => Effect.succeed(false)));
-        if (!exists) {
-          return;
-        }
-
-        yield* fs.readLink(pathValue).pipe(
-          Effect.matchEffect({
-            onFailure: (cause) =>
-              hasErrnoCode(cause.cause, "EINVAL")
-                ? Effect.void
-                : Effect.fail(
-                    new CaptureConfigServiceError({
-                      message: `Failed to inspect ${label}: ${pathValue}`,
-                      cause,
-                    }),
-                  ),
-            onSuccess: () =>
-              Effect.fail(
-                new CaptureConfigServiceError({
-                  message: `${label} must not be a symlink: ${pathValue}`,
-                }),
-              ),
-          }),
-        );
-      });
-
-      const ensureLocalPathsSafe = Effect.fnUntraced(function* (
-        paths: LocalPaths,
-      ): Effect.fn.Return<void, CaptureConfigServiceError> {
-        yield* ensureNotSymlink(paths.directory, "Local link directory");
-        yield* ensureNotSymlink(paths.configFile, "Local config file");
-      });
 
       const load = Effect.fn("CaptureConfig.load")(function* (
         cwd: string,
       ): Effect.fn.Return<LoadConfigResult> {
-        const paths = yield* localPaths(cwd);
-        const pathSafety = yield* ensureLocalPathsSafe(paths).pipe(
-          Effect.match({
-            onFailure: (error) => error,
-            onSuccess: () => undefined,
-          }),
+        const loaded = yield* loadLinkConfig(cwd).pipe(
+          Effect.provideService(FileSystem.FileSystem, fs),
+          Effect.provideService(Path.Path, path),
         );
 
-        if (pathSafety !== undefined) {
+        if (loaded._tag === "missing") {
+          return LoadConfigResult.cases.missing.make({ paths: loaded.paths });
+        }
+
+        if (loaded._tag === "invalid") {
           return LoadConfigResult.cases.invalid.make({
-            paths,
-            message: pathSafety.message,
+            paths: loaded.paths,
+            message: translateLoadErrorMessage(loaded.message),
           });
         }
 
-        const exists = yield* fs
-          .exists(paths.configFile)
-          .pipe(Effect.catch(() => Effect.succeed(false)));
-
-        if (!exists) {
-          return LoadConfigResult.cases.missing.make({ paths });
-        }
-
-        const readResult = yield* fs.readFileString(paths.configFile).pipe(
-          Effect.match({
-            onFailure: (cause) =>
-              ({
-                _tag: "invalid",
-                message: `Failed to read config file: ${paths.configFile}: ${String(cause)}`,
-              }) satisfies { readonly _tag: "invalid"; readonly message: string },
-            onSuccess: (contents) =>
-              ({
-                _tag: "contents",
-                contents,
-              }) satisfies { readonly _tag: "contents"; readonly contents: string },
-          }),
-        );
-
-        if (readResult._tag === "invalid") {
-          return LoadConfigResult.cases.invalid.make({
-            paths,
-            message: readResult.message,
-          });
-        }
-
-        const decodedResult = yield* decodeProjectConfigJson(readResult.contents).pipe(
-          Effect.match({
-            onFailure: (error) =>
-              ({
-                _tag: "invalid",
-                message: `Invalid config JSON: ${error.message}`,
-              }) satisfies { readonly _tag: "invalid"; readonly message: string },
-            onSuccess: (config) =>
-              ({
-                _tag: "decoded",
-                config,
-              }) satisfies { readonly _tag: "decoded"; readonly config: ResolvedProjectConfig },
-          }),
-        );
-
-        if (decodedResult._tag === "invalid") {
-          return LoadConfigResult.cases.invalid.make({
-            paths,
-            message: decodedResult.message,
-          });
-        }
-
-        return yield* vaultProjects.validateTarget(decodedResult.config).pipe(
+        return yield* vaultProjects.validateTarget(loaded.config).pipe(
           Effect.match({
             onFailure: (error) =>
               LoadConfigResult.cases.invalid.make({
-                paths,
+                paths: loaded.paths,
                 message: error.message,
               }),
-            onSuccess: (config) => LoadConfigResult.cases.valid.make({ paths, config }),
+            onSuccess: (config) =>
+              LoadConfigResult.cases.valid.make({ paths: loaded.paths, config }),
           }),
         );
       });
@@ -201,40 +119,11 @@ export class CaptureConfig extends Context.Service<
         cwd: string,
         config: ResolvedProjectConfig,
       ): Effect.fn.Return<LocalPaths, CaptureConfigServiceError> {
-        const paths = yield* localPaths(cwd);
-        yield* ensureLocalPathsSafe(paths);
-        yield* fs.makeDirectory(paths.directory, { recursive: true }).pipe(
-          Effect.mapError(
-            (cause) =>
-              new CaptureConfigServiceError({
-                message: `Failed to create local link directory: ${paths.directory}`,
-                cause,
-              }),
-          ),
+        return yield* writeLinkConfig(cwd, config).pipe(
+          Effect.provideService(FileSystem.FileSystem, fs),
+          Effect.provideService(Path.Path, path),
+          Effect.mapError(translateWriteError),
         );
-        yield* ensureLocalPathsSafe(paths);
-
-        const configContents = yield* encodeProjectConfigJson(config).pipe(
-          Effect.mapError(
-            (cause) =>
-              new CaptureConfigServiceError({
-                message: "Failed to encode local config",
-                cause,
-              }),
-          ),
-        );
-
-        yield* fs.writeFileString(paths.configFile, `${configContents}\n`).pipe(
-          Effect.mapError(
-            (cause) =>
-              new CaptureConfigServiceError({
-                message: `Failed to write config file: ${paths.configFile}`,
-                cause,
-              }),
-          ),
-        );
-
-        return paths;
       });
 
       return CaptureConfig.of({

@@ -1,8 +1,6 @@
 import packageJson from "../package.json" with { type: "json" };
 
 export const PACKAGE_VERSION = packageJson.version;
-export const LINK_DIRECTORY = ".agentic-memory-link";
-export const CONFIG_FILENAME = "config.json";
 export const CUSTOM_ENTRY_TYPE = "agentic-memory-capture";
 export const MARKER_VERSION = 1;
 export const CAPTURE_BATCH_SIZE = 10;

@@ -8,6 +8,7 @@ import {
   decodeLinkConfigJson,
   encodeLinkConfigJson,
   LinkConfig as CoreResolvedProjectConfig,
+  LoadLinkConfigResult as CoreLoadConfigResult,
   LocalLinkPaths as CoreLocalPaths,
 } from "@urban/agentic-memory-core/link/LinkConfig";
 import {
@@ -86,13 +87,7 @@ export const RunStewardResult = CoreRunStewardResult;
 export const RunStewardResultJson = CoreRunStewardResultJson;
 export type RunStewardResult = typeof RunStewardResult.Type;
 
-export const LoadConfigResult = Schema.TaggedUnion({
-  missing: { paths: LocalPaths },
-  invalid: { paths: LocalPaths, message: Schema.String },
-  valid: { paths: LocalPaths, config: ResolvedProjectConfig },
-}).annotate({
-  identifier: "LoadConfigResult",
-});
+export const LoadConfigResult = CoreLoadConfigResult;
 export type LoadConfigResult = typeof LoadConfigResult.Type;
 
 export const PayloadObservation = Schema.Struct({
