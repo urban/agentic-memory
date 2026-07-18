@@ -14,15 +14,17 @@ import {
   captureRunIdFlag,
   captureTriggerKindFlag,
   modelFlag,
-  optionalProjectFlag,
-  optionalVaultFlag,
   providerFlag,
   resolveCaptureCorrelation,
-  resolveStewardTarget,
   runnerOptionsFromInput,
   thinkingFlag,
   timeoutMillisFlag,
 } from "./shared.ts";
+import {
+  optionalProjectFlag,
+  optionalVaultFlag,
+  resolveStewardTarget,
+} from "./steward-target-input.ts";
 
 export const commandRunSteward = Command.make(
   "run-steward",

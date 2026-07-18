@@ -8,7 +8,11 @@ import { toFailure, withCliFailureOutput } from "../output.ts";
 import { payloadFlag, readPayload } from "./payload-input.ts";
 import { projectRootFlag } from "./project-root-input.ts";
 import { commandRoot } from "./root.ts";
-import { optionalProjectFlag, optionalVaultFlag, resolveStewardTarget } from "./shared.ts";
+import {
+  optionalProjectFlag,
+  optionalVaultFlag,
+  resolveStewardTarget,
+} from "./steward-target-input.ts";
 
 export const commandStewardContext = Command.make(
   "steward-context",
