@@ -6,7 +6,6 @@ import { CaptureConfig } from "./services/CaptureConfig.ts";
 import { Markers } from "./services/Markers.ts";
 import { MemorySteward, MemoryStewardError, StewardExecutor } from "./services/MemorySteward.ts";
 import { Preprocessor } from "./services/Preprocessor.ts";
-import { VaultProjects } from "./services/VaultProjects.ts";
 
 type ExtensionAPI = import("@earendil-works/pi-coding-agent").ExtensionAPI;
 
@@ -75,7 +74,6 @@ export const makeMemoryCaptureRuntime = (pi: ExtensionAPI) => {
   const infrastructureLayer = Layer.mergeAll(BunServices.layer, makeStewardExecutorLayer(pi));
   const captureConfigLayer = CaptureConfig.layer;
   const servicesLayer = Layer.mergeAll(
-    VaultProjects.layer,
     captureConfigLayer,
     Markers.layer,
     Preprocessor.layer,

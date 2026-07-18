@@ -2,19 +2,16 @@
 import { readFileSync, symlinkSync } from "node:fs";
 import * as BunFileSystem from "@effect/platform-bun/BunFileSystem";
 import * as BunPath from "@effect/platform-bun/BunPath";
-import { ConfigProvider, Effect, FileSystem, Layer, ManagedRuntime, PlatformError } from "effect";
+import { ConfigProvider, Effect, Layer, ManagedRuntime } from "effect";
 // @effect-diagnostics-next-line nodeBuiltinImport:off
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { CaptureConfig } from "../../src/services/CaptureConfig.ts";
-import { VaultProjects } from "../../src/services/VaultProjects.ts";
 import { createTempDirectory, removeTempDirectory, writeFile } from "../helpers.ts";
 
 const InfrastructureLayer = Layer.mergeAll(BunFileSystem.layer, BunPath.layer);
 const CaptureConfigTestLayer = CaptureConfig.layer.pipe(Layer.provide(InfrastructureLayer));
-const VaultProjectsTestLayer = VaultProjects.layer.pipe(Layer.provide(InfrastructureLayer));
 const CaptureConfigRuntime = ManagedRuntime.make(CaptureConfigTestLayer);
-const VaultProjectsRuntime = ManagedRuntime.make(VaultProjectsTestLayer);
 
 describe("CaptureConfig", () => {
   it("reports missing config with the resolved local paths", () => {
@@ -241,95 +238,5 @@ describe("CaptureConfig", () => {
         expect(readFileSync(join(outsideDirectory, ".gitkeep"), "utf8")).toBe("");
       }),
     ).finally(() => removeTempDirectory(root));
-  });
-});
-
-describe("VaultProjects", () => {
-  it("creates project files and updates MEMORY routes", () => {
-    const root = createTempDirectory("pi-memory-init-");
-    const vault = join(root, "vault");
-
-    writeFile(join(vault, ".agentic-memory", "LLM-outside-vault.md"), "# contract");
-    writeFile(
-      join(vault, "MEMORY.md"),
-      `---
-updated: 2026-01-01
----
-
-# Memory
-
-## Current
-
-- Active work.
-`,
-    );
-
-    return VaultProjectsRuntime.runPromise(
-      Effect.gen(function* () {
-        const projects = yield* VaultProjects;
-        const projectConfig: import("@urban/agentic-memory-core/link/LinkConfig").LinkConfig = {
-          version: 1,
-          vaultPath: vault,
-          projectSlug: "capture-extension",
-        };
-        const created = yield* projects.ensureProjectFile(projectConfig, "2026-06-05");
-        const routeAdded = yield* projects.ensureMemoryRoute(projectConfig, "2026-06-05");
-
-        expect(created).toBe(true);
-        expect(routeAdded).toBe(true);
-      }),
-    ).finally(() => removeTempDirectory(root));
-  });
-
-  it("does not fall back to the builtin scaffold when the project template check fails", () => {
-    const written: string[] = [];
-    const runtime = ManagedRuntime.make(
-      VaultProjects.layer.pipe(
-        Layer.provide(
-          Layer.mergeAll(
-            FileSystem.layerNoop({
-              exists: (path) =>
-                path.endsWith("/projects/capture-extension.md")
-                  ? Effect.succeed(false)
-                  : path.endsWith("/.agentic-memory/templates/project.md")
-                    ? Effect.fail(
-                        PlatformError.systemError({
-                          module: "FileSystem",
-                          method: "exists",
-                          _tag: "PermissionDenied",
-                          pathOrDescriptor: path,
-                        }),
-                      )
-                    : Effect.succeed(false),
-              makeDirectory: () => Effect.void,
-              writeFileString: (_path, content) =>
-                Effect.sync(() => {
-                  written.push(content);
-                }),
-            }),
-            BunPath.layer,
-          ),
-        ),
-      ),
-    );
-
-    return runtime
-      .runPromise(
-        Effect.gen(function* () {
-          const projects = yield* VaultProjects;
-          const projectConfig: import("@urban/agentic-memory-core/link/LinkConfig").LinkConfig = {
-            version: 1,
-            vaultPath: "/vault",
-            projectSlug: "capture-extension",
-          };
-          const result = yield* projects
-            .ensureProjectFile(projectConfig, "2026-06-05")
-            .pipe(Effect.exit);
-
-          expect(result._tag).toBe("Failure");
-          expect(written).toHaveLength(0);
-        }),
-      )
-      .finally(() => runtime.dispose());
   });
 });
