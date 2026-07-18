@@ -4,8 +4,8 @@ import { checkVaultHealth } from "@urban/agentic-memory-core/vault/VaultStatus";
 import { Console, Effect } from "effect";
 import { Command } from "effect/unstable/cli";
 import { toFailure, withCliFailureOutput } from "../output.ts";
+import { projectRootFlag, resolveProjectRoot } from "./project-root-input.ts";
 import { commandRoot } from "./root.ts";
-import { projectRootFlag, resolveProjectRoot } from "./shared.ts";
 
 const buildStatusResult = Effect.fnUntraced(function* (projectRoot: string) {
   const loaded = yield* loadLinkConfig(projectRoot);

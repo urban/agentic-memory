@@ -5,12 +5,12 @@ import {
 import { Console, Effect } from "effect";
 import { Command } from "effect/unstable/cli";
 import { toFailure, withCliFailureOutput } from "../output.ts";
+import { projectRootFlag } from "./project-root-input.ts";
 import { commandRoot } from "./root.ts";
 import {
   optionalProjectFlag,
   optionalVaultFlag,
   payloadFlag,
-  projectRootFlag,
   readPayload,
   resolveStewardTarget,
 } from "./shared.ts";

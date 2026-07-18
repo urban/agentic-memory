@@ -1,9 +1,10 @@
 import { decodeCapturePayloadJson } from "@urban/agentic-memory-core/capture/CapturePayload";
 import { loadLinkConfig } from "@urban/agentic-memory-core/link/LinkConfig";
 import { decodeProjectSlug } from "@urban/agentic-memory-core/link/ProjectSlug";
-import { Config as EffectConfig, Effect, FileSystem, Option, Path, Stdio, Stream } from "effect";
+import { Config as EffectConfig, Effect, FileSystem, Option, Stdio, Stream } from "effect";
 import { CliError, Flag } from "effect/unstable/cli";
 import { toFailure } from "../output.ts";
+import { resolveProjectRoot } from "./project-root-input.ts";
 
 type ProjectSlug = import("@urban/agentic-memory-core/link/ProjectSlug").ProjectSlug;
 type CaptureCorrelation =
@@ -17,11 +18,6 @@ export interface ResolvedStewardTarget {
   readonly projectSlug: ProjectSlug;
   readonly projectRoot: string | undefined;
 }
-
-export const projectRootFlag = Flag.string("project-root").pipe(
-  Flag.withDescription("Project root containing .agentic-memory-link/config.json"),
-  Flag.withDefault("."),
-);
 
 export const optionalVaultFlag = Flag.string("vault").pipe(
   Flag.withDescription("Agentic Memory vault path for direct mode"),
@@ -138,11 +134,6 @@ export const resolveCaptureCorrelation = Effect.fnUntraced(function* (input: {
     ...(triggerKind === undefined ? {} : { triggerKind }),
     ...(projectSlug === undefined ? {} : { projectSlug }),
   };
-});
-
-export const resolveProjectRoot = Effect.fnUntraced(function* (projectRoot: string) {
-  const path = yield* Path.Path;
-  return path.resolve(projectRoot);
 });
 
 export const readPayload = Effect.fnUntraced(function* (payloadPath: string) {

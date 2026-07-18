@@ -5,6 +5,7 @@ import {
 import { Console, Effect } from "effect";
 import { Command } from "effect/unstable/cli";
 import { exitWith, toFailure, withCliFailureOutput } from "../output.ts";
+import { projectRootFlag } from "./project-root-input.ts";
 import { commandRoot } from "./root.ts";
 import {
   captureAttemptIdFlag,
@@ -15,7 +16,6 @@ import {
   optionalProjectFlag,
   optionalVaultFlag,
   payloadFlag,
-  projectRootFlag,
   providerFlag,
   readPayload,
   resolveCaptureCorrelation,
