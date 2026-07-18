@@ -10,8 +10,6 @@ import { CaptureConfig } from "../../src/services/CaptureConfig.ts";
 import { VaultProjects } from "../../src/services/VaultProjects.ts";
 import { createTempDirectory, removeTempDirectory, writeFile } from "../helpers.ts";
 
-type ResolvedProjectConfig = import("../../src/schema.ts").ResolvedProjectConfig;
-
 const InfrastructureLayer = Layer.mergeAll(BunFileSystem.layer, BunPath.layer);
 const CaptureConfigTestLayer = CaptureConfig.layer.pipe(
   Layer.provideMerge(VaultProjects.layer),
@@ -238,7 +236,7 @@ updated: 2026-01-01
     return VaultProjectsRuntime.runPromise(
       Effect.gen(function* () {
         const projects = yield* VaultProjects;
-        const projectConfig: ResolvedProjectConfig = {
+        const projectConfig: import("@urban/agentic-memory-core/link/LinkConfig").LinkConfig = {
           version: 1,
           vaultPath: vault,
           projectSlug: "capture-extension",
@@ -288,7 +286,7 @@ updated: 2026-01-01
       .runPromise(
         Effect.gen(function* () {
           const projects = yield* VaultProjects;
-          const projectConfig: ResolvedProjectConfig = {
+          const projectConfig: import("@urban/agentic-memory-core/link/LinkConfig").LinkConfig = {
             version: 1,
             vaultPath: "/vault",
             projectSlug: "capture-extension",

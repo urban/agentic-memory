@@ -2,9 +2,9 @@ import {
   ensureMemoryRoute as ensureCoreMemoryRoute,
   ensureProjectFile as ensureCoreProjectFile,
 } from "@urban/agentic-memory-core/vault/ProjectRoute";
+import { LinkConfig } from "@urban/agentic-memory-core/link/LinkConfig";
 import { validateVaultForLink } from "@urban/agentic-memory-core/vault/VaultStatus";
 import { Context, Effect, FileSystem, Layer, Path, Schema } from "effect";
-import { ResolvedProjectConfig } from "../schema.ts";
 
 export class VaultProjectsServiceError extends Schema.TaggedErrorClass<VaultProjectsServiceError>()(
   "VaultProjectsServiceError",
@@ -18,20 +18,20 @@ export class VaultProjects extends Context.Service<
   VaultProjects,
   {
     readonly validateTarget: (
-      config: ResolvedProjectConfig,
-    ) => Effect.Effect<ResolvedProjectConfig, VaultProjectsServiceError>;
+      config: LinkConfig,
+    ) => Effect.Effect<LinkConfig, VaultProjectsServiceError>;
     readonly projectFilePath: (
-      config: ResolvedProjectConfig,
+      config: LinkConfig,
     ) => Effect.Effect<string, VaultProjectsServiceError>;
     readonly projectExists: (
-      config: ResolvedProjectConfig,
+      config: LinkConfig,
     ) => Effect.Effect<boolean, VaultProjectsServiceError>;
     readonly ensureProjectFile: (
-      config: ResolvedProjectConfig,
+      config: LinkConfig,
       date: string,
     ) => Effect.Effect<boolean, VaultProjectsServiceError>;
     readonly ensureMemoryRoute: (
-      config: ResolvedProjectConfig,
+      config: LinkConfig,
       date: string,
     ) => Effect.Effect<boolean, VaultProjectsServiceError>;
   }
@@ -43,7 +43,7 @@ export class VaultProjects extends Context.Service<
       const path = yield* Path.Path;
 
       const validateTarget = Effect.fn("VaultProjects.validateTarget")(function* (
-        config: ResolvedProjectConfig,
+        config: LinkConfig,
       ) {
         yield* validateVaultForLink(config.vaultPath).pipe(
           Effect.provideService(FileSystem.FileSystem, fs),
@@ -56,16 +56,15 @@ export class VaultProjects extends Context.Service<
               }),
           ),
         );
-        return ResolvedProjectConfig.make(config);
+        return LinkConfig.make(config);
       });
 
-      const projectFilePath = Effect.fn("VaultProjects.projectFilePath")(
-        (config: ResolvedProjectConfig) =>
-          Effect.succeed(path.join(config.vaultPath, "projects", `${config.projectSlug}.md`)),
+      const projectFilePath = Effect.fn("VaultProjects.projectFilePath")((config: LinkConfig) =>
+        Effect.succeed(path.join(config.vaultPath, "projects", `${config.projectSlug}.md`)),
       );
 
       const projectExists = Effect.fn("VaultProjects.projectExists")(function* (
-        config: ResolvedProjectConfig,
+        config: LinkConfig,
       ) {
         const filepath = yield* projectFilePath(config);
         return yield* fs.exists(filepath).pipe(
@@ -80,7 +79,7 @@ export class VaultProjects extends Context.Service<
       });
 
       const ensureProjectFile = Effect.fn("VaultProjects.ensureProjectFile")(function* (
-        config: ResolvedProjectConfig,
+        config: LinkConfig,
         date: string,
       ) {
         return yield* ensureCoreProjectFile({
@@ -101,7 +100,7 @@ export class VaultProjects extends Context.Service<
       });
 
       const ensureMemoryRoute = Effect.fn("VaultProjects.ensureMemoryRoute")(function* (
-        config: ResolvedProjectConfig,
+        config: LinkConfig,
         date: string,
       ) {
         return yield* ensureCoreMemoryRoute({

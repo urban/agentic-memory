@@ -4,7 +4,6 @@ import { runCapturePass, timeoutForTrigger } from "./workflows/capture.ts";
 
 type ExtensionAPI = import("@earendil-works/pi-coding-agent").ExtensionAPI;
 type ExtensionContext = import("@earendil-works/pi-coding-agent").ExtensionContext;
-type NotificationLevel = import("./schema.ts").NotificationLevel;
 type TriggerKind = import("./markers/CaptureMarker.ts").TriggerKind;
 type CaptureExecution = import("./workflows/capture.ts").CaptureExecution;
 
@@ -21,7 +20,7 @@ const formatCaptureNotification = (execution: CaptureExecution): string => {
   return lines.join("\n");
 };
 
-const notificationLevelForCapture = (execution: CaptureExecution): NotificationLevel =>
+const notificationLevelForCapture = (execution: CaptureExecution): "info" | "warning" =>
   execution.status === "failed" ? "warning" : "info";
 
 const shouldNotify = (execution: CaptureExecution): boolean =>

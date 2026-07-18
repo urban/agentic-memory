@@ -1,5 +1,6 @@
 import * as BunFileSystem from "@effect/platform-bun/BunFileSystem";
 import * as BunPath from "@effect/platform-bun/BunPath";
+import { encodeLinkConfigJson } from "@urban/agentic-memory-core/link/LinkConfig";
 import { extractAssistantText } from "@urban/agentic-memory-core/steward/PiProcessRunner";
 import { Effect, Fiber, Layer, ManagedRuntime, Option } from "effect";
 import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
@@ -15,7 +16,6 @@ import { Preprocessor } from "../../src/services/Preprocessor.ts";
 import { VaultProjects } from "../../src/services/VaultProjects.ts";
 import { runCapturePass } from "../../src/workflows/capture.ts";
 import { decodeAttemptId } from "../../src/markers/CaptureMarker.ts";
-import { encodeProjectConfigJson } from "../../src/schema.ts";
 import {
   createTempDirectory,
   makeAssistantEntry,
@@ -31,12 +31,9 @@ type StewardDecisionReport =
 type ExtensionAPI = import("@earendil-works/pi-coding-agent").ExtensionAPI;
 type SessionEntry = import("@earendil-works/pi-coding-agent").SessionEntry;
 type StewardRunResult = import("../../src/services/MemorySteward.ts").StewardRunResult;
-type CapturePayload = import("../../src/schema.ts").CapturePayload;
 type CaptureConfigState = import("../../src/services/CaptureConfig.ts").CaptureConfigState;
-type LocalPaths = import("../../src/schema.ts").LocalPaths;
-type ResolvedProjectConfig = import("../../src/schema.ts").ResolvedProjectConfig;
 
-const capturePayload: CapturePayload = {
+const capturePayload: import("@urban/agentic-memory-core/capture/CapturePayload").CapturePayload = {
   version: 1,
   projectSlug: "capture-extension",
   messages: [
@@ -69,7 +66,7 @@ const durableDecisionReport: StewardDecisionReport = {
 
 type StewardRun = (input: {
   readonly projectRoot: string;
-  readonly payload: CapturePayload;
+  readonly payload: import("@urban/agentic-memory-core/capture/CapturePayload").CapturePayload;
   readonly payloadWarnings: ReadonlyArray<string>;
   readonly timeoutMillis: number;
 }) => Effect.Effect<StewardRunResult>;
@@ -77,11 +74,11 @@ type StewardRun = (input: {
 const projectSlug = "capture-extension";
 
 const makeCaptureConfigService = (cwd: string, vaultPath: string) => {
-  const paths: LocalPaths = {
+  const paths: import("@urban/agentic-memory-core/link/LinkConfig").LocalLinkPaths = {
     directory: `${cwd}/.agentic-memory-link`,
     configFile: `${cwd}/.agentic-memory-link/config.json`,
   };
-  const config: ResolvedProjectConfig = {
+  const config: import("@urban/agentic-memory-core/link/LinkConfig").LinkConfig = {
     version: 1,
     vaultPath,
     projectSlug,
@@ -430,7 +427,7 @@ describe("MemorySteward", () => {
           join(vaultRoot, ".agentic-memory", "instructions", "session-capture.md"),
           "# capture",
         );
-        const configJson = yield* encodeProjectConfigJson({
+        const configJson = yield* encodeLinkConfigJson({
           version: 1,
           vaultPath: vaultRoot,
           projectSlug,

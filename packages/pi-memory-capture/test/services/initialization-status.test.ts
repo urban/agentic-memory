@@ -1,12 +1,12 @@
 import * as BunServices from "@effect/platform-bun/BunServices";
 import { AuthStorage, ModelRegistry, SessionManager } from "@earendil-works/pi-coding-agent";
+import { encodeLinkConfigJson, type LinkConfig } from "@urban/agentic-memory-core/link/LinkConfig";
 import { Effect, FileSystem, Layer, ManagedRuntime } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { theme } from "../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js";
 // @effect-diagnostics-next-line nodeBuiltinImport:off
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { encodeProjectConfigJson } from "../../src/schema.ts";
 import { runInitCommand } from "../../src/initialization.ts";
 import { CaptureConfig } from "../../src/services/CaptureConfig.ts";
 import { Markers } from "../../src/services/Markers.ts";
@@ -21,8 +21,6 @@ import {
 } from "../helpers.ts";
 
 type ExtensionCommandContext = import("@earendil-works/pi-coding-agent").ExtensionCommandContext;
-type ResolvedProjectConfig = import("../../src/schema.ts").ResolvedProjectConfig;
-
 const captureConfigLayer = CaptureConfig.layer.pipe(Layer.provideMerge(VaultProjects.layer));
 const runtimeLayer = Layer.mergeAll(VaultProjects.layer, captureConfigLayer, Markers.layer).pipe(
   Layer.provideMerge(BunServices.layer),
@@ -149,7 +147,7 @@ updated: 2026-01-01
     const cwd = join(root, "project");
     const localDirectory = join(cwd, ".agentic-memory-link");
     const vault = join(root, "vault");
-    const config: ResolvedProjectConfig = {
+    const config: LinkConfig = {
       version: 1,
       vaultPath: vault,
       projectSlug: "capture-extension",
@@ -173,7 +171,7 @@ updated: 2026-01-01
     );
     writeFile(
       join(localDirectory, "config.json"),
-      `${Effect.runSync(encodeProjectConfigJson(config))}\n`,
+      `${Effect.runSync(encodeLinkConfigJson(config))}\n`,
     );
     const branch = [
       makeCustomMarkerEntry("o1", {

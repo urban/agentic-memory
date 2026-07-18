@@ -9,8 +9,9 @@ type ToolCall = import("@earendil-works/pi-ai").ToolCall;
 type UserMessage = import("@earendil-works/pi-ai").UserMessage;
 type SessionEntry = import("@earendil-works/pi-coding-agent").SessionEntry;
 type SessionMessageEntry = import("@earendil-works/pi-coding-agent").SessionMessageEntry;
-type CapturePayload = import("../schema.ts").CapturePayload;
-type PayloadMessage = import("../schema.ts").PayloadMessage;
+type CapturePayload = import("@urban/agentic-memory-core/capture/CapturePayload").CapturePayload;
+type CapturePayloadMessage =
+  import("@urban/agentic-memory-core/capture/CapturePayload").CapturePayloadMessage;
 type PayloadObservation = import("../markers/CaptureMarker.ts").PayloadObservation;
 type TriggerKind = import("../markers/CaptureMarker.ts").TriggerKind;
 
@@ -19,7 +20,7 @@ type AssistantVisibleBlock = TextContent | ThinkingContent | ToolCall;
 
 interface ObservedPayloadMessage {
   readonly entryId: string;
-  readonly message: PayloadMessage;
+  readonly message: CapturePayloadMessage;
 }
 
 export type BuildPayloadResult =

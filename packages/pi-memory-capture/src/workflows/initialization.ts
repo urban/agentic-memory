@@ -3,8 +3,6 @@ import { Clock, DateTime, Effect } from "effect";
 import { CaptureConfig, CaptureConfigState } from "../services/CaptureConfig.ts";
 import { VaultProjects } from "../services/VaultProjects.ts";
 
-type ResolvedProjectConfig = import("../schema.ts").ResolvedProjectConfig;
-
 export interface InitializationInputs {
   readonly cwd: string;
   readonly vaultPath: string;
@@ -12,18 +10,18 @@ export interface InitializationInputs {
 }
 
 export interface InitializationOverwriteConflict {
-  readonly current: ResolvedProjectConfig;
-  readonly next: ResolvedProjectConfig;
+  readonly current: import("@urban/agentic-memory-core/link/LinkConfig").LinkConfig;
+  readonly next: import("@urban/agentic-memory-core/link/LinkConfig").LinkConfig;
 }
 
 export interface InitializationPlan {
-  readonly config: ResolvedProjectConfig;
+  readonly config: import("@urban/agentic-memory-core/link/LinkConfig").LinkConfig;
   readonly overwriteConflict: InitializationOverwriteConflict | undefined;
   readonly projectMissing: boolean;
 }
 
 export interface InitializationResult {
-  readonly config: ResolvedProjectConfig;
+  readonly config: import("@urban/agentic-memory-core/link/LinkConfig").LinkConfig;
   readonly projectCreated: boolean;
   readonly routeAdded: boolean;
   readonly gitExcludeUpdated: boolean;
@@ -66,7 +64,7 @@ export const planInitialization = Effect.fn("MemoryCapture.planInitialization")(
 
 export const applyInitialization = Effect.fn("MemoryCapture.applyInitialization")(function* (
   cwd: string,
-  configValue: ResolvedProjectConfig,
+  configValue: import("@urban/agentic-memory-core/link/LinkConfig").LinkConfig,
 ) {
   const captureConfig = yield* CaptureConfig;
   const vaultProjects = yield* VaultProjects;
