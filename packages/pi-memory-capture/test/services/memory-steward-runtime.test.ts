@@ -14,7 +14,6 @@ import { CaptureConfig } from "../../src/services/CaptureConfig.ts";
 import { MemorySteward, StewardExecutor } from "../../src/services/MemorySteward.ts";
 import { Markers } from "../../src/services/Markers.ts";
 import { Preprocessor } from "../../src/services/Preprocessor.ts";
-import { VaultProjects } from "../../src/services/VaultProjects.ts";
 import { runCapturePass } from "../../src/workflows/capture.ts";
 import { decodeAttemptId } from "../../src/markers/CaptureMarker.ts";
 import {
@@ -101,7 +100,7 @@ const makeCaptureConfigService = (cwd: string, vaultPath: string) => {
   });
 };
 
-const captureConfigLayer = CaptureConfig.layer.pipe(Layer.provideMerge(VaultProjects.layer));
+const captureConfigLayer = CaptureConfig.layer;
 
 const makeRuntimeLayer = (run: StewardRun) =>
   Layer.mergeAll(

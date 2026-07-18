@@ -6,6 +6,7 @@ import {
   LocalLinkPaths,
   writeLinkConfig,
 } from "@urban/agentic-memory-core/link/LinkConfig";
+import { validateVaultForLink } from "@urban/agentic-memory-core/vault/VaultStatus";
 import {
   Config as EffectConfig,
   Context,
@@ -16,7 +17,6 @@ import {
   Path,
   Schema,
 } from "effect";
-import { VaultProjects } from "./VaultProjects.ts";
 
 export const CaptureConfigState = Schema.TaggedUnion({
   missing: { paths: LocalLinkPaths },
@@ -79,7 +79,6 @@ export class CaptureConfig extends Context.Service<
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const vaultProjects = yield* VaultProjects;
 
       const environmentOverrides: Effect.Effect<EnvironmentOverrides> = Effect.all({
         vaultOverride: optionalEnvironmentVariable("AGENTIC_MEMORY_VAULT"),
@@ -109,15 +108,20 @@ export class CaptureConfig extends Context.Service<
           });
         }
 
-        return yield* vaultProjects.validateTarget(loaded.config).pipe(
+        return yield* validateVaultForLink(loaded.config.vaultPath).pipe(
+          Effect.provideService(FileSystem.FileSystem, fs),
+          Effect.provideService(Path.Path, path),
           Effect.match({
             onFailure: (error) =>
               CaptureConfigState.cases.invalid.make({
                 paths: loaded.paths,
                 message: error.message,
               }),
-            onSuccess: (config) =>
-              CaptureConfigState.cases.valid.make({ paths: loaded.paths, config }),
+            onSuccess: () =>
+              CaptureConfigState.cases.valid.make({
+                paths: loaded.paths,
+                config: loaded.config,
+              }),
           }),
         );
       });

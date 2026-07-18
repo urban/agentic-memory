@@ -73,7 +73,7 @@ const makeStewardExecutorLayer = (pi: ExtensionAPI) =>
 
 export const makeMemoryCaptureRuntime = (pi: ExtensionAPI) => {
   const infrastructureLayer = Layer.mergeAll(BunServices.layer, makeStewardExecutorLayer(pi));
-  const captureConfigLayer = CaptureConfig.layer.pipe(Layer.provideMerge(VaultProjects.layer));
+  const captureConfigLayer = CaptureConfig.layer;
   const servicesLayer = Layer.mergeAll(
     VaultProjects.layer,
     captureConfigLayer,

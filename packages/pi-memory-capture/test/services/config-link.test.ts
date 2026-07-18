@@ -11,10 +11,7 @@ import { VaultProjects } from "../../src/services/VaultProjects.ts";
 import { createTempDirectory, removeTempDirectory, writeFile } from "../helpers.ts";
 
 const InfrastructureLayer = Layer.mergeAll(BunFileSystem.layer, BunPath.layer);
-const CaptureConfigTestLayer = CaptureConfig.layer.pipe(
-  Layer.provideMerge(VaultProjects.layer),
-  Layer.provide(InfrastructureLayer),
-);
+const CaptureConfigTestLayer = CaptureConfig.layer.pipe(Layer.provide(InfrastructureLayer));
 const VaultProjectsTestLayer = VaultProjects.layer.pipe(Layer.provide(InfrastructureLayer));
 const CaptureConfigRuntime = ManagedRuntime.make(CaptureConfigTestLayer);
 const VaultProjectsRuntime = ManagedRuntime.make(VaultProjectsTestLayer);
@@ -104,6 +101,40 @@ describe("CaptureConfig", () => {
         expect(loaded._tag).toBe("invalid");
         if (loaded._tag === "invalid") {
           expect(loaded.message).toContain("Invalid config JSON");
+        }
+      }),
+    ).finally(() => removeTempDirectory(root));
+  });
+
+  it("reports valid link configs as invalid when the target vault is unhealthy", () => {
+    const root = createTempDirectory("pi-memory-config-unhealthy-");
+    const cwd = join(root, "project");
+    const vault = join(root, "vault");
+
+    writeFile(join(vault, ".agentic-memory", "LLM-outside-vault.md"), "# contract");
+    writeFile(join(vault, "MEMORY.md"), "# Memory\n");
+    writeFile(join(vault, "USER.md"), "# User\n");
+    writeFile(join(vault, "projects", ".gitkeep"), "");
+    writeFile(
+      join(cwd, ".agentic-memory-link", "config.json"),
+      `{"version":1,"vaultPath":"${vault}","projectSlug":"capture-extension"}\n`,
+    );
+
+    return CaptureConfigRuntime.runPromise(
+      Effect.gen(function* () {
+        const config = yield* CaptureConfig;
+        const loaded = yield* config.load(cwd);
+
+        expect(loaded._tag).toBe("invalid");
+        if (loaded._tag === "invalid") {
+          expect(loaded.message).toBe(
+            `Vault is missing .agentic-memory/instructions/session-capture.md: ${join(
+              vault,
+              ".agentic-memory",
+              "instructions",
+              "session-capture.md",
+            )}`,
+          );
         }
       }),
     ).finally(() => removeTempDirectory(root));

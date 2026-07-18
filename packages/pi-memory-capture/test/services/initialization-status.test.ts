@@ -21,7 +21,7 @@ import {
 } from "../helpers.ts";
 
 type ExtensionCommandContext = import("@earendil-works/pi-coding-agent").ExtensionCommandContext;
-const captureConfigLayer = CaptureConfig.layer.pipe(Layer.provideMerge(VaultProjects.layer));
+const captureConfigLayer = CaptureConfig.layer;
 const runtimeLayer = Layer.mergeAll(VaultProjects.layer, captureConfigLayer, Markers.layer).pipe(
   Layer.provideMerge(BunServices.layer),
 );
