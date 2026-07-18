@@ -5,15 +5,10 @@ import {
 import { Console, Effect } from "effect";
 import { Command } from "effect/unstable/cli";
 import { toFailure, withCliFailureOutput } from "../output.ts";
+import { payloadFlag, readPayload } from "./payload-input.ts";
 import { projectRootFlag } from "./project-root-input.ts";
 import { commandRoot } from "./root.ts";
-import {
-  optionalProjectFlag,
-  optionalVaultFlag,
-  payloadFlag,
-  readPayload,
-  resolveStewardTarget,
-} from "./shared.ts";
+import { optionalProjectFlag, optionalVaultFlag, resolveStewardTarget } from "./shared.ts";
 
 export const commandStewardContext = Command.make(
   "steward-context",

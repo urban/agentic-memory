@@ -1,7 +1,6 @@
-import { decodeCapturePayloadJson } from "@urban/agentic-memory-core/capture/CapturePayload";
 import { loadLinkConfig } from "@urban/agentic-memory-core/link/LinkConfig";
 import { decodeProjectSlug } from "@urban/agentic-memory-core/link/ProjectSlug";
-import { Config as EffectConfig, Effect, FileSystem, Option, Stdio, Stream } from "effect";
+import { Config as EffectConfig, Effect, Option } from "effect";
 import { CliError, Flag } from "effect/unstable/cli";
 import { toFailure } from "../output.ts";
 import { resolveProjectRoot } from "./project-root-input.ts";
@@ -27,10 +26,6 @@ export const optionalVaultFlag = Flag.string("vault").pipe(
 export const optionalProjectFlag = Flag.string("project").pipe(
   Flag.withDescription("Agentic Memory project slug for direct mode"),
   Flag.optional,
-);
-
-export const payloadFlag = Flag.string("payload").pipe(
-  Flag.withDescription("Capture payload JSON file path, or '-' to read stdin"),
 );
 
 export const providerFlag = Flag.string("provider").pipe(
@@ -134,44 +129,6 @@ export const resolveCaptureCorrelation = Effect.fnUntraced(function* (input: {
     ...(triggerKind === undefined ? {} : { triggerKind }),
     ...(projectSlug === undefined ? {} : { projectSlug }),
   };
-});
-
-export const readPayload = Effect.fnUntraced(function* (payloadPath: string) {
-  const text =
-    payloadPath === "-"
-      ? yield* Effect.gen(function* () {
-          const stdio = yield* Stdio.Stdio;
-          return yield* stdio.stdin.pipe(Stream.decodeText(), Stream.mkString);
-        }).pipe(
-          Effect.mapError((cause) =>
-            toFailure({
-              code: "ReadPayloadFailed",
-              message: "Failed to read capture payload from stdin",
-              warnings: [String(cause)],
-            }),
-          ),
-        )
-      : yield* Effect.gen(function* () {
-          const fs = yield* FileSystem.FileSystem;
-          return yield* fs.readFileString(payloadPath);
-        }).pipe(
-          Effect.mapError((cause) =>
-            toFailure({
-              code: "ReadPayloadFailed",
-              message: `Failed to read capture payload file: ${payloadPath}`,
-              warnings: [String(cause)],
-            }),
-          ),
-        );
-
-  return yield* decodeCapturePayloadJson(text).pipe(
-    Effect.mapError((cause) =>
-      toFailure({
-        code: "InvalidCapturePayload",
-        message: `Invalid capture payload JSON: ${cause.message}`,
-      }),
-    ),
-  );
 });
 
 const decodeCliProjectSlug = (project: string): Effect.Effect<ProjectSlug, CliCommandFailure> =>

@@ -5,6 +5,7 @@ import {
 import { Console, Effect } from "effect";
 import { Command } from "effect/unstable/cli";
 import { exitWith, toFailure, withCliFailureOutput } from "../output.ts";
+import { payloadFlag, readPayload } from "./payload-input.ts";
 import { projectRootFlag } from "./project-root-input.ts";
 import { commandRoot } from "./root.ts";
 import {
@@ -15,9 +16,7 @@ import {
   modelFlag,
   optionalProjectFlag,
   optionalVaultFlag,
-  payloadFlag,
   providerFlag,
-  readPayload,
   resolveCaptureCorrelation,
   resolveStewardTarget,
   runnerOptionsFromInput,
