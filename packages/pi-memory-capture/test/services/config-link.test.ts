@@ -22,6 +22,26 @@ const CaptureConfigRuntime = ManagedRuntime.make(CaptureConfigTestLayer);
 const VaultProjectsRuntime = ManagedRuntime.make(VaultProjectsTestLayer);
 
 describe("CaptureConfig", () => {
+  it("reports missing config with the resolved local paths", () => {
+    const root = createTempDirectory("pi-memory-config-missing-");
+    const cwd = join(root, "project");
+
+    writeFile(join(cwd, "README.md"), "# project\n");
+
+    return CaptureConfigRuntime.runPromise(
+      Effect.gen(function* () {
+        const config = yield* CaptureConfig;
+        const loaded = yield* config.load(cwd);
+
+        expect(loaded._tag).toBe("missing");
+        if (loaded._tag === "missing") {
+          expect(loaded.paths.directory).toBe(join(cwd, ".agentic-memory-link"));
+          expect(loaded.paths.configFile).toBe(join(cwd, ".agentic-memory-link", "config.json"));
+        }
+      }),
+    ).finally(() => removeTempDirectory(root));
+  });
+
   it("loads valid .agentic-memory-link config without overriding its stored vault path", () => {
     const root = createTempDirectory("pi-memory-config-");
     const cwd = join(root, "project");

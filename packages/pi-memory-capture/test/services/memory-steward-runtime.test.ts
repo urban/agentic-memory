@@ -32,7 +32,7 @@ type ExtensionAPI = import("@earendil-works/pi-coding-agent").ExtensionAPI;
 type SessionEntry = import("@earendil-works/pi-coding-agent").SessionEntry;
 type StewardRunResult = import("../../src/services/MemorySteward.ts").StewardRunResult;
 type CapturePayload = import("../../src/schema.ts").CapturePayload;
-type LoadConfigResult = import("../../src/schema.ts").LoadConfigResult;
+type CaptureConfigState = import("../../src/services/CaptureConfig.ts").CaptureConfigState;
 type LocalPaths = import("../../src/schema.ts").LocalPaths;
 type ResolvedProjectConfig = import("../../src/schema.ts").ResolvedProjectConfig;
 
@@ -86,7 +86,7 @@ const makeCaptureConfigService = (cwd: string, vaultPath: string) => {
     vaultPath,
     projectSlug,
   };
-  const loadResult: LoadConfigResult = {
+  const loadResult: CaptureConfigState = {
     _tag: "valid",
     paths,
     config,

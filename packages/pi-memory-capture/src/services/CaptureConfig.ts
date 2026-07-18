@@ -1,7 +1,9 @@
 import {
+  LinkConfig,
   LinkConfigError,
   loadLinkConfig,
   localLinkPaths,
+  LocalLinkPaths,
   writeLinkConfig,
 } from "@urban/agentic-memory-core/link/LinkConfig";
 import {
@@ -14,12 +16,17 @@ import {
   Path,
   Schema,
 } from "effect";
-import { LoadConfigResult, LocalPaths } from "../schema.ts";
 import { VaultProjects } from "./VaultProjects.ts";
 
-type ResolvedProjectConfig = import("../schema.ts").ResolvedProjectConfig;
+export const CaptureConfigState = Schema.TaggedUnion({
+  missing: { paths: LocalLinkPaths },
+  invalid: { paths: LocalLinkPaths, message: Schema.String },
+  valid: { paths: LocalLinkPaths, config: LinkConfig },
+}).annotate({ identifier: "CaptureConfigState" });
+export type CaptureConfigState = typeof CaptureConfigState.Type;
 
-export type { LoadConfigResult, LocalPaths } from "../schema.ts";
+type ResolvedProjectConfig = typeof LinkConfig.Type;
+type LocalPaths = typeof LocalLinkPaths.Type;
 
 export class CaptureConfigServiceError extends Schema.TaggedErrorClass<CaptureConfigServiceError>()(
   "CaptureConfigServiceError",
@@ -60,7 +67,7 @@ export class CaptureConfig extends Context.Service<
   {
     readonly environmentOverrides: Effect.Effect<EnvironmentOverrides>;
     readonly localPaths: (cwd: string) => Effect.Effect<LocalPaths>;
-    readonly load: (cwd: string) => Effect.Effect<LoadConfigResult>;
+    readonly load: (cwd: string) => Effect.Effect<CaptureConfigState>;
     readonly ensureLocalFiles: (
       cwd: string,
       config: ResolvedProjectConfig,
@@ -85,18 +92,18 @@ export class CaptureConfig extends Context.Service<
 
       const load = Effect.fn("CaptureConfig.load")(function* (
         cwd: string,
-      ): Effect.fn.Return<LoadConfigResult> {
+      ): Effect.fn.Return<CaptureConfigState> {
         const loaded = yield* loadLinkConfig(cwd).pipe(
           Effect.provideService(FileSystem.FileSystem, fs),
           Effect.provideService(Path.Path, path),
         );
 
         if (loaded._tag === "missing") {
-          return LoadConfigResult.cases.missing.make({ paths: loaded.paths });
+          return CaptureConfigState.cases.missing.make({ paths: loaded.paths });
         }
 
         if (loaded._tag === "invalid") {
-          return LoadConfigResult.cases.invalid.make({
+          return CaptureConfigState.cases.invalid.make({
             paths: loaded.paths,
             message: translateLoadErrorMessage(loaded.message),
           });
@@ -105,12 +112,12 @@ export class CaptureConfig extends Context.Service<
         return yield* vaultProjects.validateTarget(loaded.config).pipe(
           Effect.match({
             onFailure: (error) =>
-              LoadConfigResult.cases.invalid.make({
+              CaptureConfigState.cases.invalid.make({
                 paths: loaded.paths,
                 message: error.message,
               }),
             onSuccess: (config) =>
-              LoadConfigResult.cases.valid.make({ paths: loaded.paths, config }),
+              CaptureConfigState.cases.valid.make({ paths: loaded.paths, config }),
           }),
         );
       });

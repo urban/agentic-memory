@@ -3,10 +3,10 @@ import { CaptureConfig } from "../services/CaptureConfig.ts";
 import { Markers } from "../services/Markers.ts";
 
 type SessionEntry = import("@earendil-works/pi-coding-agent").SessionEntry;
-type LoadConfigResult = import("../schema.ts").LoadConfigResult;
+type CaptureConfigState = import("../services/CaptureConfig.ts").CaptureConfigState;
 
 export interface StatusResult {
-  readonly config: LoadConfigResult;
+  readonly config: CaptureConfigState;
   readonly latestObservationSummary: string | undefined;
   readonly latestObservationStatus: string | undefined;
   readonly latestScheduleSummary: string | undefined;

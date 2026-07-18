@@ -1,7 +1,6 @@
 import { ensureGitExcludeEntry } from "@urban/agentic-memory-core/link/GitExclude";
 import { Clock, DateTime, Effect } from "effect";
-import { LoadConfigResult } from "../schema.ts";
-import { CaptureConfig } from "../services/CaptureConfig.ts";
+import { CaptureConfig, CaptureConfigState } from "../services/CaptureConfig.ts";
 import { VaultProjects } from "../services/VaultProjects.ts";
 
 type ResolvedProjectConfig = import("../schema.ts").ResolvedProjectConfig;
@@ -48,7 +47,7 @@ export const planInitialization = Effect.fn("MemoryCapture.planInitialization")(
     projectSlug: input.projectSlug.trim(),
   });
   const overwriteConflict =
-    LoadConfigResult.guards.valid(existingConfig) &&
+    CaptureConfigState.guards.valid(existingConfig) &&
     (existingConfig.config.vaultPath !== validated.vaultPath ||
       existingConfig.config.projectSlug !== validated.projectSlug)
       ? {

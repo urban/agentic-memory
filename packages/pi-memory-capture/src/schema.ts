@@ -8,7 +8,6 @@ import {
   decodeLinkConfigJson,
   encodeLinkConfigJson,
   LinkConfig as CoreResolvedProjectConfig,
-  LoadLinkConfigResult as CoreLoadConfigResult,
   LocalLinkPaths as CoreLocalPaths,
 } from "@urban/agentic-memory-core/link/LinkConfig";
 import {
@@ -45,9 +44,6 @@ export type StewardResultStatus = typeof StewardResultStatus.Type;
 export const RunStewardResult = CoreRunStewardResult;
 export const RunStewardResultJson = CoreRunStewardResultJson;
 export type RunStewardResult = typeof RunStewardResult.Type;
-
-export const LoadConfigResult = CoreLoadConfigResult;
-export type LoadConfigResult = typeof LoadConfigResult.Type;
 
 export const decodeProjectConfigJson = decodeLinkConfigJson;
 export const encodeProjectConfigJson = encodeLinkConfigJson;
