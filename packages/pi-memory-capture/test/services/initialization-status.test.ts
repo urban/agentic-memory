@@ -10,8 +10,7 @@ import { describe, expect, it } from "vitest";
 import { runInitCommand } from "../../src/initialization.ts";
 import { CaptureConfig } from "../../src/services/CaptureConfig.ts";
 import { Markers } from "../../src/services/Markers.ts";
-import { VaultProjects } from "../../src/services/VaultProjects.ts";
-import { applyInitialization } from "../../src/workflows/initialization.ts";
+import { applyInitialization, planInitialization } from "../../src/workflows/initialization.ts";
 import { loadStatus } from "../../src/workflows/status.ts";
 import {
   createTempDirectory,
@@ -22,7 +21,7 @@ import {
 
 type ExtensionCommandContext = import("@earendil-works/pi-coding-agent").ExtensionCommandContext;
 const captureConfigLayer = CaptureConfig.layer;
-const runtimeLayer = Layer.mergeAll(VaultProjects.layer, captureConfigLayer, Markers.layer).pipe(
+const runtimeLayer = Layer.mergeAll(captureConfigLayer, Markers.layer).pipe(
   Layer.provideMerge(BunServices.layer),
 );
 
@@ -156,6 +155,7 @@ updated: 2026-01-01
     writeFile(join(vault, ".agentic-memory", "LLM-outside-vault.md"), "# contract");
     writeFile(join(vault, ".agentic-memory", "instructions", "session-capture.md"), "# capture");
     writeFile(join(vault, "USER.md"), "# User\n");
+    writeFile(join(vault, "projects", ".gitkeep"), "");
     writeFile(
       join(vault, "MEMORY.md"),
       `---
@@ -212,7 +212,17 @@ updated: 2026-01-01
         Effect.gen(function* () {
           const fs = yield* FileSystem.FileSystem;
           yield* initializeGitRepository(cwd);
+          const creationPlan = yield* planInitialization({
+            cwd,
+            vaultPath: vault,
+            projectSlug: "capture-extension",
+          });
           const firstInitialization = yield* applyInitialization(cwd, config);
+          const reusePlan = yield* planInitialization({
+            cwd,
+            vaultPath: vault,
+            projectSlug: "capture-extension",
+          });
           const secondInitialization = yield* applyInitialization(cwd, config);
           const status = yield* loadStatus(cwd, branch);
           const projectDocument = yield* fs.readFileString(
@@ -220,9 +230,11 @@ updated: 2026-01-01
           );
           const memoryDocument = yield* fs.readFileString(join(vault, "MEMORY.md"));
 
+          expect(creationPlan.projectMissing).toBe(true);
           expect(firstInitialization.projectCreated).toBe(true);
           expect(firstInitialization.routeAdded).toBe(true);
           expect(firstInitialization.gitExcludeUpdated).toBe(true);
+          expect(reusePlan.projectMissing).toBe(false);
           expect(secondInitialization.projectCreated).toBe(false);
           expect(secondInitialization.routeAdded).toBe(false);
           expect(secondInitialization.gitExcludeUpdated).toBe(false);

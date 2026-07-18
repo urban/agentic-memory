@@ -1,7 +1,13 @@
 import { ensureGitExcludeEntry } from "@urban/agentic-memory-core/link/GitExclude";
-import { Clock, DateTime, Effect } from "effect";
+import { LinkConfig } from "@urban/agentic-memory-core/link/LinkConfig";
+import {
+  ensureMemoryRoute,
+  ensureProjectFile,
+  projectFilePath,
+} from "@urban/agentic-memory-core/vault/ProjectRoute";
+import { validateVaultForLink } from "@urban/agentic-memory-core/vault/VaultStatus";
+import { Clock, DateTime, Effect, FileSystem } from "effect";
 import { CaptureConfig, CaptureConfigState } from "../services/CaptureConfig.ts";
-import { VaultProjects } from "../services/VaultProjects.ts";
 
 export interface InitializationInputs {
   readonly cwd: string;
@@ -10,18 +16,18 @@ export interface InitializationInputs {
 }
 
 export interface InitializationOverwriteConflict {
-  readonly current: import("@urban/agentic-memory-core/link/LinkConfig").LinkConfig;
-  readonly next: import("@urban/agentic-memory-core/link/LinkConfig").LinkConfig;
+  readonly current: LinkConfig;
+  readonly next: LinkConfig;
 }
 
 export interface InitializationPlan {
-  readonly config: import("@urban/agentic-memory-core/link/LinkConfig").LinkConfig;
+  readonly config: LinkConfig;
   readonly overwriteConflict: InitializationOverwriteConflict | undefined;
   readonly projectMissing: boolean;
 }
 
 export interface InitializationResult {
-  readonly config: import("@urban/agentic-memory-core/link/LinkConfig").LinkConfig;
+  readonly config: LinkConfig;
   readonly projectCreated: boolean;
   readonly routeAdded: boolean;
   readonly gitExcludeUpdated: boolean;
@@ -37,13 +43,14 @@ export const planInitialization = Effect.fn("MemoryCapture.planInitialization")(
   input: InitializationInputs,
 ) {
   const captureConfig = yield* CaptureConfig;
-  const vaultProjects = yield* VaultProjects;
+  const fs = yield* FileSystem.FileSystem;
   const existingConfig = yield* captureConfig.load(input.cwd);
-  const validated = yield* vaultProjects.validateTarget({
+  const validated = LinkConfig.make({
     version: 1,
     vaultPath: input.vaultPath.trim(),
     projectSlug: input.projectSlug.trim(),
   });
+  yield* validateVaultForLink(validated.vaultPath);
   const overwriteConflict =
     CaptureConfigState.guards.valid(existingConfig) &&
     (existingConfig.config.vaultPath !== validated.vaultPath ||
@@ -53,7 +60,8 @@ export const planInitialization = Effect.fn("MemoryCapture.planInitialization")(
           next: validated,
         }
       : undefined;
-  const projectExists = yield* vaultProjects.projectExists(validated);
+  const filepath = yield* projectFilePath(validated.vaultPath, validated.projectSlug);
+  const projectExists = yield* fs.exists(filepath);
 
   return {
     config: validated,
@@ -64,13 +72,20 @@ export const planInitialization = Effect.fn("MemoryCapture.planInitialization")(
 
 export const applyInitialization = Effect.fn("MemoryCapture.applyInitialization")(function* (
   cwd: string,
-  configValue: import("@urban/agentic-memory-core/link/LinkConfig").LinkConfig,
+  configValue: LinkConfig,
 ) {
   const captureConfig = yield* CaptureConfig;
-  const vaultProjects = yield* VaultProjects;
   const time = yield* nowValues;
-  const projectCreated = yield* vaultProjects.ensureProjectFile(configValue, time.isoDate);
-  const routeAdded = yield* vaultProjects.ensureMemoryRoute(configValue, time.isoDate);
+  const projectCreated = yield* ensureProjectFile({
+    vaultPath: configValue.vaultPath,
+    projectSlug: configValue.projectSlug,
+    date: time.isoDate,
+  });
+  const routeAdded = yield* ensureMemoryRoute({
+    vaultPath: configValue.vaultPath,
+    projectSlug: configValue.projectSlug,
+    date: time.isoDate,
+  });
   yield* captureConfig.ensureLocalFiles(cwd, configValue);
   const gitExclude = yield* ensureGitExcludeEntry(cwd);
 
