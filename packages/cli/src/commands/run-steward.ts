@@ -5,17 +5,19 @@ import {
 import { Console, Effect } from "effect";
 import { Command } from "effect/unstable/cli";
 import { exitWith, toFailure, withCliFailureOutput } from "../output.ts";
-import { payloadFlag, readPayload } from "./payload-input.ts";
-import { projectRootFlag } from "./project-root-input.ts";
-import { commandRoot } from "./root.ts";
 import {
   captureAttemptIdFlag,
   captureProjectSlugFlag,
   captureRunIdFlag,
   captureTriggerKindFlag,
+  resolveCaptureCorrelation,
+} from "./capture-correlation-input.ts";
+import { payloadFlag, readPayload } from "./payload-input.ts";
+import { projectRootFlag } from "./project-root-input.ts";
+import { commandRoot } from "./root.ts";
+import {
   modelFlag,
   providerFlag,
-  resolveCaptureCorrelation,
   runnerOptionsFromInput,
   thinkingFlag,
   timeoutMillisFlag,
