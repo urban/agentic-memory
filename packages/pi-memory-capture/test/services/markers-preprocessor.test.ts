@@ -1,7 +1,7 @@
 import { Effect, ManagedRuntime } from "effect";
 import { describe, expect, it } from "vitest";
 import { MESSAGE_LIMIT } from "@urban/agentic-memory-core/capture/PayloadShaping";
-import { MARKER_VERSION } from "../../src/constants.ts";
+import { MARKER_VERSION } from "../../src/markers/CaptureMarker.ts";
 import { Markers } from "../../src/services/Markers.ts";
 import { Preprocessor } from "../../src/services/Preprocessor.ts";
 import {

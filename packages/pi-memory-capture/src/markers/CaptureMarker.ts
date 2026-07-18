@@ -1,5 +1,7 @@
 import { Schema } from "effect";
-import { MARKER_VERSION } from "../constants.ts";
+
+export const CUSTOM_ENTRY_TYPE = "agentic-memory-capture";
+export const MARKER_VERSION = 1;
 
 export const TriggerKind = Schema.Literals([
   "agent_end",

@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { CUSTOM_ENTRY_TYPE } from "./constants.ts";
+import { CUSTOM_ENTRY_TYPE } from "./markers/CaptureMarker.ts";
 import { runCapturePass, timeoutForTrigger } from "./workflows/capture.ts";
 
 type ExtensionAPI = import("@earendil-works/pi-coding-agent").ExtensionAPI;

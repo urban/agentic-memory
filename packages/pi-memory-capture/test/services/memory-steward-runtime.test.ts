@@ -7,7 +7,8 @@ import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
 // @effect-diagnostics-next-line nodeBuiltinImport:off
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { CAPTURE_BATCH_SIZE, MARKER_VERSION } from "../../src/constants.ts";
+import { MARKER_VERSION } from "../../src/markers/CaptureMarker.ts";
+import { CAPTURE_BATCH_SIZE } from "../../src/workflows/capture.ts";
 import memoryCapture from "../../src/index.ts";
 import { CaptureConfig } from "../../src/services/CaptureConfig.ts";
 import { MemorySteward, StewardExecutor } from "../../src/services/MemorySteward.ts";

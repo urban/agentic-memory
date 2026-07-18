@@ -1,6 +1,5 @@
 import { Context, Effect, Layer, Option } from "effect";
-import { CUSTOM_ENTRY_TYPE } from "../constants.ts";
-import { decodeCaptureMarkerOption } from "../markers/CaptureMarker.ts";
+import { CUSTOM_ENTRY_TYPE, decodeCaptureMarkerOption } from "../markers/CaptureMarker.ts";
 
 type CustomEntry<T = unknown> = import("@earendil-works/pi-coding-agent").CustomEntry<T>;
 type SessionEntry = import("@earendil-works/pi-coding-agent").SessionEntry;

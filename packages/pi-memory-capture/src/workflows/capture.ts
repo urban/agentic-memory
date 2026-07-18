@@ -1,6 +1,5 @@
 import { Clock, DateTime, Effect, Random, Semaphore } from "effect";
-import { CAPTURE_BATCH_SIZE, MARKER_VERSION } from "../constants.ts";
-import { decodeAttemptId } from "../markers/CaptureMarker.ts";
+import { decodeAttemptId, MARKER_VERSION } from "../markers/CaptureMarker.ts";
 import { CaptureConfig } from "../services/CaptureConfig.ts";
 import { Markers } from "../services/Markers.ts";
 import { MemorySteward } from "../services/MemorySteward.ts";
@@ -15,6 +14,8 @@ type AttemptId = import("../markers/CaptureMarker.ts").AttemptId;
 type CaptureMarker = import("../markers/CaptureMarker.ts").CaptureMarker;
 type PayloadObservation = import("../markers/CaptureMarker.ts").PayloadObservation;
 type TriggerKind = import("../markers/CaptureMarker.ts").TriggerKind;
+
+export const CAPTURE_BATCH_SIZE = 10;
 
 export type CaptureExecutionStatus =
   | "captured"
