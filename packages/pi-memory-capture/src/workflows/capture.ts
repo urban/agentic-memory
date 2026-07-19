@@ -1,4 +1,8 @@
 import { Clock, DateTime, Effect, Random, Semaphore } from "effect";
+import {
+  captureDecisionReportAttributes,
+  captureStewardSessionAttributes,
+} from "@urban/agentic-memory-core/observability/CaptureTelemetry";
 import { decodeAttemptId, MARKER_VERSION } from "../markers/CaptureMarker.ts";
 import { CaptureConfig } from "../services/CaptureConfig.ts";
 import { Markers } from "../services/Markers.ts";
@@ -171,27 +175,6 @@ export const timeoutForTrigger = (triggerKind: TriggerKind): number => {
       return 8_000;
   }
 };
-
-const stewardSessionAttributes = (
-  stewardSession: StewardSessionPointer | undefined,
-): Record<string, unknown> =>
-  stewardSession === undefined
-    ? {}
-    : {
-        "capture.steward.session_id": stewardSession.sessionId,
-        "capture.steward.session_name": stewardSession.name,
-        "capture.steward.session_cwd": stewardSession.cwd,
-        "capture.steward.session_started_at": stewardSession.startedAt,
-      };
-
-const decisionReportAttributes = (
-  decisionReport: StewardDecisionReport,
-): Record<string, unknown> => ({
-  "capture.decision.durability": decisionReport.durability,
-  "capture.decision.selected_count": decisionReport.selectedDestinations.length,
-  "capture.decision.skipped_count": decisionReport.skippedDestinations.length,
-  "capture.decision.summary": decisionReport.decisionSummary,
-});
 
 const annotateFinalStatus = (attributes: Record<string, unknown>): Effect.Effect<void> =>
   Effect.annotateCurrentSpan(attributes);
@@ -372,7 +355,7 @@ export const runCapturePass = (
           ];
           const statusAttributes = {
             ...attemptAttributes,
-            ...stewardSessionAttributes(stewardResult.stewardSession),
+            ...captureStewardSessionAttributes(stewardResult.stewardSession),
             "capture.status": "failed",
             "capture.steward.status": "failed",
             "capture.steward.retry_count": stewardResult.retryFailureReasons.length,
@@ -416,8 +399,8 @@ export const runCapturePass = (
         const markersToWrite = [observationMarker, scheduleMarker];
         const statusAttributes = {
           ...attemptAttributes,
-          ...stewardSessionAttributes(stewardResult.stewardSession),
-          ...decisionReportAttributes(stewardResult.result.decisionReport),
+          ...captureStewardSessionAttributes(stewardResult.stewardSession),
+          ...captureDecisionReportAttributes(stewardResult.result.decisionReport),
           "capture.status": stewardResult.result.status,
           "capture.steward.status": stewardResult.result.status,
           "capture.steward.retry_count": stewardResult.retryFailureReasons.length,
