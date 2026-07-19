@@ -1,5 +1,9 @@
 import { Cause, Context, Effect, FileSystem, Layer, Path, Ref, Schema } from "effect";
-import { captureCorrelationAttributes } from "../observability/CaptureTelemetry.ts";
+import {
+  captureCorrelationAttributes,
+  captureDecisionReportAttributes,
+  captureStewardSessionAttributes,
+} from "../observability/CaptureTelemetry.ts";
 import { buildStewardContext, StewardContextError } from "./StewardContext.ts";
 import { StewardResult } from "./StewardResult.ts";
 
@@ -133,13 +137,6 @@ const withOptionalStewardSession = <T extends object>(
 ): T | (T & { readonly stewardSession: StewardSessionPointer }) =>
   stewardSession === undefined ? value : { ...value, stewardSession };
 
-const decisionReportAttributes = (result: StewardResultValue): Record<string, unknown> => ({
-  "capture.decision.durability": result.decisionReport.durability,
-  "capture.decision.selected_count": result.decisionReport.selectedDestinations.length,
-  "capture.decision.skipped_count": result.decisionReport.skippedDestinations.length,
-  "capture.decision.summary": result.decisionReport.decisionSummary,
-});
-
 export const runSteward = Effect.fn("agentic-memory.run_steward")(function* (input: {
   readonly payload: CapturePayload;
   readonly vaultPath: string;
@@ -189,15 +186,8 @@ export const runSteward = Effect.fn("agentic-memory.run_steward")(function* (inp
       const stewardSession = result.value.stewardSession ?? latestStewardSession;
       const successAttributes = {
         ...runnerAttributes,
-        ...decisionReportAttributes(result.value.result),
-        ...(stewardSession === undefined
-          ? {}
-          : {
-              "capture.steward.session_id": stewardSession.sessionId,
-              "capture.steward.session_name": stewardSession.name,
-              "capture.steward.session_cwd": stewardSession.cwd,
-              "capture.steward.session_started_at": stewardSession.startedAt,
-            }),
+        ...captureDecisionReportAttributes(result.value.result.decisionReport),
+        ...captureStewardSessionAttributes(stewardSession),
         "capture.steward.status": result.value.result.status,
         "capture.changed_files_count": result.value.result.filesChanged.length,
       };
@@ -237,14 +227,7 @@ export const runSteward = Effect.fn("agentic-memory.run_steward")(function* (inp
 
   const failedAttributes = {
     ...baseAttributes,
-    ...(latestStewardSession === undefined
-      ? {}
-      : {
-          "capture.steward.session_id": latestStewardSession.sessionId,
-          "capture.steward.session_name": latestStewardSession.name,
-          "capture.steward.session_cwd": latestStewardSession.cwd,
-          "capture.steward.session_started_at": latestStewardSession.startedAt,
-        }),
+    ...captureStewardSessionAttributes(latestStewardSession),
     "capture.steward.status": "failed",
     "capture.steward.retry_count": RETRY_ATTEMPTS,
   };
