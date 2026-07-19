@@ -25,6 +25,23 @@ for linting errors, formatting issues, type errors, and run test.
 
 ## Code Quality Standards
 
+### Type imports and `tsgo` stability
+
+`tsgo` can hang instead of exiting when this repository uses TypeScript type-only import declarations or specifiers. Do not write either of these forms:
+
+```ts
+import type { Foo } from "path/to/foo";
+import { runtimeValue, type Foo } from "path/to/foo";
+```
+
+Import every external type through an import type expression alias instead:
+
+```ts
+type Foo = import("path/to/foo").Foo;
+```
+
+Keep runtime imports as ordinary imports, and declare the type alias separately. Apply this rule in source files, tests, scripts, and configuration files. Before completing TypeScript changes, search the changed files for `import type` and inline `type` import specifiers and replace them with import type expression aliases.
+
 - Always verify the exact API shape by checking signatures, parameter types, return types, setup patterns and test usage.
 - **Never compromise type safety**: No `any`, no non-null assertion operator (`!`), no type assertions (`as Type`)
 - **Make illegal states unrepresentable**: Model domain with ADTs/discriminated unions; parse inputs at boundaries into typed structures; if state can't exist, code can't mishandle it
