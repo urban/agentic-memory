@@ -1,8 +1,7 @@
-import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import { Effect, ManagedRuntime } from "effect";
 import { describe, expect, it } from "vitest";
-import { MESSAGE_LIMIT } from "../../src/constants.ts";
-import { MARKER_VERSION } from "../../src/constants.ts";
+import { MESSAGE_LIMIT } from "@urban/agentic-memory-core/capture/PayloadShaping";
+import { MARKER_VERSION } from "../../src/markers/CaptureMarker.ts";
 import { Markers } from "../../src/services/Markers.ts";
 import { Preprocessor } from "../../src/services/Preprocessor.ts";
 import {
@@ -12,6 +11,8 @@ import {
   makeCustomMarkerEntry,
   makeUserEntry,
 } from "../helpers.ts";
+
+type SessionEntry = import("@earendil-works/pi-coding-agent").SessionEntry;
 
 const MarkersRuntime = ManagedRuntime.make(Markers.layer);
 const PreprocessorRuntime = ManagedRuntime.make(Preprocessor.layer);
@@ -34,6 +35,28 @@ const makeTurnEntries = (count: number): ReadonlyArray<SessionEntry> =>
   });
 
 describe("Markers", () => {
+  it("rejects invalid marker envelopes while scanning a branch", () =>
+    MarkersRuntime.runPromise(
+      Effect.gen(function* () {
+        const markers = yield* Markers;
+        const state = yield* markers.branchState([
+          makeCustomMarkerEntry("m1", {
+            markerVersion: MARKER_VERSION,
+            kind: "observation_result",
+            attemptId: "attempt-1",
+            timestamp: "2026-06-05T12:00:00Z",
+            triggerKind: "agent_end",
+            observation,
+            observationStatus: "captured",
+            summary: "Record first memory",
+          }),
+        ]);
+
+        expect(state.latestCapturedObservation).toBeUndefined();
+        expect(state.decodeWarnings).toEqual(["Ignoring invalid memory capture marker m1"]);
+      }),
+    ));
+
   it("selects observation after the latest captured observation marker only", () =>
     MarkersRuntime.runPromise(
       Effect.gen(function* () {
@@ -242,6 +265,29 @@ describe("Preprocessor", () => {
         ]);
 
         expect(result._tag).toBe("NoMessages");
+      }),
+    ));
+
+  it("keeps observation boundaries aligned when core omits whitespace-only messages", () =>
+    PreprocessorRuntime.runPromise(
+      Effect.gen(function* () {
+        const preprocessor = yield* Preprocessor;
+        const result = yield* preprocessor.buildPayload("agent_end", "capture-extension", [
+          makeUserEntry("u0", " \r\n "),
+          makeAssistantEntry("a0", [{ type: "text", text: "Visible answer" }], "u0"),
+        ]);
+
+        expect(result._tag).toBe("Payload");
+        if (result._tag === "Payload") {
+          expect(result.payload.messages).toEqual([{ role: "assistant", text: "Visible answer" }]);
+          expect(result.observation).toEqual({
+            fromEntryId: "u0",
+            toEntryId: "a0",
+            entryCount: 2,
+            messageCount: 1,
+          });
+          expect(result.warnings.some((warning) => warning.includes("Whitespace-only"))).toBe(true);
+        }
       }),
     ));
 

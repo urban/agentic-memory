@@ -1,8 +1,11 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Effect } from "effect";
-import { CUSTOM_ENTRY_TYPE } from "./constants.ts";
-import type { NotificationLevel, TriggerKind } from "./schema.ts";
-import { runCapturePass, timeoutForTrigger, type CaptureExecution } from "./workflows/capture.ts";
+import { CUSTOM_ENTRY_TYPE } from "./markers/CaptureMarker.ts";
+import { runCapturePass, timeoutForTrigger } from "./workflows/capture.ts";
+
+type ExtensionAPI = import("@earendil-works/pi-coding-agent").ExtensionAPI;
+type ExtensionContext = import("@earendil-works/pi-coding-agent").ExtensionContext;
+type TriggerKind = import("./markers/CaptureMarker.ts").TriggerKind;
+type CaptureExecution = import("./workflows/capture.ts").CaptureExecution;
 
 const formatCaptureNotification = (execution: CaptureExecution): string => {
   const lines = [`${execution.status}: ${execution.summary}`];
@@ -17,7 +20,7 @@ const formatCaptureNotification = (execution: CaptureExecution): string => {
   return lines.join("\n");
 };
 
-const notificationLevelForCapture = (execution: CaptureExecution): NotificationLevel =>
+const notificationLevelForCapture = (execution: CaptureExecution): "info" | "warning" =>
   execution.status === "failed" ? "warning" : "info";
 
 const shouldNotify = (execution: CaptureExecution): boolean =>

@@ -1,20 +1,25 @@
-import type { SessionEntry } from "@earendil-works/pi-coding-agent";
-import type { StewardSessionPointer } from "@urban/agentic-memory-core/steward/StewardExecution";
-import type { StewardDecisionReport } from "@urban/agentic-memory-core/steward/StewardResult";
-import { Clock, Effect, Random, Semaphore } from "effect";
-import { CAPTURE_BATCH_SIZE, MARKER_VERSION } from "../constants.ts";
-import { formatIsoFromMillis } from "../project.ts";
+import { Clock, DateTime, Effect, Random, Semaphore } from "effect";
 import {
-  decodeAttemptId,
-  type AttemptId,
-  type CaptureMarker,
-  type PayloadObservation,
-  type TriggerKind,
-} from "../schema.ts";
+  captureDecisionReportAttributes,
+  captureStewardSessionAttributes,
+} from "@urban/agentic-memory-core/observability/CaptureTelemetry";
+import { decodeAttemptId, MARKER_VERSION } from "../markers/CaptureMarker.ts";
 import { CaptureConfig } from "../services/CaptureConfig.ts";
 import { Markers } from "../services/Markers.ts";
 import { MemorySteward } from "../services/MemorySteward.ts";
 import { Preprocessor } from "../services/Preprocessor.ts";
+
+type SessionEntry = import("@earendil-works/pi-coding-agent").SessionEntry;
+type StewardSessionPointer =
+  import("@urban/agentic-memory-core/steward/StewardExecution").StewardSessionPointer;
+type StewardDecisionReport =
+  import("@urban/agentic-memory-core/steward/StewardResult").StewardDecisionReport;
+type AttemptId = import("../markers/CaptureMarker.ts").AttemptId;
+type CaptureMarker = import("../markers/CaptureMarker.ts").CaptureMarker;
+type PayloadObservation = import("../markers/CaptureMarker.ts").PayloadObservation;
+type TriggerKind = import("../markers/CaptureMarker.ts").TriggerKind;
+
+export const CAPTURE_BATCH_SIZE = 10;
 
 export type CaptureExecutionStatus =
   | "captured"
@@ -60,16 +65,45 @@ const captureSemaphoreFor = (cwd: string): Semaphore.Semaphore => {
 
 const nowValues = Clock.clockWith((clock) =>
   Effect.sync(() => ({
-    isoTimestamp: formatIsoFromMillis(clock.currentTimeMillisUnsafe()),
+    isoTimestamp: DateTime.formatIso(DateTime.makeUnsafe(clock.currentTimeMillisUnsafe())),
   })),
 );
 
-const makeCaptureRunId = Effect.fn("MemoryCapture.makeCaptureRunId")(function* () {
-  return yield* Random.nextUUIDv4;
+const randomByte = (): Effect.Effect<number> => Random.nextIntBetween(0, 256, { halfOpen: true });
+
+const hexByte = (byte: number): string => byte.toString(16).padStart(2, "0");
+
+const makeCaptureRunId = Effect.fnUntraced(function* (): Effect.fn.Return<string> {
+  const b0 = yield* randomByte();
+  const b1 = yield* randomByte();
+  const b2 = yield* randomByte();
+  const b3 = yield* randomByte();
+  const b4 = yield* randomByte();
+  const b5 = yield* randomByte();
+  const b6 = yield* randomByte();
+  const b7 = yield* randomByte();
+  const b8 = yield* randomByte();
+  const b9 = yield* randomByte();
+  const b10 = yield* randomByte();
+  const b11 = yield* randomByte();
+  const b12 = yield* randomByte();
+  const b13 = yield* randomByte();
+  const b14 = yield* randomByte();
+  const b15 = yield* randomByte();
+  const versionByte = (b6 & 0x0f) | 0x40;
+  const variantByte = (b8 & 0x3f) | 0x80;
+
+  return [
+    `${hexByte(b0)}${hexByte(b1)}${hexByte(b2)}${hexByte(b3)}`,
+    `${hexByte(b4)}${hexByte(b5)}`,
+    `${hexByte(versionByte)}${hexByte(b7)}`,
+    `${hexByte(variantByte)}${hexByte(b9)}`,
+    `${hexByte(b10)}${hexByte(b11)}${hexByte(b12)}${hexByte(b13)}${hexByte(b14)}${hexByte(b15)}`,
+  ].join("-");
 });
 
-const makeAttemptId = Effect.fn("MemoryCapture.makeAttemptId")(function* () {
-  const uuid = yield* Random.nextUUIDv4;
+const makeAttemptId = Effect.fnUntraced(function* (): Effect.fn.Return<AttemptId> {
+  const uuid = yield* makeCaptureRunId();
   return yield* decodeAttemptId(uuid).pipe(Effect.catch((cause) => Effect.die(cause)));
 });
 
@@ -141,27 +175,6 @@ export const timeoutForTrigger = (triggerKind: TriggerKind): number => {
       return 8_000;
   }
 };
-
-const stewardSessionAttributes = (
-  stewardSession: StewardSessionPointer | undefined,
-): Record<string, unknown> =>
-  stewardSession === undefined
-    ? {}
-    : {
-        "capture.steward.session_id": stewardSession.sessionId,
-        "capture.steward.session_name": stewardSession.name,
-        "capture.steward.session_cwd": stewardSession.cwd,
-        "capture.steward.session_started_at": stewardSession.startedAt,
-      };
-
-const decisionReportAttributes = (
-  decisionReport: StewardDecisionReport,
-): Record<string, unknown> => ({
-  "capture.decision.durability": decisionReport.durability,
-  "capture.decision.selected_count": decisionReport.selectedDestinations.length,
-  "capture.decision.skipped_count": decisionReport.skippedDestinations.length,
-  "capture.decision.summary": decisionReport.decisionSummary,
-});
 
 const annotateFinalStatus = (attributes: Record<string, unknown>): Effect.Effect<void> =>
   Effect.annotateCurrentSpan(attributes);
@@ -342,7 +355,7 @@ export const runCapturePass = (
           ];
           const statusAttributes = {
             ...attemptAttributes,
-            ...stewardSessionAttributes(stewardResult.stewardSession),
+            ...captureStewardSessionAttributes(stewardResult.stewardSession),
             "capture.status": "failed",
             "capture.steward.status": "failed",
             "capture.steward.retry_count": stewardResult.retryFailureReasons.length,
@@ -386,8 +399,8 @@ export const runCapturePass = (
         const markersToWrite = [observationMarker, scheduleMarker];
         const statusAttributes = {
           ...attemptAttributes,
-          ...stewardSessionAttributes(stewardResult.stewardSession),
-          ...decisionReportAttributes(stewardResult.result.decisionReport),
+          ...captureStewardSessionAttributes(stewardResult.stewardSession),
+          ...captureDecisionReportAttributes(stewardResult.result.decisionReport),
           "capture.status": stewardResult.result.status,
           "capture.steward.status": stewardResult.result.status,
           "capture.steward.retry_count": stewardResult.retryFailureReasons.length,

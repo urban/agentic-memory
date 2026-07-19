@@ -1,8 +1,10 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { runCapture } from "./capture.ts";
 import { runInitCommand } from "./initialization.ts";
 import { makeMemoryCaptureRuntime } from "./runtime.ts";
 import { runStatusCommand } from "./status.ts";
+
+type ExtensionAPI = import("@earendil-works/pi-coding-agent").ExtensionAPI;
+type ExtensionContext = import("@earendil-works/pi-coding-agent").ExtensionContext;
 
 const notifyError = (ctx: ExtensionContext, message: string) => {
   if (ctx.hasUI) {

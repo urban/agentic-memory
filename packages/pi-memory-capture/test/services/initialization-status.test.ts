@@ -1,23 +1,16 @@
-import * as BunFileSystem from "@effect/platform-bun/BunFileSystem";
-import * as BunPath from "@effect/platform-bun/BunPath";
-import {
-  AuthStorage,
-  ModelRegistry,
-  SessionManager,
-  type ExtensionCommandContext,
-} from "@earendil-works/pi-coding-agent";
-import { Effect, Layer, ManagedRuntime } from "effect";
+import * as BunServices from "@effect/platform-bun/BunServices";
+import { AuthStorage, ModelRegistry, SessionManager } from "@earendil-works/pi-coding-agent";
+import { encodeLinkConfigJson, type LinkConfig } from "@urban/agentic-memory-core/link/LinkConfig";
+import { Effect, FileSystem, Layer, ManagedRuntime } from "effect";
+import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { theme } from "../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js";
 // @effect-diagnostics-next-line nodeBuiltinImport:off
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { encodeProjectConfigJson, type ResolvedProjectConfig } from "../../src/schema.ts";
 import { runInitCommand } from "../../src/initialization.ts";
 import { CaptureConfig } from "../../src/services/CaptureConfig.ts";
-import { Git } from "../../src/services/Git.ts";
 import { Markers } from "../../src/services/Markers.ts";
-import { VaultProjects } from "../../src/services/VaultProjects.ts";
-import { applyInitialization } from "../../src/workflows/initialization.ts";
+import { applyInitialization, planInitialization } from "../../src/workflows/initialization.ts";
 import { loadStatus } from "../../src/workflows/status.ts";
 import {
   createTempDirectory,
@@ -26,19 +19,24 @@ import {
   writeFile,
 } from "../helpers.ts";
 
-const captureConfigLayer = CaptureConfig.layer.pipe(Layer.provideMerge(VaultProjects.layer));
-const runtimeLayer = Layer.mergeAll(
-  VaultProjects.layer,
-  captureConfigLayer,
-  Layer.succeed(
-    Git,
-    Git.of({
-      resolveGitDir: () => Effect.void.pipe(Effect.as(undefined)),
-      ensureInfoExcludeEntry: () => Effect.succeed(false),
+type ExtensionCommandContext = import("@earendil-works/pi-coding-agent").ExtensionCommandContext;
+const captureConfigLayer = CaptureConfig.layer;
+const runtimeLayer = Layer.mergeAll(captureConfigLayer, Markers.layer).pipe(
+  Layer.provideMerge(BunServices.layer),
+);
+
+const initializeGitRepository = Effect.fnUntraced(function* (cwd: string) {
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  const exitCode = yield* spawner.exitCode(
+    ChildProcess.make("git", ["init"], {
+      cwd,
+      stdout: "ignore",
+      stderr: "ignore",
     }),
-  ),
-  Markers.layer,
-).pipe(Layer.provide(Layer.mergeAll(BunFileSystem.layer, BunPath.layer)));
+  );
+
+  expect(exitCode).toBe(ChildProcessSpawner.ExitCode(0));
+});
 
 const makeCommandContext = (cwd: string) =>
   ({
@@ -148,7 +146,7 @@ updated: 2026-01-01
     const cwd = join(root, "project");
     const localDirectory = join(cwd, ".agentic-memory-link");
     const vault = join(root, "vault");
-    const config: ResolvedProjectConfig = {
+    const config: LinkConfig = {
       version: 1,
       vaultPath: vault,
       projectSlug: "capture-extension",
@@ -157,6 +155,7 @@ updated: 2026-01-01
     writeFile(join(vault, ".agentic-memory", "LLM-outside-vault.md"), "# contract");
     writeFile(join(vault, ".agentic-memory", "instructions", "session-capture.md"), "# capture");
     writeFile(join(vault, "USER.md"), "# User\n");
+    writeFile(join(vault, "projects", ".gitkeep"), "");
     writeFile(
       join(vault, "MEMORY.md"),
       `---
@@ -172,7 +171,7 @@ updated: 2026-01-01
     );
     writeFile(
       join(localDirectory, "config.json"),
-      `${Effect.runSync(encodeProjectConfigJson(config))}\n`,
+      `${Effect.runSync(encodeLinkConfigJson(config))}\n`,
     );
     const branch = [
       makeCustomMarkerEntry("o1", {
@@ -211,9 +210,45 @@ updated: 2026-01-01
     return runtime
       .runPromise(
         Effect.gen(function* () {
-          yield* applyInitialization(cwd, config);
+          const fs = yield* FileSystem.FileSystem;
+          yield* initializeGitRepository(cwd);
+          const creationPlan = yield* planInitialization({
+            cwd,
+            vaultPath: vault,
+            projectSlug: "capture-extension",
+          });
+          const firstInitialization = yield* applyInitialization(cwd, config);
+          const reusePlan = yield* planInitialization({
+            cwd,
+            vaultPath: vault,
+            projectSlug: "capture-extension",
+          });
+          const secondInitialization = yield* applyInitialization(cwd, config);
           const status = yield* loadStatus(cwd, branch);
+          const projectDocument = yield* fs.readFileString(
+            join(vault, "projects", "capture-extension.md"),
+          );
+          const memoryDocument = yield* fs.readFileString(join(vault, "MEMORY.md"));
 
+          expect(creationPlan.projectMissing).toBe(true);
+          expect(firstInitialization.projectCreated).toBe(true);
+          expect(firstInitialization.routeAdded).toBe(true);
+          expect(firstInitialization.gitExcludeUpdated).toBe(true);
+          expect(reusePlan.projectMissing).toBe(false);
+          expect(secondInitialization.projectCreated).toBe(false);
+          expect(secondInitialization.routeAdded).toBe(false);
+          expect(secondInitialization.gitExcludeUpdated).toBe(false);
+          expect(projectDocument).toContain("# capture-extension");
+          expect(projectDocument).toContain("## Resume context");
+          expect(projectDocument).toContain("## Project timeline");
+          expect(projectDocument).toContain("## Decision log");
+          expect(projectDocument).toContain(
+            "Run agentic-memory capture after meaningful project work.",
+          );
+          expect(memoryDocument).toContain("- [[projects/capture-extension]] — capture-extension.");
+          expect(yield* fs.readFileString(join(cwd, ".git", "info", "exclude"))).toContain(
+            ".agentic-memory-link/",
+          );
           expect(status.config._tag).toBe("valid");
           expect(status.latestObservationStatus).toBe("captured");
           expect(status.latestObservationSummary).toBe("Record capture setup");

@@ -1,0 +1,162 @@
+[
+  {
+    "id": "alpha-retry-latency-and-options",
+    "question": "In Alpha Product, I need to tune the retry scheduler. What latency budget decision should I follow, and how should I present options back to Urban?",
+    "expected": {
+      "status": "answered",
+      "answerMustContain": ["200ms p95", "stack-ranked", "capital-letter"],
+      "answerMustNotContain": ["5 second batch retry window"]
+    }
+  },
+  {
+    "id": "alpha-latency-only",
+    "question": "In Alpha Product, what latency budget should I follow for the retry scheduler?",
+    "expected": {
+      "status": "answered",
+      "answerMustContain": ["200ms p95"],
+      "answerMustNotContain": ["5 second batch retry window", "stack-ranked", "capital-letter"]
+    }
+  },
+  {
+    "id": "beta-retry-policy",
+    "question": "In Beta Platform, what retry policy should I follow?",
+    "expected": {
+      "status": "answered",
+      "answerMustContain": ["5 second batch retry window"],
+      "answerMustNotContain": ["200ms p95", "stack-ranked", "capital-letter"]
+    }
+  },
+  {
+    "id": "user-option-format-only",
+    "question": "How should I present prioritization options?",
+    "expected": {
+      "status": "answered",
+      "answerMustContain": ["stack-ranked", "capital-letter"],
+      "answerMustNotContain": ["200ms p95", "5 second batch retry window"]
+    }
+  },
+  {
+    "id": "unknown-project-not-found",
+    "question": "What launch window did Gamma Project choose?",
+    "expected": {
+      "status": "not_found",
+      "answerMustContain": [],
+      "answerMustNotContain": [
+        "200ms p95",
+        "5 second batch retry window",
+        "stack-ranked",
+        "capital-letter"
+      ]
+    }
+  },
+  {
+    "id": "off-topic-not-found",
+    "question": "What coffee grinder setting should I use tomorrow morning?",
+    "expected": {
+      "status": "not_found",
+      "answerMustContain": [],
+      "answerMustNotContain": [
+        "200ms p95",
+        "5 second batch retry window",
+        "stack-ranked",
+        "capital-letter"
+      ]
+    }
+  },
+  {
+    "id": "alpha-current-latency",
+    "question": "For Alpha Product, what current p95 latency budget applies to the retry scheduler?",
+    "expected": {
+      "status": "answered",
+      "answerMustContain": ["200ms p95"],
+      "answerMustNotContain": [
+        "120ms p95",
+        "180ms observed p95 verification threshold",
+        "350ms p95",
+        "400ms p95"
+      ]
+    }
+  },
+  {
+    "id": "alpha-verification-evidence",
+    "question": "What source verification evidence did the Alpha Product responsiveness trial record for the latency decision?",
+    "includeSources": true,
+    "expected": {
+      "status": "answered",
+      "answerMustContain": ["180ms observed p95 verification threshold"],
+      "answerMustNotContain": ["120ms p95"]
+    }
+  },
+  {
+    "id": "alpha-current-latency-conflicts",
+    "question": "What is the current Alpha Product retry scheduler latency budget?",
+    "expected": {
+      "status": "answered",
+      "answerMustContain": ["200ms p95"],
+      "answerMustNotContain": ["120ms p95", "350ms p95", "400ms p95"]
+    }
+  },
+  {
+    "id": "alpha-timing-constraint",
+    "question": "I am changing Alpha retry scheduler timing. What constraint matters?",
+    "expected": {
+      "status": "answered",
+      "answerMustContain": ["200ms p95"],
+      "answerMustNotContain": ["5 second batch retry window"]
+    }
+  },
+  {
+    "id": "alpha-latency-rationale",
+    "question": "Why was the Alpha scheduler latency budget chosen?",
+    "expected": {
+      "status": "answered",
+      "answerMustContain": ["user-facing flows"],
+      "answerMustNotContain": ["5 second batch retry window"]
+    }
+  },
+  {
+    "id": "alpha-accepted-latency-budget",
+    "question": "What latency budget was accepted for the Alpha retry scheduler?",
+    "expected": {
+      "status": "answered",
+      "answerMustContain": ["200ms p95"],
+      "answerMustNotContain": ["5 second batch retry window"]
+    }
+  },
+  {
+    "id": "alpha-resuming-work-constraint",
+    "question": "Before resuming Alpha scheduler work, what constraint matters for user-facing scheduling?",
+    "expected": {
+      "status": "answered",
+      "answerMustContain": ["preserve responsiveness over throughput"],
+      "answerMustNotContain": ["5 second batch retry window"]
+    }
+  },
+  {
+    "id": "alpha-planning-context",
+    "question": "For Alpha user-facing planning context, what scheduler constraint should I follow?",
+    "expected": {
+      "status": "answered",
+      "answerMustContain": ["interaction-design constraints"],
+      "answerMustNotContain": ["5 second batch retry window"]
+    }
+  },
+  {
+    "id": "alpha-scheduler-framing",
+    "question": "How does Alpha frame scheduler choices: interaction design or background jobs?",
+    "expected": {
+      "status": "answered",
+      "answerMustContain": ["interaction-design constraints", "not background-job tuning"],
+      "answerMustNotContain": ["5 second batch retry window"]
+    }
+  },
+  {
+    "id": "alpha-latency-and-options-consistency",
+    "question": "For Alpha Product retry scheduling, what latency budget should I use, and how should I present prioritization options?",
+    "expected": {
+      "status": "answered",
+      "answerMustContain": ["200ms p95", "stack-ranked", "capital-letter"],
+      "answerMustNotContain": ["5 second batch retry window"]
+    }
+  }
+]

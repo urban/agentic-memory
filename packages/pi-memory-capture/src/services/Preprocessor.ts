@@ -1,28 +1,26 @@
 import { shapeCapturePayload } from "@urban/agentic-memory-core/capture/PayloadShaping";
-import type {
-  AssistantMessage,
-  ImageContent,
-  TextContent,
-  ThinkingContent,
-  ToolCall,
-  UserMessage,
-} from "@earendil-works/pi-ai";
-import type { SessionEntry, SessionMessageEntry } from "@earendil-works/pi-coding-agent";
 import { Context, Effect, Layer } from "effect";
-import {
-  type CapturePayload,
-  type PayloadMessage,
-  type PayloadObservation,
-  type TriggerKind,
-} from "../schema.ts";
-import { sanitizeVisibleText } from "../text.ts";
+
+type AssistantMessage = import("@earendil-works/pi-ai").AssistantMessage;
+type ImageContent = import("@earendil-works/pi-ai").ImageContent;
+type TextContent = import("@earendil-works/pi-ai").TextContent;
+type ThinkingContent = import("@earendil-works/pi-ai").ThinkingContent;
+type ToolCall = import("@earendil-works/pi-ai").ToolCall;
+type UserMessage = import("@earendil-works/pi-ai").UserMessage;
+type SessionEntry = import("@earendil-works/pi-coding-agent").SessionEntry;
+type SessionMessageEntry = import("@earendil-works/pi-coding-agent").SessionMessageEntry;
+type CapturePayload = import("@urban/agentic-memory-core/capture/CapturePayload").CapturePayload;
+type CapturePayloadMessage =
+  import("@urban/agentic-memory-core/capture/CapturePayload").CapturePayloadMessage;
+type PayloadObservation = import("../markers/CaptureMarker.ts").PayloadObservation;
+type TriggerKind = import("../markers/CaptureMarker.ts").TriggerKind;
 
 type UserVisibleBlock = TextContent | ImageContent;
 type AssistantVisibleBlock = TextContent | ThinkingContent | ToolCall;
 
 interface ObservedPayloadMessage {
   readonly entryId: string;
-  readonly message: PayloadMessage;
+  readonly message: CapturePayloadMessage;
 }
 
 export type BuildPayloadResult =
@@ -66,16 +64,11 @@ const extractAssistantText = (message: AssistantMessage): string =>
 
 const toPayloadMessage = (entry: SessionMessageEntry): ObservedPayloadMessage | undefined => {
   if (isUserMessage(entry.message)) {
-    const sanitized = sanitizeVisibleText(extractUserText(entry.message));
-    if (sanitized.length === 0) {
-      return undefined;
-    }
-
     return {
       entryId: entry.id,
       message: {
         role: "user",
-        text: sanitized,
+        text: extractUserText(entry.message),
       },
     };
   }
@@ -84,16 +77,11 @@ const toPayloadMessage = (entry: SessionMessageEntry): ObservedPayloadMessage | 
     return undefined;
   }
 
-  const sanitized = sanitizeVisibleText(extractAssistantText(entry.message));
-  if (sanitized.length === 0) {
-    return undefined;
-  }
-
   return {
     entryId: entry.id,
     message: {
       role: "assistant",
-      text: sanitized,
+      text: extractAssistantText(entry.message),
     },
   };
 };
@@ -146,8 +134,7 @@ export class Preprocessor extends Context.Service<
           }
 
           const payload = shaped.payload;
-          const coveredMessageCount = payload.messages.length;
-          const lastObservedId = observedMessages[coveredMessageCount - 1]?.entryId;
+          const lastObservedId = observedMessages[shaped.coveredInputMessageCount - 1]?.entryId;
           if (lastObservedId === undefined) {
             return {
               _tag: "NoMessages",
@@ -181,7 +168,7 @@ export class Preprocessor extends Context.Service<
               fromEntryId: firstObservedId,
               toEntryId: lastObservedId,
               entryCount: coveredEntries.length,
-              messageCount: coveredMessageCount,
+              messageCount: payload.messages.length,
             },
             warnings: shaped.warnings,
           };

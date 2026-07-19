@@ -1,14 +1,13 @@
 import packageJson from "../package.json" with { type: "json" };
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import * as BunServices from "@effect/platform-bun/BunServices";
 import { makeCaptureObservabilityLayer } from "@urban/agentic-memory-core/observability/CaptureTelemetry";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { CaptureConfig } from "./services/CaptureConfig.ts";
-import { Git } from "./services/Git.ts";
 import { Markers } from "./services/Markers.ts";
 import { MemorySteward, MemoryStewardError, StewardExecutor } from "./services/MemorySteward.ts";
 import { Preprocessor } from "./services/Preprocessor.ts";
-import { VaultProjects } from "./services/VaultProjects.ts";
+
+type ExtensionAPI = import("@earendil-works/pi-coding-agent").ExtensionAPI;
 
 const mergeAbortSignals = (
   effectSignal: AbortSignal,
@@ -73,15 +72,13 @@ const makeStewardExecutorLayer = (pi: ExtensionAPI) =>
 
 export const makeMemoryCaptureRuntime = (pi: ExtensionAPI) => {
   const infrastructureLayer = Layer.mergeAll(BunServices.layer, makeStewardExecutorLayer(pi));
-  const captureConfigLayer = CaptureConfig.layer.pipe(Layer.provideMerge(VaultProjects.layer));
+  const captureConfigLayer = CaptureConfig.layer;
   const servicesLayer = Layer.mergeAll(
-    VaultProjects.layer,
     captureConfigLayer,
-    Git.layer,
     Markers.layer,
     Preprocessor.layer,
     MemorySteward.layer.pipe(Layer.provideMerge(captureConfigLayer)),
-  ).pipe(Layer.provide(infrastructureLayer));
+  ).pipe(Layer.provideMerge(infrastructureLayer));
   const observabilityLayer = makeCaptureObservabilityLayer({
     serviceName: "agentic-memory-pi-capture",
     serviceVersion: packageJson.version,

@@ -14,7 +14,8 @@
     "rewriteRelativeImportExtensions": true, // Rewrite `.ts` imports to `.js` at build time.
     "erasableSyntaxOnly": true, // Allows to run directly with node and type removal
     // Emit source- & declaration maps.
-    "declarationMap": true,
+    "declaration": false,
+    "declarationMap": false,
     "sourceMap": true,
     // Opt-in to stricter type checking and correctness guard rails. The more the merrier.
     // Opt-in to stricter type checking and correctness guard rails. The more the merrier.
