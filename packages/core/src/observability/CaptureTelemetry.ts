@@ -16,6 +16,20 @@ export interface CaptureObservabilityOptions {
   readonly harness?: string;
 }
 
+export interface CaptureDecisionReportInput {
+  readonly durability: string;
+  readonly selectedDestinations: ReadonlyArray<unknown>;
+  readonly skippedDestinations: ReadonlyArray<unknown>;
+  readonly decisionSummary: string;
+}
+
+export interface CaptureStewardSessionInput {
+  readonly sessionId: string;
+  readonly name: string;
+  readonly cwd: string;
+  readonly startedAt: string;
+}
+
 const defaultOtelBaseUrl = "http://127.0.0.1:27686";
 
 const trimTrailingSlashes = (value: string): string => {
@@ -104,3 +118,24 @@ export const captureCorrelationAttributes = (
     ? {}
     : { "capture.project_slug": correlation.projectSlug }),
 });
+
+export const captureDecisionReportAttributes = (
+  decisionReport: CaptureDecisionReportInput,
+): Record<string, string | number> => ({
+  "capture.decision.durability": decisionReport.durability,
+  "capture.decision.selected_count": decisionReport.selectedDestinations.length,
+  "capture.decision.skipped_count": decisionReport.skippedDestinations.length,
+  "capture.decision.summary": decisionReport.decisionSummary,
+});
+
+export const captureStewardSessionAttributes = (
+  stewardSession: CaptureStewardSessionInput | undefined,
+): Record<string, string> =>
+  stewardSession === undefined
+    ? {}
+    : {
+        "capture.steward.session_id": stewardSession.sessionId,
+        "capture.steward.session_name": stewardSession.name,
+        "capture.steward.session_cwd": stewardSession.cwd,
+        "capture.steward.session_started_at": stewardSession.startedAt,
+      };
