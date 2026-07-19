@@ -18,10 +18,10 @@ import { commandRoot } from "./root.ts";
 import {
   modelFlag,
   providerFlag,
-  runnerOptionsFromInput,
+  stewardRunOptionsFromInput,
   thinkingFlag,
   timeoutMillisFlag,
-} from "./shared.ts";
+} from "./steward-options-input.ts";
 import {
   optionalProjectFlag,
   optionalVaultFlag,
@@ -52,7 +52,7 @@ export const commandRunSteward = Command.make(
       project: input.project,
       projectRoot: input.projectRoot,
     });
-    const options = runnerOptionsFromInput({
+    const options = stewardRunOptionsFromInput({
       provider: input.provider,
       model: input.model,
       thinking: input.thinking,

@@ -119,6 +119,26 @@ describe("agentic-memory cli", () => {
     ),
   );
 
+  it.effect("rejects non-positive steward timeouts with the existing CLI validation", () =>
+    withCliRuntime(
+      runCapturedEffect([
+        "run-steward",
+        "--payload",
+        "-",
+        "--project-root",
+        ".",
+        "--timeout-ms",
+        "0",
+      ]),
+    ).pipe(
+      Effect.map((output) => {
+        assert.strictEqual(output.exitCode, 1);
+        assert.include(output.stderr, "Invalid value for flag --timeout-ms");
+        assert.include(output.stderr, "Expected: positive integer");
+      }),
+    ),
+  );
+
   it.effect("rejects linking vaults that are missing session-capture guidance", () =>
     withCliRuntime(
       Effect.scoped(
