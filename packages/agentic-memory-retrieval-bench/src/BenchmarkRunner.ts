@@ -21,7 +21,7 @@ const optionalEnvironmentVariable = Effect.fn("BenchmarkRunner.optionalEnvironme
     const value = yield* EffectConfig.string(name).pipe(EffectConfig.option);
     return Option.getOrUndefined(value);
   },
-  Effect.catch(() => Effect.sync((): string | undefined => undefined)),
+  Effect.orElseSucceed((): string | undefined => undefined),
 );
 
 const pathWithPrependedBin = (

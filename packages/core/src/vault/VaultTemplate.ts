@@ -30,7 +30,7 @@ export interface InitVaultOptions {
 const existsOrFalse = (pathValue: string) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
-    return yield* fs.exists(pathValue).pipe(Effect.catch(() => Effect.succeed(false)));
+    return yield* fs.exists(pathValue).pipe(Effect.orElseSucceed(() => false));
   });
 
 const isCompatibleVault = Effect.fnUntraced(function* (

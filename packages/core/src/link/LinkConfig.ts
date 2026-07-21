@@ -52,7 +52,7 @@ const ensureNotSymlink = Effect.fnUntraced(function* (
   label: string,
 ): Effect.fn.Return<void, LinkConfigError, FileSystem.FileSystem> {
   const fs = yield* FileSystem.FileSystem;
-  const exists = yield* fs.exists(pathValue).pipe(Effect.catch(() => Effect.succeed(false)));
+  const exists = yield* fs.exists(pathValue).pipe(Effect.orElseSucceed(() => false));
   if (!exists) {
     return;
   }
@@ -113,7 +113,7 @@ export const loadLinkConfig = Effect.fnUntraced(function* (
       message: pathSafety.message,
     });
   }
-  const exists = yield* fs.exists(paths.configFile).pipe(Effect.catch(() => Effect.succeed(false)));
+  const exists = yield* fs.exists(paths.configFile).pipe(Effect.orElseSucceed(() => false));
 
   if (!exists) {
     return LoadLinkConfigResult.cases.missing.make({ paths });

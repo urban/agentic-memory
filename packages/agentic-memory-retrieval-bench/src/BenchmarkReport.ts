@@ -21,7 +21,7 @@ export const BenchmarkRecallStatus = Schema.Literals(["answered", "not_found"]).
 export const BenchmarkCaseResult = Schema.Struct({
   id: Schema.String,
   status: BenchmarkStatus,
-  durationMs: Schema.Number,
+  durationMs: Schema.Finite,
   failedGates: Schema.Array(BenchmarkHardGateName),
   requiredFactsMissing: Schema.Array(Schema.String),
   forbiddenFactsPresent: Schema.Array(Schema.String),
@@ -30,16 +30,16 @@ export const BenchmarkCaseResult = Schema.Struct({
 }).annotate({ identifier: "BenchmarkCaseResult" });
 
 export const BenchmarkLatency = Schema.Struct({
-  p50Ms: Schema.Number,
-  p95Ms: Schema.Number,
+  p50Ms: Schema.Finite,
+  p95Ms: Schema.Finite,
 }).annotate({ identifier: "BenchmarkLatency" });
 
 export const BenchmarkSuiteResult = Schema.Struct({
   status: BenchmarkStatus,
   runner: Schema.String,
-  caseCount: Schema.Number,
-  passCount: Schema.Number,
-  failCount: Schema.Number,
+  caseCount: Schema.Finite,
+  passCount: Schema.Finite,
+  failCount: Schema.Finite,
   latency: BenchmarkLatency,
   cases: Schema.Array(BenchmarkCaseResult),
 }).annotate({ identifier: "BenchmarkSuiteResult" });

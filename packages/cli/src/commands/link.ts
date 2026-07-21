@@ -89,7 +89,7 @@ export const commandLink = Command.make(
       (previousContents === undefined
         ? fs.remove(configPath, { force: true })
         : fs.writeFileString(configPath, previousContents)
-      ).pipe(Effect.catch(() => Effect.void));
+      ).pipe(Effect.ignore);
     const finalizeLink = (configPath: string) =>
       Effect.gen(function* () {
         const createdProjectFile = yield* ensureProjectFile({

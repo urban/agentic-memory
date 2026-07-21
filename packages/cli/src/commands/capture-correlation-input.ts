@@ -29,7 +29,7 @@ const optionalEnvironmentVariable = Effect.fnUntraced(
     const value = yield* Config.string(name).pipe(Config.option);
     return Option.getOrUndefined(value);
   },
-  Effect.catch(() => Effect.sync((): string | undefined => undefined)),
+  Effect.orElseSucceed((): string | undefined => undefined),
 );
 
 const optionOrEnvironment = (

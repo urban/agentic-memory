@@ -60,7 +60,7 @@ export const resolveVaultPaths = Effect.fnUntraced(function* (input: {
 const existsOrFalse = (pathValue: string) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
-    return yield* fs.exists(pathValue).pipe(Effect.catch(() => Effect.succeed(false)));
+    return yield* fs.exists(pathValue).pipe(Effect.orElseSucceed(() => false));
   });
 
 export const checkVaultHealth = Effect.fnUntraced(function* (input: {
@@ -88,7 +88,7 @@ export const checkVaultHealth = Effect.fnUntraced(function* (input: {
     memoryFileExists && pathIsAbsolute
       ? yield* fs.readFileString(paths.memoryFile).pipe(
           Effect.map((contents) => hasProjectRouteInMemory(contents, input.projectSlug)),
-          Effect.catch(() => Effect.succeed(false)),
+          Effect.orElseSucceed(() => false),
         )
       : false;
   const healthy =

@@ -413,11 +413,7 @@ describe("agentic-memory cli", () => {
             "--yes",
             "--json",
           ]).pipe(
-            Effect.ensuring(
-              fs
-                .chmod(path.join(vaultPath, "projects"), 0o755)
-                .pipe(Effect.catch(() => Effect.void)),
-            ),
+            Effect.ensuring(fs.chmod(path.join(vaultPath, "projects"), 0o755).pipe(Effect.ignore)),
           );
           const configExists = yield* fs.exists(configPath);
 

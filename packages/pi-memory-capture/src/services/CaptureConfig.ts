@@ -25,8 +25,8 @@ export const CaptureConfigState = Schema.TaggedUnion({
 }).annotate({ identifier: "CaptureConfigState" });
 export type CaptureConfigState = typeof CaptureConfigState.Type;
 
-type ResolvedProjectConfig = typeof LinkConfig.Type;
-type LocalPaths = typeof LocalLinkPaths.Type;
+type ResolvedProjectConfig = LinkConfig;
+type LocalPaths = LocalLinkPaths;
 
 export class CaptureConfigServiceError extends Schema.TaggedErrorClass<CaptureConfigServiceError>()(
   "CaptureConfigServiceError",
@@ -59,7 +59,7 @@ const optionalEnvironmentVariable = Effect.fn("CaptureConfig.optionalEnvironment
     const value = yield* EffectConfig.string(name).pipe(EffectConfig.option);
     return Option.getOrUndefined(value);
   },
-  Effect.catch(() => Effect.sync((): string | undefined => undefined)),
+  Effect.orElseSucceed((): string | undefined => undefined),
 );
 
 export class CaptureConfig extends Context.Service<

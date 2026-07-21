@@ -46,8 +46,8 @@ export type MarkerSummary = typeof MarkerSummary.Type;
 export const PayloadObservation = Schema.Struct({
   fromEntryId: Schema.String,
   toEntryId: Schema.String,
-  entryCount: Schema.Number,
-  messageCount: Schema.Number,
+  entryCount: Schema.Finite,
+  messageCount: Schema.Finite,
 }).annotate({
   identifier: "PayloadObservation",
 });

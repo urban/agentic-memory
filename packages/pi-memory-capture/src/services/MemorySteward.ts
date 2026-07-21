@@ -129,7 +129,7 @@ export class MemorySteward extends Context.Service<
                     }),
                 ),
               ),
-              (path) => fs.remove(path, { force: true }).pipe(Effect.catch(() => Effect.void)),
+              (path) => fs.remove(path, { force: true }).pipe(Effect.ignore),
             );
             yield* fs.writeFileString(payloadPath, payloadJson).pipe(
               Effect.mapError(

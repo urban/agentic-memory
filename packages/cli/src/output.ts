@@ -56,10 +56,9 @@ const encodeFailureJson = (failure: CliCommandFailure): Effect.Effect<string> =>
   };
 
   return encodeCliFailureResultJson(result).pipe(
-    Effect.catch(() =>
-      Effect.succeed(
+    Effect.orElseSucceed(
+      () =>
         '{"status":"failed","error":{"code":"InternalCliError","message":"Failed to encode CLI error"},"warnings":[]}',
-      ),
     ),
   );
 };

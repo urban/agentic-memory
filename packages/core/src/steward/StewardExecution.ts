@@ -23,7 +23,7 @@ export type StewardRunnerName = typeof StewardRunnerName.Type;
 
 export const StewardExecutionInfo = Schema.Struct({
   runner: StewardRunnerName,
-  attempts: Schema.Number,
+  attempts: Schema.Finite,
 }).annotate({ identifier: "StewardExecutionInfo" });
 export type StewardExecutionInfo = typeof StewardExecutionInfo.Type;
 
