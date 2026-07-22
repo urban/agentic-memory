@@ -1,5 +1,7 @@
 import { Schema } from "effect";
 import { LinkConfig } from "../link/LinkConfig.ts";
+import { EMBEDDING_MODEL_ID } from "../semantic/EmbeddingModel.ts";
+import { SemanticIndexReadiness, SemanticIndexResult } from "../semantic/SemanticIndex.ts";
 import { VaultHealth } from "../vault/VaultStatus.ts";
 
 export const CliError = Schema.Struct({
@@ -22,6 +24,12 @@ export const InitCommandResult = Schema.Struct({
     createdDirectory: Schema.Boolean,
     copiedTemplate: Schema.Boolean,
     initializedGit: Schema.Boolean,
+    updatedGitIgnore: Schema.Boolean,
+  }),
+  model: Schema.Struct({
+    id: Schema.Literal(EMBEDDING_MODEL_ID),
+    status: Schema.Literal("available"),
+    installation: Schema.Literals(["downloaded", "already_available"]),
   }),
   warnings: Schema.Array(Schema.String),
 }).annotate({ identifier: "InitCommandResult" });
@@ -86,8 +94,23 @@ export const LinkCommandResultJson = Schema.fromJsonString(LinkCommandResult).an
 export const StatusCommandResultJson = Schema.fromJsonString(StatusCommandResult).annotate({
   identifier: "StatusCommandResultJson",
 });
+export const SemanticIndexResultJson = Schema.fromJsonString(SemanticIndexResult).annotate({
+  identifier: "SemanticIndexResultJson",
+});
+export const SemanticIndexReadinessJson = Schema.fromJsonString(SemanticIndexReadiness).annotate({
+  identifier: "SemanticIndexReadinessJson",
+});
 
 export const encodeCliFailureResultJson = Schema.encodeUnknownEffect(CliFailureResultJson);
 export const encodeInitCommandResultJson = Schema.encodeUnknownEffect(InitCommandResultJson);
+export const decodeInitCommandResultJson = Schema.decodeUnknownEffect(InitCommandResultJson);
 export const encodeLinkCommandResultJson = Schema.encodeUnknownEffect(LinkCommandResultJson);
 export const encodeStatusCommandResultJson = Schema.encodeUnknownEffect(StatusCommandResultJson);
+export const encodeSemanticIndexResultJson = Schema.encodeUnknownEffect(SemanticIndexResultJson);
+export const decodeSemanticIndexResultJson = Schema.decodeUnknownEffect(SemanticIndexResultJson);
+export const encodeSemanticIndexReadinessJson = Schema.encodeUnknownEffect(
+  SemanticIndexReadinessJson,
+);
+export const decodeSemanticIndexReadinessJson = Schema.decodeUnknownEffect(
+  SemanticIndexReadinessJson,
+);

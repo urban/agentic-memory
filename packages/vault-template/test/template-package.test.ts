@@ -31,6 +31,7 @@ const requiredTemplateFiles: ReadonlyArray<string> = [
   "people",
   "sources",
   "records",
+  ".gitignore",
 ];
 
 const TemplatePackageRuntime = ManagedRuntime.make(
@@ -55,6 +56,8 @@ describe("vault template package", () => {
             );
 
             assert.strictEqual(existenceChecks.filter((fileExists) => !fileExists).length, 0);
+            const gitIgnore = yield* fs.readFileString(path.join(templatePath, ".gitignore"));
+            assert.include(gitIgnore, ".agentic-memory/index/");
           }),
           context,
         ),

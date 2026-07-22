@@ -8,6 +8,6 @@
     "tsBuildInfoFile": "tsconfig.tsbuildinfo",
     "types": ["bun", "node"]
   },
-  "include": ["src/**/*", "test/**/*", "vitest.config.ts"],
+  "include": ["scripts/**/*", "src/**/*", "test/**/*", "vitest.config.ts"],
   "exclude": ["node_modules", "dist", "coverage"]
 }

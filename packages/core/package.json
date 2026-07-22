@@ -12,9 +12,14 @@
     "./link/GitExclude": "./src/link/GitExclude.ts",
     "./link/LinkConfig": "./src/link/LinkConfig.ts",
     "./link/ProjectSlug": "./src/link/ProjectSlug.ts",
+    "./semantic/EmbeddingModel": "./src/semantic/EmbeddingModel.ts",
+    "./semantic/EmbeddingModelLive": "./src/semantic/EmbeddingModelLive.ts",
+    "./semantic/SemanticIndex": "./src/semantic/SemanticIndex.ts",
     "./recall/Recall": "./src/recall/Recall.ts",
     "./vault/VaultStatus": "./src/vault/VaultStatus.ts",
     "./vault/VaultTemplate": "./src/vault/VaultTemplate.ts",
+    "./vault/VaultGitIgnore": "./src/vault/VaultGitIgnore.ts",
+    "./vault/VaultRepository": "./src/vault/VaultRepository.ts",
     "./vault/ProjectRoute": "./src/vault/ProjectRoute.ts",
     "./steward/StewardContext": "./src/steward/StewardContext.ts",
     "./steward/StewardExecution": "./src/steward/StewardExecution.ts",
@@ -27,13 +32,17 @@
   "scripts": {
     "check": "bun run lint && bun run typecheck && bun run test",
     "lint": "oxfmt && oxlint --fix",
+    "probe:semantic-stack": "bun scripts/semantic-stack-probe.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@effect/platform-bun": "4.0.0-beta.100",
+    "@libsql/client": "0.17.4",
     "@urban/agentic-memory-vault-template": "workspace:*",
-    "effect": "4.0.0-beta.100"
+    "effect": "4.0.0-beta.100",
+    "libsql": "0.5.29",
+    "node-llama-cpp": "3.19.1"
   },
   "devDependencies": {
     "@effect/tsgo": "0.6.0",

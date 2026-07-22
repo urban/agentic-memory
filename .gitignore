@@ -37,6 +37,11 @@ storybook-static
 # Repos for AI reference
 /.dotai/repos/
 
+# Ralph
+/.ralph-tm/HANDOFF.md
+/.ralph-tm/HANDOFF.md.tmp
+/.ralph-snapshot-*/
+
 .codex/
 CONTEXT.md
 TODO.md

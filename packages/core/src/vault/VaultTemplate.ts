@@ -1,6 +1,8 @@
 import { bundledVaultTemplatePath } from "@urban/agentic-memory-vault-template/VaultTemplatePackage";
-import { Effect, FileSystem, Path, Schema, Stream } from "effect";
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+import { Effect, FileSystem, Path, Schema } from "effect";
+import { EMBEDDING_MODEL_ID, EmbeddingModel } from "../semantic/EmbeddingModel.ts";
+import { VaultRepository } from "./VaultRepository.ts";
+import { inspectInitializedVaultStructure } from "./VaultStructure.ts";
 
 export class VaultTemplateError extends Schema.TaggedErrorClass<VaultTemplateError>()(
   "VaultTemplateError",
@@ -17,6 +19,12 @@ export interface InitVaultResult {
     readonly createdDirectory: boolean;
     readonly copiedTemplate: boolean;
     readonly initializedGit: boolean;
+    readonly updatedGitIgnore: boolean;
+  };
+  readonly model: {
+    readonly id: typeof EMBEDDING_MODEL_ID;
+    readonly status: "available";
+    readonly installation: "downloaded" | "already_available";
   };
   readonly warnings: ReadonlyArray<string>;
 }
@@ -27,35 +35,19 @@ export interface InitVaultOptions {
   readonly yes: boolean;
 }
 
-const existsOrFalse = (pathValue: string) =>
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    return yield* fs.exists(pathValue).pipe(Effect.orElseSucceed(() => false));
-  });
-
 const isCompatibleVault = Effect.fnUntraced(function* (
   vaultPath: string,
-): Effect.fn.Return<boolean, never, FileSystem.FileSystem | Path.Path> {
-  const path = yield* Path.Path;
-  const required = [
-    "AGENTS.md",
-    "MEMORY.md",
-    "USER.md",
-    path.join(".agentic-memory", "LLM-vault-local.md"),
-    path.join(".agentic-memory", "LLM-outside-vault.md"),
-    path.join(".agentic-memory", "adapters", "MEMORY_ADAPTER.md"),
-    path.join(".agentic-memory", "instructions", "session-capture.md"),
-    "projects",
-  ];
-
-  for (const relative of required) {
-    const exists = yield* existsOrFalse(path.join(vaultPath, relative));
-    if (!exists) {
-      return false;
-    }
-  }
-
-  return true;
+): Effect.fn.Return<boolean, VaultTemplateError, FileSystem.FileSystem | Path.Path> {
+  const structure = yield* inspectInitializedVaultStructure(vaultPath).pipe(
+    Effect.mapError(
+      (cause) =>
+        new VaultTemplateError({
+          message: `Failed to inspect existing vault structure: ${vaultPath}`,
+          cause,
+        }),
+    ),
+  );
+  return structure.initialized;
 });
 
 const isDirectoryEmpty = Effect.fnUntraced(function* (
@@ -74,83 +66,17 @@ const isDirectoryEmpty = Effect.fnUntraced(function* (
   return entries.length === 0;
 });
 
-const runGitInit = Effect.fnUntraced(function* (
-  vaultPath: string,
-): Effect.fn.Return<
-  boolean,
-  VaultTemplateError,
-  ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem
-> {
-  const fs = yield* FileSystem.FileSystem;
-  const gitDirectoryExists = yield* fs.exists(`${vaultPath}/.git`).pipe(
-    Effect.mapError(
-      (cause) =>
-        new VaultTemplateError({
-          message: `Failed to inspect git directory for vault: ${vaultPath}`,
-          cause,
-        }),
-    ),
-  );
-  if (gitDirectoryExists) {
-    return false;
-  }
-
-  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-  const command = ChildProcess.make("git", ["init"], {
-    cwd: vaultPath,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-
-  return yield* Effect.scoped(
-    Effect.gen(function* () {
-      const handle = yield* spawner.spawn(command).pipe(
-        Effect.mapError(
-          (cause) =>
-            new VaultTemplateError({
-              message: "Failed to launch git init",
-              cause,
-            }),
-        ),
-      );
-      const result = yield* Effect.all(
-        {
-          stdout: handle.stdout.pipe(Stream.decodeText(), Stream.mkString),
-          stderr: handle.stderr.pipe(Stream.decodeText(), Stream.mkString),
-          exitCode: handle.exitCode,
-        },
-        { concurrency: 3 },
-      ).pipe(
-        Effect.mapError(
-          (cause) =>
-            new VaultTemplateError({
-              message: "Failed while running git init",
-              cause,
-            }),
-        ),
-      );
-
-      if (result.exitCode !== ChildProcessSpawner.ExitCode(0)) {
-        return yield* new VaultTemplateError({
-          message: "git init failed for new Agentic Memory vault",
-          cause: result.stderr.trim(),
-        });
-      }
-
-      return true;
-    }),
-  );
-});
-
 export const initVaultFromTemplate = Effect.fnUntraced(function* (
   options: InitVaultOptions,
 ): Effect.fn.Return<
   InitVaultResult,
   VaultTemplateError,
-  ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+  EmbeddingModel | FileSystem.FileSystem | Path.Path | VaultRepository
 > {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const embeddingModel = yield* EmbeddingModel;
+  const vaultRepository = yield* VaultRepository;
   if (!path.isAbsolute(options.targetPath)) {
     return yield* new VaultTemplateError({
       message: `Vault target path must be absolute: ${options.targetPath}`,
@@ -168,15 +94,39 @@ export const initVaultFromTemplate = Effect.fnUntraced(function* (
   );
 
   if (targetExists && (yield* isCompatibleVault(options.targetPath))) {
-    const initializedGit = options.initializeGit ? yield* runGitInit(options.targetPath) : false;
+    const model = yield* embeddingModel.install.pipe(
+      Effect.mapError(
+        (cause) =>
+          new VaultTemplateError({
+            message: cause.message,
+            cause,
+          }),
+      ),
+    );
+    const repository = yield* vaultRepository
+      .setup({
+        vaultPath: options.targetPath,
+        initializeGit: options.initializeGit,
+      })
+      .pipe(
+        Effect.mapError(
+          (cause) =>
+            new VaultTemplateError({
+              message: cause.message,
+              cause,
+            }),
+        ),
+      );
     return {
       status: "already_initialized",
       vaultPath: options.targetPath,
       changes: {
         createdDirectory: false,
         copiedTemplate: false,
-        initializedGit,
+        initializedGit: repository.initializedGit,
+        updatedGitIgnore: repository.updatedGitIgnore,
       },
+      model: { id: model.id, status: "available", installation: model.status },
       warnings: [],
     };
   }
@@ -189,7 +139,19 @@ export const initVaultFromTemplate = Effect.fnUntraced(function* (
           "Target exists and is not an initialized Agentic Memory vault or empty directory; refusing to overwrite.",
       });
     }
-  } else {
+  }
+
+  const model = yield* embeddingModel.install.pipe(
+    Effect.mapError(
+      (cause) =>
+        new VaultTemplateError({
+          message: cause.message,
+          cause,
+        }),
+    ),
+  );
+
+  if (!targetExists) {
     yield* fs.makeDirectory(options.targetPath, { recursive: true }).pipe(
       Effect.mapError(
         (cause) =>
@@ -220,7 +182,20 @@ export const initVaultFromTemplate = Effect.fnUntraced(function* (
     ),
   );
 
-  const initializedGit = options.initializeGit ? yield* runGitInit(options.targetPath) : false;
+  const repository = yield* vaultRepository
+    .setup({
+      vaultPath: options.targetPath,
+      initializeGit: options.initializeGit,
+    })
+    .pipe(
+      Effect.mapError(
+        (cause) =>
+          new VaultTemplateError({
+            message: cause.message,
+            cause,
+          }),
+      ),
+    );
 
   return {
     status: "initialized",
@@ -228,8 +203,10 @@ export const initVaultFromTemplate = Effect.fnUntraced(function* (
     changes: {
       createdDirectory: !targetExists,
       copiedTemplate: true,
-      initializedGit,
+      initializedGit: repository.initializedGit,
+      updatedGitIgnore: repository.updatedGitIgnore,
     },
+    model: { id: model.id, status: "available", installation: model.status },
     warnings: [],
   };
 });

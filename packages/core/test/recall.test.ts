@@ -274,6 +274,43 @@ Alpha Product retry scheduling should use a **200ms p95 latency budget**. When p
     ),
   );
 
+  it.effect("does not validate excluded unsafe sources but validates included sources", () =>
+    withCoreRecallRuntime(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const root = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-core-recall-unsafe-source-",
+          });
+          const vaultPath = path.join(root, "vault");
+          const outsidePath = path.join(root, "outside.md");
+
+          yield* fs.makeDirectory(path.join(vaultPath, "sources"), { recursive: true });
+          yield* fs.writeFileString(path.join(vaultPath, "MEMORY.md"), "# Memory\n");
+          yield* fs.writeFileString(path.join(vaultPath, "USER.md"), "# User\n");
+          yield* fs.writeFileString(outsidePath, "# Outside\n\nUnsafe source fact.\n");
+          yield* fs.symlink(outsidePath, path.join(vaultPath, "sources", "outside.md"));
+
+          const response = yield* recall({
+            vaultPath,
+            question: "What unsafe source fact was recorded?",
+            includeSources: false,
+          });
+          assert.strictEqual(response.status, "not_found");
+
+          const error = yield* recall({
+            vaultPath,
+            question: "What unsafe source fact was recorded?",
+            includeSources: true,
+          }).pipe(Effect.flip);
+          assert.strictEqual(error.reason, "ReadVaultFailed");
+          assert.include(error.message, "sources/outside.md");
+        }),
+      ),
+    ),
+  );
+
   it.effect(
     "makes source facts eligible only when explicitly included without leaking internals",
     () =>

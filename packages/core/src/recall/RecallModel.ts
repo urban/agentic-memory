@@ -1,12 +1,4 @@
-export type RecallLayer =
-  | "core"
-  | "user"
-  | "map"
-  | "project"
-  | "note"
-  | "person"
-  | "record"
-  | "source";
+export type RecallLayer = import("../vault/ManagedMemory.ts").ManagedMemoryLayer;
 
 export type RecallDocument = {
   readonly path: string;

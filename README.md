@@ -51,10 +51,10 @@ Other patterns, such as Reflection, migration, human browsing in Obsidian, or mu
    bun install
    ```
 
-2. **Install the local CLI on your `PATH`.** The CLI package at `packages/agentic-memory-cli/` exposes the `agentic-memory` executable. Link it with Bun so every terminal example below works from any directory on this computer:
+2. **Install the local CLI on your `PATH`.** The CLI package at `packages/cli/` exposes the `agentic-memory` executable. Link it with Bun so every terminal example below works from any directory on this computer:
 
    ```sh
-   cd /absolute/path/to/agentic-memory-repo/packages/agentic-memory-cli
+   cd /absolute/path/to/agentic-memory-repo/packages/cli
    bun link
    bun link -g @urban/agentic-memory-cli
    ```
@@ -79,14 +79,14 @@ Other patterns, such as Reflection, migration, human browsing in Obsidian, or mu
    agentic-memory --help
    ```
 
-3. **Create your vault.** Use `agentic-memory` to copy the canonical vault template to a permanent local folder that you control:
+3. **Create your vault and provision the embedding model.** Use `agentic-memory` to copy the canonical vault template to a permanent local folder that you control:
 
    ```sh
    agentic-memory init /absolute/path/to/agentic-memory-vault --git --yes
    cd /absolute/path/to/agentic-memory-vault
    ```
 
-   Git is optional, but recommended because agents will update plain Markdown and you can review every memory change as a diff. The raw template lives at `packages/agentic-memory-vault-template/template/` for manual inspection or copying.
+   `init` also ensures the approved embedding model is available in the shared local cache. The first run downloads about 334 MB when the model is absent and reports progress on stderr; later runs reuse it across vaults. Git is optional, but recommended because agents will update plain Markdown and you can review every memory change as a diff. The raw template lives at `packages/vault-template/template/` for manual inspection or copying.
 
 4. **Add the first routing memory.** Open `MEMORY.md` and add only the top-level context future agents should see early: active projects, major domains, and links to maps or project files you expect to create. Keep this file small.
 
@@ -103,11 +103,26 @@ Other patterns, such as Reflection, migration, human browsing in Obsidian, or mu
 
      This writes `.agentic-memory-link/config.json` using the `projectSlug` contract, ensures the target project file exists in the vault, ensures `MEMORY.md` routes to it, and validates the link health.
 
-7. **Start using the vault with an agent.** Pick one of the two supported entry points:
+7. **Build and inspect the local semantic index.** Indexing is explicit; `init` and `recall` do not index managed Markdown automatically:
+
+   ```sh
+   agentic-memory index --vault /absolute/path/to/agentic-memory-vault
+   agentic-memory status --vault /absolute/path/to/agentic-memory-vault
+   ```
+
+   A current index reports `Agentic Memory vault status: ready` and `Recall ready: yes`. Add `--json` to `status` for the typed readiness report. Run `index` again after changing managed memory; unchanged files are skipped. To safely remove all per-vault derivative index state while preserving Markdown and the shared model, run:
+
+   ```sh
+   agentic-memory index --vault /absolute/path/to/agentic-memory-vault --delete
+   ```
+
+   Rebuild with the explicit delete command followed by `index`. This is also the recovery sequence when status reports an incompatible or invalid index.
+
+8. **Start using the vault with an agent.** Pick one of the two supported entry points:
    - **Vault-local use:** start your coding harness with the vault as the current working directory. The harness should read the root `AGENTS.md`, which routes it into `.agentic-memory/LLM-vault-local.md` and then to the right memory files.
    - **Outside-vault use:** install the adapter route above when you want startup-time durable memory routing outside the vault. Use the project-local link route above when a concrete external project should persist into one specific vault project and tooling such as Pi capture should manage that link.
 
-8. **Optional: add the Pi capture extension to an external project.** From this repository root:
+9. **Optional: add the Pi capture extension to an external project.** From this repository root:
 
    ```sh
    pi install /absolute/path/to/agentic-memory-repo/packages/pi-memory-capture
@@ -128,7 +143,15 @@ Other patterns, such as Reflection, migration, human browsing in Obsidian, or mu
 
    `[[projects/example-project]]` is still accepted by `/memory-capture-init`, but the canonical `0.4.0` identifier is the bare slug `example-project`. The extension uses the same `.agentic-memory-link/config.json` contract as `agentic-memory link` and sends capture runs through `agentic-memory run-steward`.
 
-9. **Let memory grow through use.** During work, ask the agent to create or update maps, projects, notes, people, sources, and records only when the information is durable enough to help future sessions. Review the Markdown changes, commit useful memory, and prune or revise anything that should not persist.
+10. **Let memory grow through use.** During work, ask the agent to create or update maps, projects, notes, people, sources, and records only when the information is durable enough to help future sessions. Review the Markdown changes, commit useful memory, and prune or revise anything that should not persist.
+
+## Semantic index operating notes
+
+- Markdown remains the source of truth. The per-vault `.agentic-memory/index/` database is generated, disposable, and Git-ignored; the shared model is outside the vault, so neither artifact should appear in vault Git status.
+- The model cache is `$XDG_CACHE_HOME/agentic-memory/models/` when `XDG_CACHE_HOME` is an absolute path, otherwise `~/.cache/agentic-memory/models/`. The approved `embeddinggemma-300M-Q8_0.gguf` artifact is 333,590,944 bytes (about 334 MB decimal).
+- `init` is the only semantic-index command that may use the network. `index` and `status --vault` resolve existing local state only; offline initialization succeeds only when the model is already cached.
+- The verified initial native target is Apple silicon macOS (`darwin-arm64`, Metal). Other operating-system and architecture combinations are not yet verified as supported targets. See [semantic stack compatibility](docs/semantic-stack-compatibility.md) for pinned native packages and probe evidence.
+- Human-readable results and JSON results go to stdout. Model download progress and operational failures go to stderr, so `--json` stdout remains one machine-readable document.
 
 The template package is intentionally clean: its content folders start empty and `USER.md` is only a scaffold, so a new vault does not inherit example memory. For a concrete reference graph, inspect `examples/basic/`. The example intentionally omits `.agentic-memory/`; pair it with the template control plane if you want to operate it as a full vault.
 
@@ -139,7 +162,7 @@ docs/                                      # human-facing guides and reference d
 examples/basic/                            # small example memory graph
 skills/reflection/                         # companion skill dispatcher for Reflection
 migrations/                                # versioned migration guides and migration skills
-packages/agentic-memory-vault-template/    # canonical clean copyable Agentic Memory vault
+packages/vault-template/                   # canonical clean copyable Agentic Memory vault
 ```
 
 ## Guides

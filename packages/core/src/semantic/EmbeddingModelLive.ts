@@ -1,0 +1,305 @@
+import { createHash } from "node:crypto";
+import { homedir } from "node:os";
+import { Config, Console, Effect, FileSystem, Layer, Option, Path, Stream } from "effect";
+import { getLlama, resolveModelFile } from "node-llama-cpp";
+import {
+  EMBEDDING_MODEL_DIMENSIONS,
+  EMBEDDING_MODEL_FILE_NAME,
+  EMBEDDING_MODEL_ID,
+  EMBEDDING_MODEL_SHA256,
+  EMBEDDING_MODEL_URI,
+  EmbeddingModel,
+  EmbeddingModelDownloadError,
+  EmbeddingModelMissingError,
+  EmbeddingRuntimeError,
+  InvalidEmbeddingArtifactError,
+  makeEmbeddingModel,
+} from "./EmbeddingModel.ts";
+
+export interface EmbeddingModelFileResolverOptions {
+  readonly directory: string;
+  readonly fileName: string;
+  readonly cli: false;
+  readonly deleteTempFileOnCancel: true;
+  readonly onProgress: (progress: {
+    readonly downloadedSize: number;
+    readonly totalSize: number;
+  }) => void;
+}
+
+export interface EmbeddingRuntimeContext {
+  readonly getEmbeddingFor: (text: string) => Promise<{ readonly vector: ReadonlyArray<number> }>;
+  readonly dispose: () => Promise<void>;
+}
+
+export interface EmbeddingRuntimeModel {
+  readonly embeddingVectorSize: number;
+  readonly createEmbeddingContext: (options: {
+    readonly contextSize: number;
+  }) => Promise<EmbeddingRuntimeContext>;
+  readonly dispose: () => Promise<void>;
+}
+
+export interface EmbeddingRuntime {
+  readonly loadModel: (options: { readonly modelPath: string }) => Promise<EmbeddingRuntimeModel>;
+  readonly dispose: () => Promise<void>;
+}
+
+export interface EmbeddingModelLiveOptions {
+  readonly resolveModelFile: (
+    uri: string,
+    options: EmbeddingModelFileResolverOptions,
+  ) => Effect.Effect<string, EmbeddingModelDownloadError>;
+  readonly initializeRuntime?: () => Promise<EmbeddingRuntime>;
+  readonly homeDirectory?: string;
+  readonly artifactSha256?: string;
+}
+
+const resolveCacheDirectory = Effect.fnUntraced(function* (homeDirectory: string) {
+  const path = yield* Path.Path;
+  const configured = yield* Config.string("XDG_CACHE_HOME").pipe(
+    Config.option,
+    Effect.orElseSucceed(() => Option.none<string>()),
+  );
+  const configuredPath = Option.getOrUndefined(configured);
+  const cacheRoot =
+    configuredPath !== undefined && path.isAbsolute(configuredPath)
+      ? configuredPath
+      : path.join(homeDirectory, ".cache");
+  return path.join(cacheRoot, "agentic-memory", "models");
+});
+
+const modelOperation = <A>(message: string, operation: () => Promise<A>) =>
+  Effect.tryPromise({
+    try: operation,
+    catch: (cause) => new EmbeddingRuntimeError({ message, cause }),
+  });
+
+const nativeModelFileResolver: EmbeddingModelLiveOptions["resolveModelFile"] = (uri, options) =>
+  Effect.callback<string, EmbeddingModelDownloadError>((resume, signal) => {
+    const resolution = Promise.resolve().then(() =>
+      resolveModelFile(uri, {
+        ...options,
+        signal,
+      }),
+    );
+    resolution.then(
+      (resolvedPath) => resume(Effect.succeed(resolvedPath)),
+      (cause) =>
+        resume(
+          Effect.fail(
+            new EmbeddingModelDownloadError({
+              message: `Failed to download ${EMBEDDING_MODEL_ID}`,
+              cause,
+            }),
+          ),
+        ),
+    );
+    return Effect.promise(() =>
+      resolution.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
+  });
+
+const make = (options: Required<EmbeddingModelLiveOptions>) =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const output = yield* Console.Console;
+    const modelDirectory = yield* resolveCacheDirectory(options.homeDirectory);
+    const artifactPath = path.join(modelDirectory, EMBEDDING_MODEL_FILE_NAME);
+
+    const validateArtifact = Effect.fnUntraced(function* (candidatePath: string) {
+      const digest = createHash("sha256");
+      const magicBytes = new Uint8Array(4);
+      let magicLength = 0;
+
+      yield* fs.stream(candidatePath).pipe(
+        Stream.runForEach((chunk) =>
+          Effect.sync(() => {
+            digest.update(chunk);
+            const copiedBytes = Math.min(4 - magicLength, chunk.length);
+            magicBytes.set(chunk.subarray(0, copiedBytes), magicLength);
+            magicLength += copiedBytes;
+          }),
+        ),
+        Effect.mapError(
+          (cause) =>
+            new InvalidEmbeddingArtifactError({
+              message: "Failed to inspect the embedding model artifact",
+              cause,
+            }),
+        ),
+      );
+
+      const magic = String.fromCharCode(...magicBytes);
+      if (magic !== "GGUF") {
+        return yield* new InvalidEmbeddingArtifactError({
+          message: `Embedding model artifact has invalid GGUF magic: ${magic}`,
+        });
+      }
+      const sha256 = digest.digest("hex");
+      if (sha256 !== options.artifactSha256) {
+        return yield* new InvalidEmbeddingArtifactError({
+          message: `Embedding model artifact checksum does not match ${options.artifactSha256}`,
+        });
+      }
+    });
+
+    const inspect = Effect.fnUntraced(function* () {
+      const exists = yield* fs.exists(artifactPath).pipe(
+        Effect.mapError(
+          (cause) =>
+            new EmbeddingModelDownloadError({
+              message: "Failed to inspect the shared embedding model cache",
+              cause,
+            }),
+        ),
+      );
+      if (!exists) {
+        const missing: import("./EmbeddingModel.ts").EmbeddingModelInspection = {
+          status: "missing",
+          id: EMBEDDING_MODEL_ID,
+        };
+        return missing;
+      }
+      yield* validateArtifact(artifactPath);
+      const available: import("./EmbeddingModel.ts").EmbeddingModelInspection = {
+        status: "available",
+        id: EMBEDDING_MODEL_ID,
+      };
+      return available;
+    });
+
+    const install = Effect.fnUntraced(function* () {
+      const current = yield* inspect();
+      if (current.status === "available") {
+        const alreadyAvailable: import("./EmbeddingModel.ts").EmbeddingModelInstallResult = {
+          status: "already_available",
+          id: EMBEDDING_MODEL_ID,
+        };
+        return alreadyAvailable;
+      }
+
+      yield* fs.makeDirectory(modelDirectory, { recursive: true }).pipe(
+        Effect.mapError(
+          (cause) =>
+            new EmbeddingModelDownloadError({
+              message: "Failed to create the shared embedding model cache",
+              cause,
+            }),
+        ),
+      );
+
+      return yield* Effect.scoped(
+        Effect.gen(function* () {
+          const stagingDirectory = yield* fs
+            .makeTempDirectoryScoped({
+              directory: modelDirectory,
+              prefix: ".embeddinggemma-download-",
+            })
+            .pipe(
+              Effect.mapError(
+                (cause) =>
+                  new EmbeddingModelDownloadError({
+                    message: "Failed to create model download staging storage",
+                    cause,
+                  }),
+              ),
+            );
+          let lastReportedPercent = -10;
+          const stagedPath = yield* options.resolveModelFile(EMBEDDING_MODEL_URI, {
+            directory: stagingDirectory,
+            fileName: EMBEDDING_MODEL_FILE_NAME,
+            cli: false,
+            deleteTempFileOnCancel: true,
+            onProgress: ({ downloadedSize, totalSize }) => {
+              const percent = totalSize === 0 ? 0 : Math.floor((downloadedSize / totalSize) * 100);
+              if (percent >= lastReportedPercent + 10 || percent === 100) {
+                lastReportedPercent = percent;
+                output.error(`Embedding model download: ${percent}%`);
+              }
+            },
+          });
+          yield* validateArtifact(stagedPath);
+          yield* fs.rename(stagedPath, artifactPath).pipe(
+            Effect.mapError(
+              (cause) =>
+                new EmbeddingModelDownloadError({
+                  message: "Failed to publish the validated embedding model artifact",
+                  cause,
+                }),
+            ),
+          );
+          const downloaded: import("./EmbeddingModel.ts").EmbeddingModelInstallResult = {
+            status: "downloaded",
+            id: EMBEDDING_MODEL_ID,
+          };
+          return downloaded;
+        }),
+      );
+    });
+
+    const embed = Effect.fnUntraced(function* (texts: ReadonlyArray<string>) {
+      if (texts.length === 0) {
+        return [];
+      }
+      const inspection = yield* inspect();
+      if (inspection.status === "missing") {
+        return yield* new EmbeddingModelMissingError({
+          message: `Embedding model ${EMBEDDING_MODEL_ID} is not installed`,
+        });
+      }
+
+      return yield* Effect.scoped(
+        Effect.gen(function* () {
+          const llama = yield* Effect.acquireRelease(
+            modelOperation("Failed to initialize the embedding runtime", options.initializeRuntime),
+            (resource) => Effect.promise(() => resource.dispose()),
+          );
+          const model = yield* Effect.acquireRelease(
+            modelOperation("Failed to load the embedding model", () =>
+              llama.loadModel({ modelPath: artifactPath }),
+            ),
+            (resource) => Effect.promise(() => resource.dispose()),
+          );
+          if (model.embeddingVectorSize !== EMBEDDING_MODEL_DIMENSIONS) {
+            return yield* new EmbeddingRuntimeError({
+              message: `Embedding model dimension ${model.embeddingVectorSize} does not match ${EMBEDDING_MODEL_DIMENSIONS}`,
+            });
+          }
+          const context = yield* Effect.acquireRelease(
+            modelOperation("Failed to create the embedding context", () =>
+              model.createEmbeddingContext({ contextSize: 2048 }),
+            ),
+            (resource) => Effect.promise(() => resource.dispose()),
+          );
+          const embeddings = yield* Effect.forEach(texts, (text) =>
+            modelOperation("Failed to generate an embedding", () => context.getEmbeddingFor(text)),
+          );
+          return embeddings.map((embedding) => embedding.vector);
+        }),
+      );
+    });
+
+    return makeEmbeddingModel({ inspect: inspect(), install: install(), embed });
+  });
+
+export const makeEmbeddingModelLive = (
+  options: EmbeddingModelLiveOptions,
+): Layer.Layer<EmbeddingModel, never, FileSystem.FileSystem | Path.Path> =>
+  Layer.effect(
+    EmbeddingModel,
+    make({
+      resolveModelFile: options.resolveModelFile,
+      initializeRuntime: options.initializeRuntime ?? getLlama,
+      homeDirectory: options.homeDirectory ?? homedir(),
+      artifactSha256: options.artifactSha256 ?? EMBEDDING_MODEL_SHA256,
+    }),
+  );
+
+export const EmbeddingModelLive = makeEmbeddingModelLive({
+  resolveModelFile: nativeModelFileResolver,
+});

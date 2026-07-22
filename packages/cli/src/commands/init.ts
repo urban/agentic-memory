@@ -37,20 +37,32 @@ export const commandInit = Command.make(
       ),
     );
 
+    const vaultMessage =
+      result.status === "initialized"
+        ? `Initialized Agentic Memory vault at ${result.vaultPath}`
+        : `Agentic Memory vault already initialized at ${result.vaultPath}`;
+    const modelMessage =
+      result.model.installation === "downloaded"
+        ? `Downloaded embedding model ${result.model.id}`
+        : `Embedding model ${result.model.id} was already available`;
+    const ignoreMessage = result.changes.updatedGitIgnore
+      ? "Added .agentic-memory/index/ to the vault .gitignore"
+      : "The vault .gitignore already ignores .agentic-memory/index/";
+
     return yield* Console.log(
-      root.json
-        ? jsonText
-        : result.status === "initialized"
-          ? `Initialized Agentic Memory vault at ${result.vaultPath}`
-          : `Agentic Memory vault already initialized at ${result.vaultPath}`,
+      root.json ? jsonText : `${vaultMessage}\n${modelMessage}\n${ignoreMessage}`,
     );
   }, withCliFailureOutput),
 ).pipe(
-  Command.withDescription("Initialize an Agentic Memory vault from the bundled template"),
+  Command.withDescription("Initialize a vault and ensure its shared embedding model is installed"),
   Command.withExamples([
     {
-      command: "agentic-memory init /absolute/path/to/vault --git --yes --json",
-      description: "Create a vault and print the result as JSON",
+      command: "agentic-memory init /absolute/path/to/vault --git --yes",
+      description: "Create a vault and download the shared model when it is absent",
+    },
+    {
+      command: "agentic-memory init /absolute/path/to/vault --yes --json",
+      description: "Ensure an initialized vault and model are available, then print JSON",
     },
   ]),
 );
