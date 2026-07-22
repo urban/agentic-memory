@@ -17,6 +17,7 @@ import {
 } from "../src/semantic/EmbeddingModel.ts";
 import { makeEmbeddingModelLive } from "../src/semantic/EmbeddingModelLive.ts";
 import { initVaultFromTemplate } from "../src/vault/VaultTemplate.ts";
+import { VaultRepository, VaultRepositoryLive } from "../src/vault/VaultRepository.ts";
 
 type EmbeddingModelLiveOptions =
   import("../src/semantic/EmbeddingModelLive.ts").EmbeddingModelLiveOptions;
@@ -30,13 +31,20 @@ type ModelProvisioningRequirements =
   | import("effect").FileSystem.FileSystem
   | import("effect").Path.Path
   | import("effect/unstable/process").ChildProcessSpawner.ChildProcessSpawner;
+type VaultInitializationRequirements = ModelProvisioningRequirements | VaultRepository;
 type BunRequirements = Exclude<ModelProvisioningRequirements, EmbeddingModel>;
 
 const withModel = <A, E, R>(
-  effect: Effect.Effect<A, E, R | ModelProvisioningRequirements>,
+  effect: Effect.Effect<A, E, R | VaultInitializationRequirements>,
   modelLayer: Layer.Layer<EmbeddingModel>,
 ) => {
-  const runtime = ManagedRuntime.make(Layer.merge(BunServices.layer, modelLayer));
+  const runtime = ManagedRuntime.make(
+    Layer.mergeAll(
+      BunServices.layer,
+      modelLayer,
+      VaultRepositoryLive.pipe(Layer.provide(BunServices.layer)),
+    ),
+  );
   return runtime.contextEffect.pipe(
     Effect.flatMap((context) => Effect.provideContext(effect, context)),
     Effect.ensuring(runtime.disposeEffect),
@@ -87,14 +95,17 @@ const makeArtifactResolver = (
   });
 
 const provideLiveModel = <A, E, R>(
-  effect: Effect.Effect<A, E, R | ModelProvisioningRequirements>,
+  effect: Effect.Effect<A, E, R | VaultInitializationRequirements>,
   options: EmbeddingModelLiveOptions,
   env: Readonly<Record<string, string>>,
 ) => {
   const runtime = ManagedRuntime.make(
-    makeEmbeddingModelLive(options).pipe(
-      Layer.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env }))),
-      Layer.provideMerge(BunServices.layer),
+    Layer.merge(
+      makeEmbeddingModelLive(options).pipe(
+        Layer.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env }))),
+        Layer.provideMerge(BunServices.layer),
+      ),
+      VaultRepositoryLive.pipe(Layer.provide(BunServices.layer)),
     ),
   );
   return runtime.contextEffect.pipe(

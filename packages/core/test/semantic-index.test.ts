@@ -45,6 +45,7 @@ import {
   readManagedMemoryDocuments,
 } from "../src/vault/ManagedMemory.ts";
 import { initVaultFromTemplate } from "../src/vault/VaultTemplate.ts";
+import { VaultRepository, VaultRepositoryLive } from "../src/vault/VaultRepository.ts";
 
 interface FakeModelControl {
   calls: number;
@@ -125,10 +126,14 @@ const makeControlledModelLayer = (control: FakeModelControl): Layer.Layer<Embedd
 
 const withServices = <A, E, R>(
   control: FakeModelControl,
-  effect: Effect.Effect<A, E, R | EmbeddingModel | BunServices.BunServices>,
+  effect: Effect.Effect<A, E, R | EmbeddingModel | BunServices.BunServices | VaultRepository>,
 ) => {
   const runtime = ManagedRuntime.make(
-    Layer.merge(BunServices.layer, makeControlledModelLayer(control)),
+    Layer.mergeAll(
+      BunServices.layer,
+      makeControlledModelLayer(control),
+      VaultRepositoryLive.pipe(Layer.provide(BunServices.layer)),
+    ),
   );
   return runtime.contextEffect.pipe(
     Effect.flatMap((context) => Effect.provideContext(effect, context)),
@@ -1203,7 +1208,13 @@ describe("semantic index workflow with native libSQL", () => {
           },
         }),
       );
-      const runtime = ManagedRuntime.make(Layer.merge(BunServices.layer, interruptingModel));
+      const runtime = ManagedRuntime.make(
+        Layer.mergeAll(
+          BunServices.layer,
+          interruptingModel,
+          VaultRepositoryLive.pipe(Layer.provide(BunServices.layer)),
+        ),
+      );
       const test = Effect.scoped(
         Effect.gen(function* () {
           const fs = yield* FileSystem.FileSystem;

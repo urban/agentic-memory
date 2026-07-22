@@ -19,6 +19,7 @@
     "./vault/VaultStatus": "./src/vault/VaultStatus.ts",
     "./vault/VaultTemplate": "./src/vault/VaultTemplate.ts",
     "./vault/VaultGitIgnore": "./src/vault/VaultGitIgnore.ts",
+    "./vault/VaultRepository": "./src/vault/VaultRepository.ts",
     "./vault/ProjectRoute": "./src/vault/ProjectRoute.ts",
     "./steward/StewardContext": "./src/steward/StewardContext.ts",
     "./steward/StewardExecution": "./src/steward/StewardExecution.ts",

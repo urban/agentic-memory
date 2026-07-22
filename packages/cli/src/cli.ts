@@ -4,6 +4,10 @@ import { makeCaptureObservabilityLayer } from "@urban/agentic-memory-core/observ
 import { EmbeddingModel } from "@urban/agentic-memory-core/semantic/EmbeddingModel";
 import { EmbeddingModelLive } from "@urban/agentic-memory-core/semantic/EmbeddingModelLive";
 import { PiProcessRunnerLayer } from "@urban/agentic-memory-core/steward/PiProcessRunner";
+import {
+  VaultRepository,
+  VaultRepositoryLive,
+} from "@urban/agentic-memory-core/vault/VaultRepository";
 import { Layer } from "effect";
 import { Command } from "effect/unstable/cli";
 import { commandInit } from "./commands/init.ts";
@@ -19,7 +23,7 @@ export const cliVersion = packageJson.version;
 
 type StewardRunner = import("@urban/agentic-memory-core/steward/StewardExecution").StewardRunner;
 
-export type CliRequirements = BunServices.BunServices | StewardRunner;
+export type CliRequirements = BunServices.BunServices | StewardRunner | VaultRepository;
 
 const observabilityLayer = makeCaptureObservabilityLayer({
   serviceName: "agentic-memory-cli",
@@ -27,9 +31,10 @@ const observabilityLayer = makeCaptureObservabilityLayer({
   component: "cli",
 });
 
-const baseAppLayer: Layer.Layer<CliRequirements> = Layer.merge(
+const baseAppLayer: Layer.Layer<CliRequirements> = Layer.mergeAll(
   PiProcessRunnerLayer.pipe(Layer.provideMerge(BunServices.layer)),
   observabilityLayer,
+  VaultRepositoryLive.pipe(Layer.provide(BunServices.layer)),
 );
 
 export const makeAppLayer = (

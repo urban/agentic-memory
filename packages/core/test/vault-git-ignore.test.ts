@@ -10,10 +10,17 @@ import {
 } from "../src/vault/VaultGitIgnore.ts";
 import { makeFakeEmbeddingModelLayer } from "../src/semantic/EmbeddingModel.ts";
 import { initVaultFromTemplate, VaultTemplateError } from "../src/vault/VaultTemplate.ts";
+import { VaultRepository, VaultRepositoryLive } from "../src/vault/VaultRepository.ts";
 
 const VaultGitIgnoreRuntime = ManagedRuntime.make(
-  BunServices.layer.pipe(Layer.merge(makeFakeEmbeddingModelLayer())),
+  Layer.mergeAll(
+    BunServices.layer,
+    makeFakeEmbeddingModelLayer(),
+    VaultRepositoryLive.pipe(Layer.provide(BunServices.layer)),
+  ),
 );
+
+afterAll(() => VaultGitIgnoreRuntime.dispose());
 
 const runGit = Effect.fnUntraced(function* (
   repositoryPath: string,
@@ -46,8 +53,6 @@ const assertGitIgnored = (repositoryPath: string, relativePath: string) =>
   });
 
 describe("vault Git-ignore policy", () => {
-  afterAll(() => VaultGitIgnoreRuntime.dispose());
-
   it.effect("rejects a symlink without mutating its external target during repair or init", () =>
     VaultGitIgnoreRuntime.contextEffect.pipe(
       Effect.flatMap((context) =>
@@ -169,6 +174,40 @@ describe("vault Git-ignore policy", () => {
               );
               assert.strictEqual(repaired.slice(0, existing.length), existing);
               yield* assertGitIgnored(vaultPath, ignoredFile);
+            }),
+          ),
+          context,
+        ),
+      ),
+    ),
+  );
+});
+
+describe("vault repository setup", () => {
+  it.effect("initializes Git and updates its ignore policy idempotently", () =>
+    VaultGitIgnoreRuntime.contextEffect.pipe(
+      Effect.flatMap((context) =>
+        Effect.provideContext(
+          Effect.scoped(
+            Effect.gen(function* () {
+              const fs = yield* FileSystem.FileSystem;
+              const repository = yield* VaultRepository;
+              const vaultPath = yield* fs.makeTempDirectoryScoped({
+                prefix: "agentic-memory-vault-repository-",
+              });
+
+              const first = yield* repository.setup({ vaultPath, initializeGit: true });
+              const second = yield* repository.setup({ vaultPath, initializeGit: true });
+
+              assert.deepStrictEqual(first, {
+                initializedGit: true,
+                updatedGitIgnore: true,
+              });
+              assert.deepStrictEqual(second, {
+                initializedGit: false,
+                updatedGitIgnore: false,
+              });
+              assert.isTrue(yield* fs.exists(`${vaultPath}/.git`));
             }),
           ),
           context,
