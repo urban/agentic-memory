@@ -1,5 +1,6 @@
 import { decodeRecallSuccessJson } from "@urban/agentic-memory-core/recall/Recall";
 import { decodeInitCommandResultJson } from "@urban/agentic-memory-core/cli/CliResults";
+import { decodeSemanticIndexResultJson } from "@urban/agentic-memory-core/cli/CliResults";
 import { makeFakeEmbeddingModelLayer } from "@urban/agentic-memory-core/semantic/EmbeddingModel";
 import { assert, describe, it } from "@effect/vitest";
 import { Cause, Console, Effect, Exit, FileSystem, ManagedRuntime, Path, Runtime } from "effect";
@@ -339,6 +340,37 @@ describe("agentic-memory cli", () => {
         assert.include(output.stdout, ".agentic-memory/index/");
         assert.strictEqual(output.stderr, "");
       }),
+    ),
+  );
+
+  it.effect("indexes a fixture vault through a typed CLI result", () =>
+    withCliRuntime(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const vaultPath = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-index-cli-",
+          });
+          yield* fs.makeDirectory(path.join(vaultPath, ".agentic-memory"), { recursive: true });
+          yield* fs.makeDirectory(path.join(vaultPath, "notes"), { recursive: true });
+          yield* fs.writeFileString(path.join(vaultPath, "MEMORY.md"), "# Memory\n\nRoot.\n");
+          yield* fs.writeFileString(path.join(vaultPath, "USER.md"), "# User\n\nOwner.\n");
+          yield* fs.writeFileString(
+            path.join(vaultPath, "notes", "fact.md"),
+            "# Fact\n\nA durable fact.\n",
+          );
+
+          const indexedOutput = yield* runCapturedEffect(["index", "--vault", vaultPath, "--json"]);
+          const indexed = yield* decodeSemanticIndexResultJson(indexedOutput.stdout);
+          assert.strictEqual(indexedOutput.exitCode, 0);
+          assert.strictEqual(indexed.status, "indexed");
+          assert.strictEqual(indexed.files.new, 3);
+          assert.strictEqual(indexedOutput.stderr, "");
+
+          assert.isTrue(yield* fs.exists(path.join(vaultPath, "MEMORY.md")));
+        }),
+      ),
     ),
   );
 

@@ -1,6 +1,7 @@
 import { Schema } from "effect";
 import { LinkConfig } from "../link/LinkConfig.ts";
 import { EMBEDDING_MODEL_ID } from "../semantic/EmbeddingModel.ts";
+import { SemanticIndexResult } from "../semantic/SemanticIndex.ts";
 import { VaultHealth } from "../vault/VaultStatus.ts";
 
 export const CliError = Schema.Struct({
@@ -93,9 +94,14 @@ export const LinkCommandResultJson = Schema.fromJsonString(LinkCommandResult).an
 export const StatusCommandResultJson = Schema.fromJsonString(StatusCommandResult).annotate({
   identifier: "StatusCommandResultJson",
 });
+export const SemanticIndexResultJson = Schema.fromJsonString(SemanticIndexResult).annotate({
+  identifier: "SemanticIndexResultJson",
+});
 
 export const encodeCliFailureResultJson = Schema.encodeUnknownEffect(CliFailureResultJson);
 export const encodeInitCommandResultJson = Schema.encodeUnknownEffect(InitCommandResultJson);
 export const decodeInitCommandResultJson = Schema.decodeUnknownEffect(InitCommandResultJson);
 export const encodeLinkCommandResultJson = Schema.encodeUnknownEffect(LinkCommandResultJson);
 export const encodeStatusCommandResultJson = Schema.encodeUnknownEffect(StatusCommandResultJson);
+export const encodeSemanticIndexResultJson = Schema.encodeUnknownEffect(SemanticIndexResultJson);
+export const decodeSemanticIndexResultJson = Schema.decodeUnknownEffect(SemanticIndexResultJson);

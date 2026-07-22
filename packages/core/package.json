@@ -14,6 +14,7 @@
     "./link/ProjectSlug": "./src/link/ProjectSlug.ts",
     "./semantic/EmbeddingModel": "./src/semantic/EmbeddingModel.ts",
     "./semantic/EmbeddingModelLive": "./src/semantic/EmbeddingModelLive.ts",
+    "./semantic/SemanticIndex": "./src/semantic/SemanticIndex.ts",
     "./recall/Recall": "./src/recall/Recall.ts",
     "./vault/VaultStatus": "./src/vault/VaultStatus.ts",
     "./vault/VaultTemplate": "./src/vault/VaultTemplate.ts",

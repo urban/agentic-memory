@@ -7,6 +7,7 @@ import { PiProcessRunnerLayer } from "@urban/agentic-memory-core/steward/PiProce
 import { Layer } from "effect";
 import { Command } from "effect/unstable/cli";
 import { commandInit } from "./commands/init.ts";
+import { commandIndex } from "./commands/index.ts";
 import { commandLink } from "./commands/link.ts";
 import { commandRecall } from "./commands/recall.ts";
 import { commandRoot } from "./commands/root.ts";
@@ -42,6 +43,7 @@ export const appLayer: Layer.Layer<CliRequirements | EmbeddingModel> =
 export const agenticMemoryCommand = commandRoot.pipe(
   Command.withSubcommands([
     commandInit,
+    commandIndex,
     commandLink,
     commandRecall,
     commandStatus,
