@@ -105,8 +105,8 @@ Other patterns, such as Reflection, migration, human browsing in Obsidian, or mu
    - **Project-local link route:** from an external project, create a local link to one vault project with:
 
      ```sh
-     agentic-memory link --vault /absolute/path/to/agentic-memory-vault --project example-project --project-root /absolute/path/to/project --yes
-     agentic-memory status --project-root /absolute/path/to/project --json
+     agentic-memory -C /absolute/path/to/project link --vault ../agentic-memory-vault --project example-project --yes
+     agentic-memory -C /absolute/path/to/project status --json
      ```
 
      This writes `.agentic-memory-link/config.json` using the `projectSlug` contract, ensures the target project file exists in the vault, ensures `MEMORY.md` routes to it, and validates the link health.

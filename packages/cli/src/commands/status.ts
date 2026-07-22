@@ -9,19 +9,16 @@ import { Console, Effect, FileSystem, Option, Path } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import { toFailure, withCliFailureOutput } from "../output.ts";
 import { resolvePathInput } from "./path-input.ts";
+import {
+  compatibilityProjectRootFlag,
+  resolveCompatibilityProjectRoot,
+} from "./project-root-input.ts";
 import { commandRoot } from "./root.ts";
 
 type AbsolutePath = import("@urban/agentic-memory-core/link/LinkConfig").AbsolutePath;
 type SemanticIndexReadiness =
   import("@urban/agentic-memory-core/semantic/SemanticIndex").SemanticIndexReadiness;
 type StatusResult = import("@urban/agentic-memory-core/cli/CliResults").StatusCommandResult;
-
-const projectRootFlag = Flag.string("project-root").pipe(
-  Flag.withDescription(
-    "Deprecated project root containing .agentic-memory-link/config.json; use -C instead",
-  ),
-  Flag.optional,
-);
 
 const inspectReadiness = (vaultPath: AbsolutePath) =>
   inspectSemanticIndex(vaultPath).pipe(
@@ -166,7 +163,7 @@ const formatHuman = (result: StatusResult): string => {
 export const commandStatus = Command.make(
   "status",
   {
-    projectRoot: projectRootFlag,
+    projectRoot: compatibilityProjectRootFlag,
     vaultPath: Flag.string("vault").pipe(
       Flag.withDescription("Vault path for read-only local model and semantic index readiness"),
       Flag.optional,
@@ -174,25 +171,10 @@ export const commandStatus = Command.make(
   },
   Effect.fnUntraced(function* ({ projectRoot, vaultPath }) {
     const root = yield* commandRoot;
-    const compatibilityDirectory = Option.isSome(projectRoot)
-      ? yield* resolvePathInput(
-          yield* decodeStatusAbsolutePath(process.cwd()),
-          projectRoot.value,
-          "Project root",
-        )
-      : root.directory.path;
-
-    if (
-      root.directory.explicit &&
-      Option.isSome(projectRoot) &&
-      compatibilityDirectory !== root.directory.path
-    ) {
-      return yield* toFailure({
-        code: "ConflictingDirectoryContext",
-        message: `Explicit -C directory conflicts with --project-root: ${root.directory.path} != ${compatibilityDirectory}`,
-        exitCode: 2,
-      });
-    }
+    const compatibilityDirectory = yield* resolveCompatibilityProjectRoot(
+      root.directory,
+      projectRoot,
+    );
 
     const result = Option.isSome(vaultPath)
       ? yield* resolvePathInput(root.directory.path, vaultPath.value, "Vault path").pipe(

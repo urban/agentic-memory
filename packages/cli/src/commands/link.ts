@@ -15,7 +15,11 @@ import { validateVaultForLink } from "@urban/agentic-memory-core/vault/VaultStat
 import { Clock, Console, Effect, Exit, FileSystem, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import { toFailure, withCliFailureOutput } from "../output.ts";
-import { projectRootFlag, resolveProjectRoot } from "./project-root-input.ts";
+import { resolvePathInput } from "./path-input.ts";
+import {
+  compatibilityProjectRootFlag,
+  resolveCompatibilityProjectRoot,
+} from "./project-root-input.ts";
 import { commandRoot } from "./root.ts";
 
 type LinkCommandResult = import("@urban/agentic-memory-core/cli/CliResults").LinkCommandResult;
@@ -29,18 +33,24 @@ export const commandLink = Command.make(
   "link",
   {
     vaultPath: Flag.string("vault").pipe(
-      Flag.withDescription("Absolute path to the Agentic Memory vault"),
+      Flag.withDescription("Agentic Memory vault path, resolved from the effective directory"),
     ),
     project: Flag.string("project").pipe(
       Flag.withDescription("Bare lowercase Agentic Memory project slug"),
     ),
-    projectRoot: projectRootFlag,
+    projectRoot: compatibilityProjectRootFlag,
     yes: Flag.boolean("yes").pipe(Flag.withDescription("Confirm overwriting a differing link")),
   },
-  Effect.fnUntraced(function* ({ vaultPath, project, projectRoot: rawProjectRoot, yes }) {
+  Effect.fnUntraced(function* ({
+    vaultPath: rawVaultPath,
+    project,
+    projectRoot: rawProjectRoot,
+    yes,
+  }) {
     const root = yield* commandRoot;
     const fs = yield* FileSystem.FileSystem;
-    const projectRoot = yield* resolveProjectRoot(rawProjectRoot);
+    const projectRoot = yield* resolveCompatibilityProjectRoot(root.directory, rawProjectRoot);
+    const vaultPath = yield* resolvePathInput(root.directory.path, rawVaultPath, "Vault path");
     const projectSlug = yield* decodeProjectSlug(project).pipe(
       Effect.mapError((cause) =>
         toFailure({
@@ -192,8 +202,8 @@ export const commandLink = Command.make(
   Command.withExamples([
     {
       command:
-        "agentic-memory link --vault /absolute/path/to/vault --project example-project --project-root . --yes --json",
-      description: "Create or update the project-local link config",
+        "agentic-memory -C /absolute/path/to/project link --vault ../vault --project example-project --yes --json",
+      description: "Resolve the vault from the project working context and create the local link",
     },
   ]),
 );
