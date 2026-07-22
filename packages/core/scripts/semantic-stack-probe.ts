@@ -13,6 +13,10 @@ import {
   EMBEDDING_MODEL_SHA256,
   EMBEDDING_MODEL_URI,
 } from "../src/semantic/EmbeddingModel.ts";
+import {
+  formatDocumentEmbeddingInput,
+  formatQueryEmbeddingInput,
+} from "../src/semantic/MarkdownChunking.ts";
 
 class ProbePrerequisiteError extends Schema.TaggedErrorClass<ProbePrerequisiteError>()(
   "ProbePrerequisiteError",
@@ -150,14 +154,38 @@ const probeModel = Effect.fnUntraced(function* (modelDirectory: string) {
       );
       const modelLoadMs = performance.now() - loadStartedAt;
       const embeddingStartedAt = performance.now();
-      const embedding = yield* modelOperation("Failed to create an embedding", () =>
+      const queryEmbedding = yield* modelOperation("Failed to create the query embedding", () =>
         context.getEmbeddingFor(
-          "title: compatibility probe | text: Agentic Memory keeps durable local context.",
+          formatQueryEmbeddingInput("How does Agentic Memory preserve durable agent context?"),
         ),
+      );
+      const relevantEmbedding = yield* modelOperation(
+        "Failed to create the relevant document embedding",
+        () =>
+          context.getEmbeddingFor(
+            formatDocumentEmbeddingInput(
+              "Agentic Memory",
+              ["Durable context"],
+              "Agentic Memory preserves durable local context for AI agents across sessions.",
+            ),
+          ),
+      );
+      const dissimilarEmbedding = yield* modelOperation(
+        "Failed to create the dissimilar document embedding",
+        () =>
+          context.getEmbeddingFor(
+            formatDocumentEmbeddingInput(
+              "Tomato gardening",
+              ["Summer care"],
+              "Tomato plants need sunlight, rich soil, and regular watering during summer.",
+            ),
+          ),
       );
       return {
         dimensions: model.embeddingVectorSize,
-        vector: embedding.vector,
+        queryVector: queryEmbedding.vector,
+        relevantVector: relevantEmbedding.vector,
+        dissimilarVector: dissimilarEmbedding.vector,
         modelLoadMs,
         embeddingMs: performance.now() - embeddingStartedAt,
       };
@@ -169,24 +197,39 @@ const probeModel = Effect.fnUntraced(function* (modelDirectory: string) {
     `Unexpected model dimensions: ${embeddingResult.dimensions}`,
   );
   yield* requireProbe(
-    embeddingResult.vector.length === EMBEDDING_MODEL_DIMENSIONS,
-    `Unexpected embedding length: ${embeddingResult.vector.length}`,
+    [
+      embeddingResult.queryVector,
+      embeddingResult.relevantVector,
+      embeddingResult.dissimilarVector,
+    ].every((vector) => vector.length === EMBEDDING_MODEL_DIMENSIONS),
+    "A semantic smoke embedding has an unexpected dimension",
   );
   yield* requireProbe(
-    embeddingResult.vector.every(Number.isFinite),
-    "Embedding contains a non-finite value",
+    [
+      embeddingResult.queryVector,
+      embeddingResult.relevantVector,
+      embeddingResult.dissimilarVector,
+    ].every((vector) => vector.every(Number.isFinite)),
+    "A semantic smoke embedding contains a non-finite value",
   );
 
   return {
     artifactPath: localPath,
     sha256: artifact.sha256,
     dimensions: embeddingResult.dimensions,
+    queryVector: embeddingResult.queryVector,
+    relevantVector: embeddingResult.relevantVector,
+    dissimilarVector: embeddingResult.dissimilarVector,
     modelLoadMs: embeddingResult.modelLoadMs,
     embeddingMs: embeddingResult.embeddingMs,
   };
 });
 
-const probeVectorStorage = Effect.fnUntraced(function* () {
+const probeVectorStorage = Effect.fnUntraced(function* (vectors: {
+  readonly query: ReadonlyArray<number>;
+  readonly relevant: ReadonlyArray<number>;
+  readonly dissimilar: ReadonlyArray<number>;
+}) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const tempDirectory = yield* fs.makeTempDirectoryScoped({
@@ -197,7 +240,13 @@ const probeVectorStorage = Effect.fnUntraced(function* () {
 
   const results = yield* Effect.gen(function* () {
     yield* vectorOperation("Failed to create the native vector table", () =>
-      client.execute("CREATE TABLE vectors (id TEXT PRIMARY KEY, embedding F32_BLOB(3) NOT NULL)"),
+      client.executeMultiple(`
+        CREATE TABLE vectors (id TEXT PRIMARY KEY, embedding F32_BLOB(3) NOT NULL);
+        CREATE TABLE semantic_vectors (
+          id TEXT PRIMARY KEY,
+          embedding F32_BLOB(${EMBEDDING_MODEL_DIMENSIONS}) NOT NULL
+        );
+      `),
     );
     yield* vectorOperation("Failed to insert native vectors", () =>
       client.batch(
@@ -214,6 +263,30 @@ const probeVectorStorage = Effect.fnUntraced(function* () {
         sql: "SELECT id FROM vectors ORDER BY vector_distance_cos(embedding, vector32(?)), id LIMIT 2",
         args: ["[1,0,0]"],
       }),
+    );
+    yield* vectorOperation("Failed to store real-model semantic vectors", () =>
+      client.batch(
+        [
+          {
+            sql: "INSERT INTO semantic_vectors VALUES (?, vector32(?))",
+            args: ["relevant", `[${vectors.relevant.join(",")}]`],
+          },
+          {
+            sql: "INSERT INTO semantic_vectors VALUES (?, vector32(?))",
+            args: ["dissimilar", `[${vectors.dissimilar.join(",")}]`],
+          },
+        ],
+        "write",
+      ),
+    );
+    const semanticRanked = yield* vectorOperation(
+      "Failed to execute real-model semantic nearest-neighbor search",
+      () =>
+        client.execute({
+          sql: `SELECT id FROM semantic_vectors
+            ORDER BY vector_distance_cos(embedding, vector32(?)), id`,
+          args: [`[${vectors.query.join(",")}]`],
+        }),
     );
     yield* vectorOperation("Failed to update a native vector", () =>
       client.execute({
@@ -236,6 +309,7 @@ const probeVectorStorage = Effect.fnUntraced(function* () {
 
     return {
       ranked: ranked.rows.map((row) => row.id),
+      semanticRanked: semanticRanked.rows.map((row) => row.id),
       updatedDistance: updated.rows[0]?.distance,
       remainingCount: remaining.rows[0]?.count,
     };
@@ -244,6 +318,10 @@ const probeVectorStorage = Effect.fnUntraced(function* () {
   yield* requireProbe(
     results.ranked[0] === "exact" && results.ranked[1] === "near",
     `Unexpected exact cosine top-K order: ${results.ranked.join(", ")}`,
+  );
+  yield* requireProbe(
+    results.semanticRanked[0] === "relevant" && results.semanticRanked[1] === "dissimilar",
+    `Unexpected real-model semantic order: ${results.semanticRanked.join(", ")}`,
   );
   yield* requireProbe(results.updatedDistance === 1, "Vector update was not persisted");
   yield* requireProbe(results.remainingCount === 2, "Vector deletion was not persisted");
@@ -258,7 +336,12 @@ const probeVectorStorage = Effect.fnUntraced(function* () {
   const databaseStillExists = yield* fs.exists(databasePath);
   yield* requireProbe(!databaseStillExists, "Probe database cleanup did not complete");
 
-  return { topK: results.ranked.join(","), clientClosed: client.closed, databaseRemoved: true };
+  return {
+    topK: results.ranked.join(","),
+    semanticTopK: results.semanticRanked.join(","),
+    clientClosed: client.closed,
+    databaseRemoved: true,
+  };
 });
 
 const program = Effect.scoped(
@@ -279,7 +362,11 @@ const program = Effect.scoped(
     );
     const modelDirectory = path.join(cacheRoot, "agentic-memory", "models");
     const model = yield* probeModel(modelDirectory);
-    const vectors = yield* probeVectorStorage();
+    const vectors = yield* probeVectorStorage({
+      query: model.queryVector,
+      relevant: model.relevantVector,
+      dissimilar: model.dissimilarVector,
+    });
     const peakRssMiB = process.resourceUsage().maxRSS / (1024 * 1024);
 
     yield* Console.log(
@@ -293,9 +380,10 @@ const program = Effect.scoped(
         `sha256=${model.sha256}`,
         `dimensions=${model.dimensions}`,
         `modelLoadMs=${model.modelLoadMs.toFixed(1)}`,
-        `oneVectorMs=${model.embeddingMs.toFixed(1)}`,
+        `semanticVectorsMs=${model.embeddingMs.toFixed(1)}`,
         `peakRssMiB=${peakRssMiB.toFixed(1)}`,
         `topK=${vectors.topK}`,
+        `semanticTopK=${vectors.semanticTopK}`,
         `clientClosed=${vectors.clientClosed}`,
         `databaseRemoved=${vectors.databaseRemoved}`,
       ].join("\n"),

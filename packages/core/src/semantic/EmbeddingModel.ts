@@ -85,6 +85,37 @@ export interface EmbeddingModelAdapter {
   >;
 }
 
+const validateEmbeddingVectors = (
+  textCount: number,
+  vectors: ReadonlyArray<ReadonlyArray<number>>,
+): Effect.Effect<ReadonlyArray<ReadonlyArray<number>>, EmbeddingRuntimeError> => {
+  if (vectors.length !== textCount) {
+    return Effect.fail(
+      new EmbeddingRuntimeError({
+        message: `Embedding runtime returned ${vectors.length} vectors for ${textCount} texts`,
+      }),
+    );
+  }
+  const wrongDimensionIndex = vectors.findIndex(
+    (vector) => vector.length !== EMBEDDING_MODEL_DIMENSIONS,
+  );
+  if (wrongDimensionIndex >= 0) {
+    return Effect.fail(
+      new EmbeddingRuntimeError({
+        message: `Embedding vector ${wrongDimensionIndex} has dimension ${vectors[wrongDimensionIndex]?.length ?? 0}; expected ${EMBEDDING_MODEL_DIMENSIONS}`,
+      }),
+    );
+  }
+  const nonFiniteIndex = vectors.findIndex((vector) => !vector.every(Number.isFinite));
+  return nonFiniteIndex >= 0
+    ? Effect.fail(
+        new EmbeddingRuntimeError({
+          message: `Embedding vector ${nonFiniteIndex} contains non-finite values`,
+        }),
+      )
+    : Effect.succeed(vectors);
+};
+
 export class EmbeddingModel extends Context.Service<
   EmbeddingModel,
   {
@@ -121,7 +152,9 @@ export const makeEmbeddingModel = (adapter: EmbeddingModelAdapter): EmbeddingMod
           }),
         );
       }
-      return adapter.embed(texts);
+      return adapter
+        .embed(texts)
+        .pipe(Effect.flatMap((vectors) => validateEmbeddingVectors(texts.length, vectors)));
     },
   });
 

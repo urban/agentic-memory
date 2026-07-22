@@ -279,18 +279,7 @@ const make = (options: Required<EmbeddingModelLiveOptions>) =>
           const embeddings = yield* Effect.forEach(texts, (text) =>
             modelOperation("Failed to generate an embedding", () => context.getEmbeddingFor(text)),
           );
-          const vectors = embeddings.map((embedding) => embedding.vector);
-          if (
-            vectors.some(
-              (vector) =>
-                vector.length !== EMBEDDING_MODEL_DIMENSIONS || !vector.every(Number.isFinite),
-            )
-          ) {
-            return yield* new EmbeddingRuntimeError({
-              message: "Embedding runtime returned an invalid vector",
-            });
-          }
-          return vectors;
+          return embeddings.map((embedding) => embedding.vector);
         }),
       );
     });

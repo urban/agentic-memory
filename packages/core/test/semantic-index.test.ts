@@ -1,7 +1,17 @@
 import * as BunServices from "@effect/platform-bun/BunServices";
 import { createClient } from "@libsql/client";
 import { assert, describe, it } from "@effect/vitest";
-import { Effect, FileSystem, Layer, ManagedRuntime, Option, Path, PlatformError } from "effect";
+import {
+  Deferred,
+  Effect,
+  Fiber,
+  FileSystem,
+  Layer,
+  ManagedRuntime,
+  Option,
+  Path,
+  PlatformError,
+} from "effect";
 import {
   EMBEDDING_MODEL_DIMENSIONS,
   EMBEDDING_MODEL_ID,
@@ -41,6 +51,7 @@ interface FakeModelControl {
   availability?: "available" | "missing";
   failOnText?: string;
   inspections?: number;
+  invalidVectors?: "wrong_dimension" | "non_finite";
 }
 
 const fakeFileInfo = (type: FileSystem.File.Type): FileSystem.File.Info => ({
@@ -92,12 +103,22 @@ const makeControlledModelLayer = (control: FakeModelControl): Layer.Layer<Embedd
       }),
       embed: (texts) => {
         control.calls += 1;
-        return control.failOnText !== undefined &&
-          texts.some((text) => text.includes(control.failOnText ?? ""))
-          ? Effect.fail(
-              new EmbeddingRuntimeError({ message: `Rejected ${control.failOnText} for test` }),
-            )
-          : Effect.succeed(texts.map(fakeVector));
+        return control.invalidVectors === "wrong_dimension"
+          ? Effect.succeed(texts.map(() => [1]))
+          : control.invalidVectors === "non_finite"
+            ? Effect.succeed(
+                texts.map(() =>
+                  Array.from({ length: EMBEDDING_MODEL_DIMENSIONS }, (_, index) =>
+                    index === 0 ? Number.NaN : 0,
+                  ),
+                ),
+              )
+            : control.failOnText !== undefined &&
+                texts.some((text) => text.includes(control.failOnText ?? ""))
+              ? Effect.fail(
+                  new EmbeddingRuntimeError({ message: `Rejected ${control.failOnText} for test` }),
+                )
+              : Effect.succeed(texts.map(fakeVector));
       },
     }),
   );
@@ -1131,6 +1152,151 @@ describe("semantic index workflow with native libSQL", () => {
       ),
     );
   });
+
+  it.effect.each([
+    { invalidVectors: "wrong_dimension" as const, expected: "has dimension 1; expected 768" },
+    { invalidVectors: "non_finite" as const, expected: "contains non-finite values" },
+  ])("rejects $invalidVectors model output before persistence", ({ invalidVectors, expected }) => {
+    const control: FakeModelControl = { calls: 0, invalidVectors };
+    return withServices(
+      control,
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const vaultPath = yield* fs.makeTempDirectoryScoped({
+            prefix: "semantic-index-invalid-vector-",
+          });
+          yield* writeVault(vaultPath);
+
+          const failure = yield* synchronizeSemanticIndex(vaultPath).pipe(Effect.flip);
+
+          assert.strictEqual(failure.reason, "InvalidEmbedding");
+          assert.include(failure.message, expected);
+          const path = yield* Path.Path;
+          const snapshot = yield* readSemanticIndexSnapshot(
+            path.join(vaultPath, ".agentic-memory", "index", "recall.db"),
+          );
+          assert.strictEqual(snapshot.metadata?.state, "incomplete");
+          assert.deepStrictEqual(snapshot.documents, []);
+          assert.isFalse(yield* fs.exists(path.join(vaultPath, ".agentic-memory", "index.lock")));
+        }),
+      ),
+    );
+  });
+
+  it.effect("interrupts between document transactions and releases the shared lock", () => {
+    const calls = { value: 0 };
+    return Effect.gen(function* () {
+      const secondDocumentStarted = yield* Deferred.make<void>();
+      const interruptingModel = Layer.succeed(
+        EmbeddingModel,
+        makeEmbeddingModel({
+          inspect: Effect.succeed({ status: "available", id: EMBEDDING_MODEL_ID }),
+          install: Effect.succeed({ status: "already_available", id: EMBEDDING_MODEL_ID }),
+          embed: (texts) => {
+            calls.value += 1;
+            return calls.value === 2
+              ? Deferred.succeed(secondDocumentStarted, undefined).pipe(
+                  Effect.andThen(Effect.never),
+                )
+              : Effect.succeed(texts.map(fakeVector));
+          },
+        }),
+      );
+      const runtime = ManagedRuntime.make(Layer.merge(BunServices.layer, interruptingModel));
+      const test = Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const vaultPath = yield* fs.makeTempDirectoryScoped({
+            prefix: "semantic-index-interruption-",
+          });
+          yield* writeVault(vaultPath);
+          const operation = synchronizeSemanticIndex(vaultPath);
+          const fiber = yield* operation.pipe(Effect.forkChild({ startImmediately: true }));
+          yield* Deferred.await(secondDocumentStarted);
+
+          const busy = yield* operation.pipe(Effect.flip);
+          assert.strictEqual(busy.reason, "IndexBusy");
+          yield* Fiber.interrupt(fiber);
+
+          const lockPath = path.join(vaultPath, ".agentic-memory", "index.lock");
+          const databasePath = path.join(vaultPath, ".agentic-memory", "index", "recall.db");
+          assert.isFalse(yield* fs.exists(lockPath));
+          const interrupted = yield* readSemanticIndexSnapshot(databasePath);
+          assert.strictEqual(interrupted.metadata?.state, "incomplete");
+          assert.strictEqual(interrupted.documents.length, 1);
+          assert.strictEqual(interrupted.documents[0]?.integrity, "complete");
+
+          const retried = yield* operation;
+          assert.strictEqual(retried.status, "indexed");
+          const complete = yield* readSemanticIndexSnapshot(databasePath);
+          assert.strictEqual(complete.metadata?.state, "complete");
+          assert.strictEqual(complete.documents.length, 4);
+        }),
+      );
+      return yield* runtime.contextEffect.pipe(
+        Effect.flatMap((context) => Effect.provideContext(test, context)),
+        Effect.ensuring(runtime.disposeEffect),
+      );
+    });
+  });
+
+  it.effect.each(["corrupt", "unsupported"])(
+    "reports a $databaseCase database as invalid readiness and incompatible synchronization",
+    (databaseCase) => {
+      const control: FakeModelControl = { calls: 0 };
+      return withServices(
+        control,
+        Effect.scoped(
+          Effect.gen(function* () {
+            const fs = yield* FileSystem.FileSystem;
+            const path = yield* Path.Path;
+            const vaultPath = yield* fs.makeTempDirectoryScoped({
+              prefix: `semantic-index-${databaseCase}-database-`,
+            });
+            yield* writeVault(vaultPath);
+            const indexDirectory = path.join(vaultPath, ".agentic-memory", "index");
+            const databasePath = path.join(indexDirectory, "recall.db");
+            yield* fs.makeDirectory(indexDirectory, { recursive: true });
+            if (databaseCase === "corrupt") {
+              yield* fs.writeFileString(databasePath, "not a sqlite database");
+            } else {
+              const databaseUrl = yield* path.toFileUrl(databasePath);
+              yield* Effect.acquireUseRelease(
+                Effect.sync(() => createClient({ url: databaseUrl.href })),
+                (client) =>
+                  Effect.promise(() => client.execute("CREATE TABLE unrelated (id TEXT)")),
+                (client) => Effect.sync(() => client.close()),
+              );
+            }
+
+            const readiness = yield* inspectSemanticIndex(vaultPath).pipe(Effect.result);
+            const failure = yield* synchronizeSemanticIndex(vaultPath).pipe(Effect.flip);
+            if (databaseCase === "corrupt") {
+              assert.strictEqual(readiness._tag, "Failure");
+              if (readiness._tag === "Failure") {
+                assert.strictEqual(readiness.failure.reason, "IndexReadFailed");
+              }
+              assert.strictEqual(failure.reason, "IncompatibleIndex");
+              assert.include(failure.message, "--delete");
+            } else {
+              assert.strictEqual(readiness._tag, "Success");
+              if (readiness._tag === "Success") {
+                assert.strictEqual(readiness.success.index.status, "invalid");
+                assert.isFalse(readiness.success.recallReady);
+                assert.include(readiness.success.warnings.join(" "), "--delete");
+              }
+              assert.strictEqual(failure.reason, "IncompatibleIndex");
+              assert.include(failure.message, "--delete");
+            }
+            assert.strictEqual(control.calls, 0);
+            assert.isFalse(yield* fs.exists(path.join(vaultPath, ".agentic-memory", "index.lock")));
+          }),
+        ),
+      );
+    },
+  );
 
   it.effect.each([
     {

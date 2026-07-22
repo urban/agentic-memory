@@ -1,4 +1,4 @@
-import { createClient } from "@libsql/client";
+import { createClient, LibsqlError } from "@libsql/client";
 import { Effect, Path, Schema } from "effect";
 
 type Client = import("@libsql/client").Client;
@@ -77,6 +77,13 @@ const decodeMetadataRow = Schema.decodeUnknownEffect(MetadataRow);
 const decodeDocumentRow = Schema.decodeUnknownEffect(DocumentRow);
 const decodeSearchRow = Schema.decodeUnknownEffect(SearchRow);
 
+const invalidSchemaCodes = new Set(["SQLITE_ERROR", "SQLITE_SCHEMA"]);
+
+const readFailureReason = (cause: unknown): "ReadFailed" | "InvalidData" =>
+  cause instanceof LibsqlError && invalidSchemaCodes.has(cause.extendedCode ?? cause.code)
+    ? "InvalidData"
+    : "ReadFailed";
+
 const repositoryOperation = <A>(
   reason: "OpenFailed" | "ReadFailed" | "WriteFailed",
   message: string,
@@ -85,6 +92,16 @@ const repositoryOperation = <A>(
   Effect.tryPromise({
     try: operation,
     catch: (cause) => new SemanticIndexRepositoryError({ reason, message, cause }),
+  });
+
+const repositoryReadOperation = <A>(
+  message: string,
+  operation: () => Promise<A>,
+): Effect.Effect<A, SemanticIndexRepositoryError> =>
+  Effect.tryPromise({
+    try: operation,
+    catch: (cause) =>
+      new SemanticIndexRepositoryError({ reason: readFailureReason(cause), message, cause }),
   });
 
 const acquireClient = Effect.fnUntraced(function* (databasePath: string) {
@@ -122,11 +139,8 @@ const withClient = <A, E>(
 const readStoredDocuments = Effect.fnUntraced(function* (
   client: Client,
 ): Effect.fn.Return<ReadonlyArray<StoredIndexDocument>, SemanticIndexRepositoryError> {
-  const result = yield* repositoryOperation(
-    "ReadFailed",
-    "Failed to read semantic index documents",
-    () =>
-      client.execute(`SELECT path, content_hash, chunk_count, complete,
+  const result = yield* repositoryReadOperation("Failed to read semantic index documents", () =>
+    client.execute(`SELECT path, content_hash, chunk_count, complete,
         (SELECT COUNT(*) FROM chunks WHERE chunks.document_path = documents.path)
           AS actual_chunk_count
         FROM documents ORDER BY path`),
@@ -203,8 +217,7 @@ export const readSemanticIndexSnapshot = (
 ): Effect.Effect<StoredIndexSnapshot, SemanticIndexRepositoryError, Path.Path> =>
   withClient(databasePath, (client) =>
     Effect.gen(function* () {
-      const metadataResult = yield* repositoryOperation(
-        "ReadFailed",
+      const metadataResult = yield* repositoryReadOperation(
         "Failed to read semantic index metadata",
         () => client.execute("SELECT * FROM index_metadata WHERE id = 1"),
       );
@@ -362,8 +375,7 @@ export const searchSemanticIndexExact = (
 > =>
   withClient(databasePath, (client) =>
     Effect.gen(function* () {
-      const result = yield* repositoryOperation(
-        "ReadFailed",
+      const result = yield* repositoryReadOperation(
         "Failed to execute exact cosine semantic index search",
         () =>
           client.execute({

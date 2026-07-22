@@ -454,8 +454,13 @@ describe("embedding model provisioning", () => {
             const tempRoot = yield* fs.makeTempDirectoryScoped({
               prefix: "agentic-memory-live-finalizers-",
             });
-            type Scenario = "success" | "typed_failure" | "interruption";
-            const scenarios: ReadonlyArray<Scenario> = ["success", "typed_failure", "interruption"];
+            type Scenario = "success" | "wrong_dimension" | "non_finite" | "interruption";
+            const scenarios: ReadonlyArray<Scenario> = [
+              "success",
+              "wrong_dimension",
+              "non_finite",
+              "interruption",
+            ];
 
             yield* Effect.forEach(scenarios, (scenario) => {
               const disposed: Array<string> = [];
@@ -477,9 +482,13 @@ describe("embedding model provisioning", () => {
                             }
                             return Promise.resolve({
                               vector:
-                                scenario === "typed_failure"
-                                  ? [Number.NaN]
-                                  : Array.from({ length: EMBEDDING_MODEL_DIMENSIONS }, () => 1),
+                                scenario === "wrong_dimension"
+                                  ? [1]
+                                  : Array.from(
+                                      { length: EMBEDDING_MODEL_DIMENSIONS },
+                                      (_, index) =>
+                                        scenario === "non_finite" && index === 0 ? Number.NaN : 1,
+                                    ),
                             });
                           },
                           dispose: () => {
@@ -507,12 +516,14 @@ describe("embedding model provisioning", () => {
                   if (scenario === "success") {
                     const vectors = yield* model.embed(["memory"]);
                     assert.strictEqual(vectors[0]?.length, EMBEDDING_MODEL_DIMENSIONS);
-                  } else if (scenario === "typed_failure") {
+                  } else if (scenario === "wrong_dimension" || scenario === "non_finite") {
                     const failure = yield* model.embed(["memory"]).pipe(Effect.flip);
                     assert.instanceOf(failure, EmbeddingRuntimeError);
                     assert.strictEqual(
                       failure.message,
-                      "Embedding runtime returned an invalid vector",
+                      scenario === "wrong_dimension"
+                        ? `Embedding vector 0 has dimension 1; expected ${EMBEDDING_MODEL_DIMENSIONS}`
+                        : "Embedding vector 0 contains non-finite values",
                     );
                   } else {
                     const fiber = yield* model
