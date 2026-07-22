@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { Effect, FileSystem, Path, Schema } from "effect";
+import { Effect, FileSystem, Path, PlatformError, Schema } from "effect";
 import { isPathInsideRoot } from "./VaultPathSafety.ts";
 
 export type ManagedMemoryLayer =
@@ -45,7 +45,7 @@ export class ManagedMemoryError extends Schema.TaggedErrorClass<ManagedMemoryErr
   {
     reason: Schema.Literals(["InvalidVaultPath", "ReadVaultFailed", "UnsafeManagedPath"]),
     message: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
+    cause: Schema.optional(Schema.instanceOf(PlatformError.PlatformError)),
   },
 ) {}
 

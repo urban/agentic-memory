@@ -27,6 +27,7 @@ export interface StoredIndexDocument {
   readonly path: string;
   readonly contentHash: string;
   readonly chunkCount: number;
+  readonly integrity: "complete" | "incomplete" | "chunk_count_mismatch";
 }
 
 export interface StoredIndexSnapshot {
@@ -63,6 +64,8 @@ const DocumentRow = Schema.Struct({
   path: Schema.String,
   content_hash: Schema.String,
   chunk_count: Schema.Int,
+  complete: Schema.Literals([0, 1]),
+  actual_chunk_count: Schema.Int,
 }).annotate({ identifier: "SemanticIndexDocumentRow" });
 const SearchRow = Schema.Struct({
   document_path: Schema.String,
@@ -116,6 +119,43 @@ const withClient = <A, E>(
 ): Effect.Effect<A, E | SemanticIndexRepositoryError, Path.Path> =>
   Effect.scoped(acquireClient(databasePath).pipe(Effect.flatMap(use)));
 
+const readStoredDocuments = Effect.fnUntraced(function* (
+  client: Client,
+): Effect.fn.Return<ReadonlyArray<StoredIndexDocument>, SemanticIndexRepositoryError> {
+  const result = yield* repositoryOperation(
+    "ReadFailed",
+    "Failed to read semantic index documents",
+    () =>
+      client.execute(`SELECT path, content_hash, chunk_count, complete,
+        (SELECT COUNT(*) FROM chunks WHERE chunks.document_path = documents.path)
+          AS actual_chunk_count
+        FROM documents ORDER BY path`),
+  );
+  const documents = yield* Effect.forEach(result.rows, (row) =>
+    decodeDocumentRow(row).pipe(
+      Effect.mapError(
+        (cause) =>
+          new SemanticIndexRepositoryError({
+            reason: "InvalidData",
+            message: "Semantic index document metadata is invalid",
+            cause,
+          }),
+      ),
+    ),
+  );
+  return documents.map((document) => ({
+    path: document.path,
+    contentHash: document.content_hash,
+    chunkCount: document.chunk_count,
+    integrity:
+      document.complete === 0
+        ? "incomplete"
+        : document.chunk_count === document.actual_chunk_count
+          ? "complete"
+          : "chunk_count_mismatch",
+  }));
+});
+
 export const initializeSemanticIndexRepository = (
   databasePath: string,
   dimensions: number,
@@ -168,11 +208,6 @@ export const readSemanticIndexSnapshot = (
         "Failed to read semantic index metadata",
         () => client.execute("SELECT * FROM index_metadata WHERE id = 1"),
       );
-      const documentResult = yield* repositoryOperation(
-        "ReadFailed",
-        "Failed to read semantic index documents",
-        () => client.execute("SELECT path, content_hash, chunk_count FROM documents ORDER BY path"),
-      );
       const metadataRow = metadataResult.rows[0];
       const metadata =
         metadataRow === undefined
@@ -187,18 +222,7 @@ export const readSemanticIndexSnapshot = (
                   }),
               ),
             );
-      const documents = yield* Effect.forEach(documentResult.rows, (row) =>
-        decodeDocumentRow(row).pipe(
-          Effect.mapError(
-            (cause) =>
-              new SemanticIndexRepositoryError({
-                reason: "InvalidData",
-                message: "Semantic index document metadata is invalid",
-                cause,
-              }),
-          ),
-        ),
-      );
+      const documents = yield* readStoredDocuments(client);
       return {
         metadata:
           metadata === undefined
@@ -209,14 +233,15 @@ export const readSemanticIndexSnapshot = (
                 inventoryFingerprint: metadata.inventory_fingerprint,
                 state: metadata.state,
               },
-        documents: documents.map((document) => ({
-          path: document.path,
-          contentHash: document.content_hash,
-          chunkCount: document.chunk_count,
-        })),
+        documents,
       };
     }),
   );
+
+export const readSemanticIndexDocuments = (
+  databasePath: string,
+): Effect.Effect<ReadonlyArray<StoredIndexDocument>, SemanticIndexRepositoryError, Path.Path> =>
+  withClient(databasePath, readStoredDocuments);
 
 export const markSemanticIndexIncomplete = (
   databasePath: string,

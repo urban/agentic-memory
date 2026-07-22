@@ -2,6 +2,7 @@ import { decodeRecallSuccessJson } from "@urban/agentic-memory-core/recall/Recal
 import {
   CliFailureResultJson,
   decodeInitCommandResultJson,
+  decodeSemanticIndexReadinessJson,
   decodeSemanticIndexResultJson,
 } from "@urban/agentic-memory-core/cli/CliResults";
 import { makeFakeEmbeddingModelLayer } from "@urban/agentic-memory-core/semantic/EmbeddingModel";
@@ -13,7 +14,9 @@ import {
   Exit,
   FileSystem,
   ManagedRuntime,
+  Option,
   Path,
+  PlatformError,
   Runtime,
   Schema,
 } from "effect";
@@ -22,6 +25,23 @@ import { afterAll } from "vitest";
 import { makeAppLayer, runAgenticMemoryCommand } from "../src/cli.ts";
 
 const formatConsoleArgs = (args: ReadonlyArray<unknown>): string => args.map(String).join(" ");
+
+const fakeFileInfo = (type: FileSystem.File.Type): FileSystem.File.Info => ({
+  type,
+  mtime: Option.none(),
+  atime: Option.none(),
+  birthtime: Option.none(),
+  dev: 0,
+  ino: Option.none(),
+  mode: 0,
+  nlink: Option.none(),
+  uid: Option.none(),
+  gid: Option.none(),
+  rdev: Option.none(),
+  size: FileSystem.Size(0),
+  blksize: Option.none(),
+  blocks: Option.none(),
+});
 
 const makeCaptureConsole = (capture: { stdout: string; stderr: string }): Console.Console => ({
   assert(condition: boolean, ...args: ReadonlyArray<unknown>): void {
@@ -280,6 +300,366 @@ describe("agentic-memory cli", () => {
         assert.include(output.stdout, '"status":"unhealthy"');
         assert.include(output.stdout, '"sessionCaptureInstructionsExists":false');
       }),
+    ),
+  );
+
+  it.effect("reports vault semantic readiness with observational exit semantics", () =>
+    withCliRuntime(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const vaultPath = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-status-vault-",
+          });
+          yield* runCapturedEffect(["init", vaultPath, "--json"]);
+          yield* fs.writeFileString(path.join(vaultPath, "MEMORY.md"), "# Memory\n\nRoot.\n");
+          yield* fs.writeFileString(path.join(vaultPath, "USER.md"), "# User\n\nOwner.\n");
+          yield* fs.writeFileString(
+            path.join(vaultPath, "notes", "fact.md"),
+            "# Fact\n\nA durable fact.\n",
+          );
+
+          const missingOutput = yield* runCapturedEffect([
+            "status",
+            "--vault",
+            vaultPath,
+            "--project-root",
+            path.join(vaultPath, "ignored-project"),
+            "--json",
+          ]);
+          const missing = yield* decodeSemanticIndexReadinessJson(missingOutput.stdout);
+          assert.strictEqual(missingOutput.exitCode, 0);
+          assert.strictEqual(missing.status, "not_ready");
+          assert.strictEqual(missing.index.status, "missing");
+          assert.strictEqual(missing.index.newFiles, 3);
+          assert.isFalse(missing.recallReady);
+          assert.strictEqual(missingOutput.stderr, "");
+
+          yield* runCapturedEffect(["index", "--vault", vaultPath, "--json"]);
+          const readyOutput = yield* runCapturedEffect(["status", "--vault", vaultPath, "--json"]);
+          const ready = yield* decodeSemanticIndexReadinessJson(readyOutput.stdout);
+          assert.strictEqual(readyOutput.exitCode, 0);
+          assert.strictEqual(ready.status, "ready");
+          assert.strictEqual(ready.index.status, "current");
+          assert.isTrue(ready.recallReady);
+
+          yield* fs.writeFileString(
+            path.join(vaultPath, "notes", "fact.md"),
+            "# Fact\n\nA changed durable fact.\n",
+          );
+          const staleOutput = yield* runCapturedEffect(["status", "--vault", vaultPath]);
+          assert.strictEqual(staleOutput.exitCode, 0);
+          assert.include(staleOutput.stdout, "Agentic Memory vault status: not_ready");
+          assert.include(
+            staleOutput.stdout,
+            "Index: stale (0 new, 1 changed, 0 deleted, 2 unchanged)",
+          );
+          assert.include(staleOutput.stdout, "Recall ready: no");
+          assert.strictEqual(staleOutput.stderr, "");
+        }),
+      ),
+    ),
+  );
+
+  it.effect("reports invalid vault status as data with exit code zero", () =>
+    withCliRuntime(runCapturedEffect(["status", "--vault", "relative/vault", "--json"])).pipe(
+      Effect.flatMap((output) =>
+        decodeSemanticIndexReadinessJson(output.stdout).pipe(
+          Effect.map((result) => {
+            assert.strictEqual(output.exitCode, 0);
+            assert.strictEqual(result.status, "invalid");
+            assert.strictEqual(result.vault.status, "invalid");
+            assert.strictEqual(result.index.status, "invalid");
+            assert.isFalse(result.recallReady);
+            assert.strictEqual(output.stderr, "");
+          }),
+        ),
+      ),
+    ),
+  );
+
+  it.effect("reports incomplete required vault layouts as invalid data", () =>
+    withCliRuntime(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const tempRoot = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-status-incomplete-layout-",
+          });
+          const missingEntries = [
+            { vaultName: "missing-maps", relativePath: "maps", warning: "maps/" },
+            {
+              vaultName: "missing-note-template",
+              relativePath: path.join(".agentic-memory", "templates", "note.md"),
+              warning: ".agentic-memory/templates/note.md",
+            },
+          ];
+
+          for (const entry of missingEntries) {
+            const vaultPath = path.join(tempRoot, entry.vaultName);
+            const initOutput = yield* runCapturedEffect(["init", vaultPath, "--json"]);
+            assert.strictEqual(initOutput.exitCode, 0);
+            yield* fs.remove(path.join(vaultPath, entry.relativePath), {
+              recursive: entry.relativePath === "maps",
+            });
+
+            const output = yield* runCapturedEffect(["status", "--vault", vaultPath, "--json"]);
+            const result = yield* decodeSemanticIndexReadinessJson(output.stdout);
+
+            assert.strictEqual(output.exitCode, 0);
+            assert.strictEqual(result.status, "invalid");
+            assert.strictEqual(result.vault.status, "invalid");
+            assert.strictEqual(result.model.status, "not_checked");
+            assert.strictEqual(result.index.status, "invalid");
+            assert.include(result.warnings.join(" "), entry.warning);
+            assert.strictEqual(output.stderr, "");
+          }
+        }),
+      ),
+    ),
+  );
+
+  it.effect("reports wrong required vault entry types as invalid data", () =>
+    withCliRuntime(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const tempRoot = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-status-wrong-entry-type-",
+          });
+          const cases = [
+            {
+              vaultName: "file-as-directory",
+              relativePath: "AGENTS.md",
+              warning: "AGENTS.md must be a file",
+              replace: (entryPath: string) =>
+                fs.remove(entryPath).pipe(Effect.andThen(fs.makeDirectory(entryPath))),
+            },
+            {
+              vaultName: "directory-as-file",
+              relativePath: "maps",
+              warning: "maps/ must be a directory",
+              replace: (entryPath: string) =>
+                fs
+                  .remove(entryPath, { recursive: true })
+                  .pipe(Effect.andThen(fs.writeFileString(entryPath, "not a directory\n"))),
+            },
+          ];
+
+          for (const entry of cases) {
+            const vaultPath = path.join(tempRoot, entry.vaultName);
+            const initOutput = yield* runCapturedEffect(["init", vaultPath, "--json"]);
+            assert.strictEqual(initOutput.exitCode, 0);
+            yield* entry.replace(path.join(vaultPath, entry.relativePath));
+
+            const output = yield* runCapturedEffect(["status", "--vault", vaultPath, "--json"]);
+            const result = yield* decodeSemanticIndexReadinessJson(output.stdout);
+
+            assert.strictEqual(output.exitCode, 0);
+            assert.strictEqual(result.status, "invalid");
+            assert.strictEqual(result.vault.status, "invalid");
+            assert.strictEqual(result.model.status, "not_checked");
+            assert.strictEqual(result.index.status, "invalid");
+            assert.include(result.warnings.join(" "), entry.warning);
+            assert.strictEqual(output.stderr, "");
+          }
+        }),
+      ),
+    ),
+  );
+
+  it.effect("reports a missing vault control plane as invalid data with exit code zero", () =>
+    withCliRuntime(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const vaultPath = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-status-invalid-vault-",
+          });
+          yield* fs.makeDirectory(path.join(vaultPath, "projects"), { recursive: true });
+          yield* fs.writeFileString(path.join(vaultPath, "AGENTS.md"), "# Agents\n");
+          yield* fs.writeFileString(path.join(vaultPath, "MEMORY.md"), "# Memory\n");
+          yield* fs.writeFileString(path.join(vaultPath, "USER.md"), "# User\n");
+
+          const output = yield* runCapturedEffect(["status", "--vault", vaultPath, "--json"]);
+          const result = yield* decodeSemanticIndexReadinessJson(output.stdout);
+
+          assert.strictEqual(output.exitCode, 0);
+          assert.strictEqual(result.status, "invalid");
+          assert.strictEqual(result.vault.status, "invalid");
+          assert.strictEqual(result.model.status, "not_checked");
+          assert.strictEqual(result.index.status, "invalid");
+          assert.isFalse(result.recallReady);
+          assert.include(result.warnings.join(" "), ".agentic-memory");
+          assert.strictEqual(output.stderr, "");
+        }),
+      ),
+    ),
+  );
+
+  it.effect("reports missing vault structure as invalid data with exit code zero", () => {
+    const notFound = PlatformError.systemError({
+      _tag: "NotFound",
+      module: "FileSystem",
+      method: "realPath",
+      pathOrDescriptor: "/missing-vault",
+    });
+    const missingInventory = FileSystem.makeNoop({
+      realPath: () => Effect.fail(notFound),
+    });
+
+    return withCliRuntime(
+      runCapturedEffect(["status", "--vault", "/missing-vault", "--json"]).pipe(
+        Effect.flatMap((output) =>
+          decodeSemanticIndexReadinessJson(output.stdout).pipe(
+            Effect.map((result) => {
+              assert.strictEqual(output.exitCode, 0);
+              assert.strictEqual(result.status, "invalid");
+              assert.strictEqual(result.vault.status, "invalid");
+              assert.strictEqual(result.model.status, "not_checked");
+              assert.strictEqual(output.stderr, "");
+            }),
+          ),
+        ),
+        Effect.provideService(FileSystem.FileSystem, missingInventory),
+      ),
+    );
+  });
+
+  it.effect("reports disappearing vault entries as invalid data with exit code zero", () => {
+    const notFound = PlatformError.systemError({
+      _tag: "NotFound",
+      module: "FileSystem",
+      method: "stat",
+      pathOrDescriptor: "/vault/AGENTS.md",
+    });
+    const disappearingEntry = FileSystem.makeNoop({
+      exists: () => Effect.succeed(true),
+      stat: () => Effect.fail(notFound),
+    });
+
+    return withCliRuntime(
+      runCapturedEffect(["status", "--vault", "/vault", "--json"]).pipe(
+        Effect.flatMap((output) =>
+          decodeSemanticIndexReadinessJson(output.stdout).pipe(
+            Effect.map((result) => {
+              assert.strictEqual(output.exitCode, 0);
+              assert.strictEqual(result.status, "invalid");
+              assert.strictEqual(result.vault.status, "invalid");
+              assert.strictEqual(result.model.status, "not_checked");
+              assert.strictEqual(result.index.status, "invalid");
+              assert.include(result.warnings.join(" "), "AGENTS.md");
+              assert.strictEqual(output.stderr, "");
+            }),
+          ),
+        ),
+        Effect.provideService(FileSystem.FileSystem, disappearingEntry),
+      ),
+    );
+  });
+
+  it.effect("returns nonzero when a required vault entry cannot be inspected", () => {
+    const permissionDenied = PlatformError.systemError({
+      _tag: "PermissionDenied",
+      module: "FileSystem",
+      method: "stat",
+      pathOrDescriptor: "/vault/AGENTS.md",
+    });
+    const inaccessibleEntry = FileSystem.makeNoop({
+      exists: () => Effect.succeed(true),
+      stat: () => Effect.fail(permissionDenied),
+    });
+
+    return withCliRuntime(
+      runCapturedEffect(["status", "--vault", "/vault", "--json"]).pipe(
+        Effect.flatMap((output) =>
+          decodeCliFailureResultJson(output.stdout).pipe(
+            Effect.map((failure) => {
+              assert.strictEqual(output.exitCode, 1);
+              assert.strictEqual(failure.status, "failed");
+              assert.strictEqual(failure.error.code, "IndexReadFailed");
+              assert.include(output.stderr, "IndexReadFailed");
+            }),
+          ),
+        ),
+        Effect.provideService(FileSystem.FileSystem, inaccessibleEntry),
+      ),
+    );
+  });
+
+  it.effect("returns nonzero when managed inventory cannot be read", () => {
+    const permissionDenied = PlatformError.systemError({
+      _tag: "PermissionDenied",
+      module: "FileSystem",
+      method: "readDirectory",
+      pathOrDescriptor: "/vault",
+    });
+    const requiredDirectorySuffixes = [
+      "/maps",
+      "/notes",
+      "/people",
+      "/projects",
+      "/records",
+      "/sources",
+    ];
+    const failingInventory = FileSystem.makeNoop({
+      exists: () => Effect.succeed(true),
+      stat: (entryPath) =>
+        Effect.succeed(
+          fakeFileInfo(
+            requiredDirectorySuffixes.some((suffix) => entryPath.endsWith(suffix))
+              ? "Directory"
+              : "File",
+          ),
+        ),
+      realPath: (path) => Effect.succeed(path),
+      readDirectory: () => Effect.fail(permissionDenied),
+    });
+
+    return withCliRuntime(
+      runCapturedEffect(["status", "--vault", "/vault", "--json"]).pipe(
+        Effect.flatMap((output) =>
+          decodeCliFailureResultJson(output.stdout).pipe(
+            Effect.map((failure) => {
+              assert.strictEqual(output.exitCode, 1);
+              assert.strictEqual(failure.status, "failed");
+              assert.strictEqual(failure.error.code, "IndexReadFailed");
+              assert.include(output.stderr, "IndexReadFailed");
+            }),
+          ),
+        ),
+        Effect.provideService(FileSystem.FileSystem, failingInventory),
+      ),
+    );
+  });
+
+  it.effect("keeps vault status execution failures nonzero", () =>
+    withCliRuntime(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const vaultPath = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-status-failure-",
+          });
+          const initOutput = yield* runCapturedEffect(["init", vaultPath, "--json"]);
+          assert.strictEqual(initOutput.exitCode, 0);
+          const indexDirectory = path.join(vaultPath, ".agentic-memory", "index");
+          yield* fs.makeDirectory(indexDirectory, { recursive: true });
+          yield* fs.writeFileString(path.join(indexDirectory, "recall.db"), "not a database");
+
+          const output = yield* runCapturedEffect(["status", "--vault", vaultPath, "--json"]);
+          const failure = yield* decodeCliFailureResultJson(output.stdout);
+          assert.strictEqual(output.exitCode, 1);
+          assert.strictEqual(failure.status, "failed");
+          assert.strictEqual(failure.error.code, "IndexReadFailed");
+          assert.include(output.stderr, "IndexReadFailed");
+        }),
+      ),
     ),
   );
 

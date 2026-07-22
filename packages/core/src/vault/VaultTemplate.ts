@@ -3,6 +3,7 @@ import { Effect, FileSystem, Path, Schema, Stream } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { EMBEDDING_MODEL_ID, EmbeddingModel } from "../semantic/EmbeddingModel.ts";
 import { ensureSemanticIndexGitIgnore } from "./VaultGitIgnore.ts";
+import { inspectInitializedVaultStructure } from "./VaultStructure.ts";
 
 export class VaultTemplateError extends Schema.TaggedErrorClass<VaultTemplateError>()(
   "VaultTemplateError",
@@ -35,35 +36,19 @@ export interface InitVaultOptions {
   readonly yes: boolean;
 }
 
-const existsOrFalse = (pathValue: string) =>
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    return yield* fs.exists(pathValue).pipe(Effect.orElseSucceed(() => false));
-  });
-
 const isCompatibleVault = Effect.fnUntraced(function* (
   vaultPath: string,
-): Effect.fn.Return<boolean, never, FileSystem.FileSystem | Path.Path> {
-  const path = yield* Path.Path;
-  const required = [
-    "AGENTS.md",
-    "MEMORY.md",
-    "USER.md",
-    path.join(".agentic-memory", "LLM-vault-local.md"),
-    path.join(".agentic-memory", "LLM-outside-vault.md"),
-    path.join(".agentic-memory", "adapters", "MEMORY_ADAPTER.md"),
-    path.join(".agentic-memory", "instructions", "session-capture.md"),
-    "projects",
-  ];
-
-  for (const relative of required) {
-    const exists = yield* existsOrFalse(path.join(vaultPath, relative));
-    if (!exists) {
-      return false;
-    }
-  }
-
-  return true;
+): Effect.fn.Return<boolean, VaultTemplateError, FileSystem.FileSystem | Path.Path> {
+  const structure = yield* inspectInitializedVaultStructure(vaultPath).pipe(
+    Effect.mapError(
+      (cause) =>
+        new VaultTemplateError({
+          message: `Failed to inspect existing vault structure: ${vaultPath}`,
+          cause,
+        }),
+    ),
+  );
+  return structure.initialized;
 });
 
 const isDirectoryEmpty = Effect.fnUntraced(function* (

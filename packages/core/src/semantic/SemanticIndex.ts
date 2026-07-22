@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { Clock, Effect, FileSystem, Path, Schema } from "effect";
 import { parseManagedMemoryDocument, readManagedMemoryDocuments } from "../vault/ManagedMemory.ts";
 import { isPathInsideRoot } from "../vault/VaultPathSafety.ts";
+import { inspectInitializedVaultStructure } from "../vault/VaultStructure.ts";
 import {
   EMBEDDING_MODEL_DIMENSIONS,
   EMBEDDING_MODEL_ID,
@@ -16,6 +17,7 @@ import {
   INDEX_SCHEMA_VERSION,
   initializeSemanticIndexRepository,
   markSemanticIndexIncomplete,
+  readSemanticIndexDocuments,
   readSemanticIndexSnapshot,
   removeSemanticIndexDocuments,
   replaceSemanticIndexDocument,
@@ -48,11 +50,34 @@ export const SemanticIndexResult = Schema.Struct({
 }).annotate({ identifier: "SemanticIndexResult" });
 export type SemanticIndexResult = typeof SemanticIndexResult.Type;
 
-export const SemanticIndexInspection = Schema.Struct({
-  status: Schema.Literals(["missing", "complete", "incomplete", "incompatible"]),
-  vaultPath: Schema.String,
-}).annotate({ identifier: "SemanticIndexInspection" });
-export type SemanticIndexInspection = typeof SemanticIndexInspection.Type;
+export const SemanticIndexReadiness = Schema.Struct({
+  status: Schema.Literals(["ready", "not_ready", "invalid"]),
+  vault: Schema.Struct({
+    status: Schema.Literals(["healthy", "invalid"]),
+    path: Schema.String,
+  }),
+  model: Schema.Struct({
+    status: Schema.Literals(["available", "missing", "invalid", "not_checked"]),
+    id: Schema.Literal(EMBEDDING_MODEL_ID),
+  }),
+  index: Schema.Struct({
+    status: Schema.Literals([
+      "missing",
+      "current",
+      "stale",
+      "incomplete",
+      "incompatible",
+      "invalid",
+    ]),
+    newFiles: Schema.Int,
+    changedFiles: Schema.Int,
+    deletedFiles: Schema.Int,
+    unchangedFiles: Schema.Int,
+  }),
+  recallReady: Schema.Boolean,
+  warnings: Schema.Array(Schema.String),
+}).annotate({ identifier: "SemanticIndexReadiness" });
+export type SemanticIndexReadiness = typeof SemanticIndexReadiness.Type;
 
 export class SemanticIndexError extends Schema.TaggedErrorClass<SemanticIndexError>()(
   "SemanticIndexError",
@@ -67,6 +92,7 @@ export class SemanticIndexError extends Schema.TaggedErrorClass<SemanticIndexErr
       "IncompatibleIndex",
       "IndexBusy",
       "InvalidEmbedding",
+      "SemanticIndexNotReady",
       "DeleteFailed",
     ]),
     message: Schema.String,
@@ -93,6 +119,21 @@ const zeroFiles = (): SemanticIndexFileCounts => ({
   changed: 0,
   deleted: 0,
   unchanged: 0,
+});
+
+const invalidReadiness = (vaultPath: string, message: string): SemanticIndexReadiness => ({
+  status: "invalid",
+  vault: { status: "invalid", path: vaultPath },
+  model: { status: "not_checked", id: EMBEDDING_MODEL_ID },
+  index: {
+    status: "invalid",
+    newFiles: 0,
+    changedFiles: 0,
+    deletedFiles: 0,
+    unchangedFiles: 0,
+  },
+  recallReady: false,
+  warnings: [message],
 });
 
 const indexPaths = Effect.fnUntraced(function* (
@@ -210,14 +251,15 @@ const loadInventory = Effect.fnUntraced(function* (
   FileSystem.FileSystem | Path.Path
 > {
   const documents = yield* readManagedMemoryDocuments(vaultPath).pipe(
-    Effect.mapError(
-      (cause) =>
-        new SemanticIndexError({
-          reason: "InvalidVaultStructure",
-          message: cause.message,
-          cause,
-        }),
-    ),
+    Effect.mapError((cause) => {
+      const invalidStructure =
+        cause.reason !== "ReadVaultFailed" || cause.cause?.reason._tag === "NotFound";
+      return new SemanticIndexError({
+        reason: invalidStructure ? "InvalidVaultStructure" : "IndexReadFailed",
+        message: cause.message,
+        cause: cause.cause,
+      });
+    }),
   );
   if (
     !documents.some(({ path }) => path === "MEMORY.md") ||
@@ -256,6 +298,19 @@ const planSynchronization = (
   };
 };
 
+const readinessCounts = (
+  documents: ReadonlyArray<ManagedMemoryDocument>,
+  snapshot: StoredIndexSnapshot,
+) => {
+  const plan = planSynchronization(documents, snapshot);
+  return {
+    newFiles: plan.added.length,
+    changedFiles: plan.changed.length,
+    deletedFiles: plan.deleted.length,
+    unchangedFiles: plan.unchanged.length,
+  };
+};
+
 const requireCompatibleSnapshot = (
   vaultPath: string,
   snapshot: StoredIndexSnapshot,
@@ -280,12 +335,60 @@ const requireCompatibleSnapshot = (
 export const inspectSemanticIndex = Effect.fnUntraced(function* (
   vaultPath: string,
 ): Effect.fn.Return<
-  SemanticIndexInspection,
+  SemanticIndexReadiness,
   SemanticIndexError,
-  FileSystem.FileSystem | Path.Path
+  EmbeddingModel | FileSystem.FileSystem | Path.Path
 > {
   const fs = yield* FileSystem.FileSystem;
-  const paths = yield* indexPaths(vaultPath);
+  const pathsResult = yield* indexPaths(vaultPath).pipe(Effect.result);
+  if (pathsResult._tag === "Failure") {
+    return invalidReadiness(vaultPath, pathsResult.failure.message);
+  }
+  const paths = pathsResult.success;
+  const structure = yield* inspectInitializedVaultStructure(vaultPath).pipe(
+    Effect.mapError(
+      (cause) =>
+        new SemanticIndexError({
+          reason: "IndexReadFailed",
+          message: "Failed to inspect initialized vault structure",
+          cause,
+        }),
+    ),
+  );
+  if (!structure.initialized) {
+    const firstViolation = structure.violations[0];
+    return invalidReadiness(
+      vaultPath,
+      firstViolation === undefined
+        ? "Vault is not an initialized Agentic Memory vault"
+        : firstViolation.reason === "missing"
+          ? `Vault is missing ${firstViolation.label}: ${firstViolation.path}`
+          : `Vault entry ${firstViolation.label} must be a ${firstViolation.expectedType.toLowerCase()}, but found ${firstViolation.actualType.toLowerCase()}: ${firstViolation.path}`,
+    );
+  }
+  const inventoryResult = yield* loadInventory(vaultPath).pipe(Effect.result);
+  if (inventoryResult._tag === "Failure") {
+    return inventoryResult.failure.reason === "InvalidVaultStructure"
+      ? invalidReadiness(vaultPath, inventoryResult.failure.message)
+      : yield* inventoryResult.failure;
+  }
+  const documents = inventoryResult.success;
+  const model = yield* EmbeddingModel;
+  const modelInspection = yield* model.inspect.pipe(
+    Effect.map((inspection) => inspection.status),
+    Effect.catchTag(
+      "InvalidEmbeddingArtifactError",
+      (): Effect.Effect<"invalid"> => Effect.succeed("invalid"),
+    ),
+    Effect.mapError(
+      (cause) =>
+        new SemanticIndexError({
+          reason: "ModelInspectionFailed",
+          message: cause.message,
+          cause,
+        }),
+    ),
+  );
   const exists = yield* fs.exists(paths.databasePath).pipe(
     Effect.mapError(
       (cause) =>
@@ -296,22 +399,140 @@ export const inspectSemanticIndex = Effect.fnUntraced(function* (
         }),
     ),
   );
-  if (!exists) return { status: "missing", vaultPath };
-  const snapshot = yield* readSemanticIndexSnapshot(paths.databasePath).pipe(
-    Effect.mapError(
-      (cause) =>
-        new SemanticIndexError({ reason: "IndexReadFailed", message: cause.message, cause }),
-    ),
-  );
-  const metadata = snapshot.metadata;
-  if (
-    metadata === undefined ||
-    metadata.schemaVersion !== INDEX_SCHEMA_VERSION ||
-    metadata.compatibilityFingerprint !== SEMANTIC_INDEX_COMPATIBILITY_FINGERPRINT
-  ) {
-    return { status: "incompatible", vaultPath };
+  const modelWarning =
+    modelInspection === "missing"
+      ? [`Embedding model ${EMBEDDING_MODEL_ID} is missing; run agentic-memory init ${vaultPath}`]
+      : modelInspection === "invalid"
+        ? [`Embedding model ${EMBEDDING_MODEL_ID} is invalid; run agentic-memory init ${vaultPath}`]
+        : [];
+  if (!exists) {
+    return {
+      status: "not_ready",
+      vault: { status: "healthy", path: vaultPath },
+      model: { status: modelInspection, id: EMBEDDING_MODEL_ID },
+      index: {
+        status: "missing",
+        newFiles: documents.length,
+        changedFiles: 0,
+        deletedFiles: 0,
+        unchangedFiles: 0,
+      },
+      recallReady: false,
+      warnings: [
+        ...modelWarning,
+        `Semantic index is missing; run agentic-memory index --vault ${vaultPath}`,
+      ],
+    } satisfies SemanticIndexReadiness;
   }
-  return { status: metadata.state, vaultPath };
+  const snapshotResult = yield* readSemanticIndexSnapshot(paths.databasePath).pipe(Effect.result);
+  if (snapshotResult._tag === "Failure") {
+    if (snapshotResult.failure.reason === "InvalidData") {
+      const storedDocumentsResult = yield* readSemanticIndexDocuments(paths.databasePath).pipe(
+        Effect.result,
+      );
+      if (
+        storedDocumentsResult._tag === "Failure" &&
+        storedDocumentsResult.failure.reason !== "InvalidData"
+      ) {
+        return yield* new SemanticIndexError({
+          reason: "IndexReadFailed",
+          message: storedDocumentsResult.failure.message,
+          cause: storedDocumentsResult.failure,
+        });
+      }
+      const counts =
+        storedDocumentsResult._tag === "Success"
+          ? readinessCounts(documents, {
+              metadata: undefined,
+              documents: storedDocumentsResult.success,
+            })
+          : { newFiles: 0, changedFiles: 0, deletedFiles: 0, unchangedFiles: 0 };
+      return {
+        status: "not_ready",
+        vault: { status: "healthy", path: vaultPath },
+        model: { status: modelInspection, id: EMBEDDING_MODEL_ID },
+        index: {
+          status: "invalid",
+          ...counts,
+        },
+        recallReady: false,
+        warnings: [
+          ...modelWarning,
+          `Semantic index metadata is invalid; run agentic-memory index --vault ${vaultPath} --delete, then index again`,
+        ],
+      } satisfies SemanticIndexReadiness;
+    }
+    return yield* new SemanticIndexError({
+      reason: "IndexReadFailed",
+      message: snapshotResult.failure.message,
+      cause: snapshotResult.failure,
+    });
+  }
+  const snapshot = snapshotResult.success;
+  const metadata = snapshot.metadata;
+  const counts = readinessCounts(documents, snapshot);
+  const metadataMissing = metadata === undefined;
+  const incompatible =
+    metadata !== undefined &&
+    (metadata.schemaVersion !== INDEX_SCHEMA_VERSION ||
+      metadata.compatibilityFingerprint !== SEMANTIC_INDEX_COMPATIBILITY_FINGERPRINT);
+  const hasInventoryChanges =
+    counts.newFiles > 0 || counts.changedFiles > 0 || counts.deletedFiles > 0;
+  const inventoryMatches =
+    metadata !== undefined && metadata.inventoryFingerprint === inventoryFingerprint(documents);
+  const hasInvalidDocuments = snapshot.documents.some(
+    ({ integrity }) => integrity === "chunk_count_mismatch",
+  );
+  const hasIncompleteDocuments = snapshot.documents.some(
+    ({ integrity }) => integrity === "incomplete",
+  );
+  const indexStatus = metadataMissing
+    ? "invalid"
+    : incompatible
+      ? "incompatible"
+      : metadata.state === "incomplete"
+        ? "incomplete"
+        : hasInvalidDocuments
+          ? "invalid"
+          : hasIncompleteDocuments
+            ? "incomplete"
+            : hasInventoryChanges || !inventoryMatches
+              ? "stale"
+              : "current";
+  const recallReady = modelInspection === "available" && indexStatus === "current";
+  const indexWarning =
+    indexStatus === "current"
+      ? []
+      : indexStatus === "incompatible" || indexStatus === "invalid"
+        ? [
+            `Semantic index is ${indexStatus}; run agentic-memory index --vault ${vaultPath} --delete, then index again`,
+          ]
+        : [`Semantic index is ${indexStatus}; run agentic-memory index --vault ${vaultPath}`];
+  return {
+    status: recallReady ? "ready" : "not_ready",
+    vault: { status: "healthy", path: vaultPath },
+    model: { status: modelInspection, id: EMBEDDING_MODEL_ID },
+    index: { status: indexStatus, ...counts },
+    recallReady,
+    warnings: [...modelWarning, ...indexWarning],
+  } satisfies SemanticIndexReadiness;
+});
+
+export const requireCurrentSemanticIndex = Effect.fnUntraced(function* (
+  vaultPath: string,
+): Effect.fn.Return<
+  SemanticIndexReadiness,
+  SemanticIndexError,
+  EmbeddingModel | FileSystem.FileSystem | Path.Path
+> {
+  const readiness = yield* inspectSemanticIndex(vaultPath);
+  if (!readiness.recallReady) {
+    return yield* new SemanticIndexError({
+      reason: "SemanticIndexNotReady",
+      message: readiness.warnings.join(" "),
+    });
+  }
+  return readiness;
 });
 
 const embedDocument = Effect.fnUntraced(function* (

@@ -1,9 +1,10 @@
 import * as BunServices from "@effect/platform-bun/BunServices";
 import { createClient } from "@libsql/client";
 import { assert, describe, it } from "@effect/vitest";
-import { Effect, FileSystem, Layer, ManagedRuntime, Path } from "effect";
+import { Effect, FileSystem, Layer, ManagedRuntime, Option, Path, PlatformError } from "effect";
 import {
   EMBEDDING_MODEL_DIMENSIONS,
+  EMBEDDING_MODEL_ID,
   EmbeddingRuntimeError,
   EmbeddingModel,
   makeEmbeddingModel,
@@ -19,6 +20,7 @@ import {
 import {
   deleteSemanticIndex,
   inspectSemanticIndex,
+  requireCurrentSemanticIndex,
   synchronizeSemanticIndex,
 } from "../src/semantic/SemanticIndex.ts";
 import {
@@ -32,11 +34,31 @@ import {
   parseManagedMemoryDocument,
   readManagedMemoryDocuments,
 } from "../src/vault/ManagedMemory.ts";
+import { initVaultFromTemplate } from "../src/vault/VaultTemplate.ts";
 
 interface FakeModelControl {
   calls: number;
+  availability?: "available" | "missing";
   failOnText?: string;
+  inspections?: number;
 }
+
+const fakeFileInfo = (type: FileSystem.File.Type): FileSystem.File.Info => ({
+  type,
+  mtime: Option.none(),
+  atime: Option.none(),
+  birthtime: Option.none(),
+  dev: 0,
+  ino: Option.none(),
+  mode: 0,
+  nlink: Option.none(),
+  uid: Option.none(),
+  gid: Option.none(),
+  rdev: Option.none(),
+  size: FileSystem.Size(0),
+  blksize: Option.none(),
+  blocks: Option.none(),
+});
 
 const fakeVector = (text: string): ReadonlyArray<number> =>
   Array.from({ length: EMBEDDING_MODEL_DIMENSIONS }, (_, index) =>
@@ -57,7 +79,13 @@ const makeControlledModelLayer = (control: FakeModelControl): Layer.Layer<Embedd
   Layer.succeed(
     EmbeddingModel,
     makeEmbeddingModel({
-      inspect: Effect.succeed({ status: "available", id: "embeddinggemma-300M-Q8_0" }),
+      inspect: Effect.sync(() => {
+        control.inspections = (control.inspections ?? 0) + 1;
+        return {
+          status: control.availability ?? "available",
+          id: EMBEDDING_MODEL_ID,
+        };
+      }),
       install: Effect.succeed({
         status: "already_available",
         id: "embeddinggemma-300M-Q8_0",
@@ -90,9 +118,11 @@ const withServices = <A, E, R>(
 const writeVault = Effect.fnUntraced(function* (vaultPath: string) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  yield* fs.makeDirectory(path.join(vaultPath, ".agentic-memory"), { recursive: true });
-  yield* fs.makeDirectory(path.join(vaultPath, "notes"), { recursive: true });
-  yield* fs.makeDirectory(path.join(vaultPath, "sources"), { recursive: true });
+  yield* initVaultFromTemplate({
+    targetPath: vaultPath,
+    initializeGit: false,
+    yes: true,
+  });
   yield* fs.writeFileString(path.join(vaultPath, "MEMORY.md"), "# Memory\n\nRoot context.\n");
   yield* fs.writeFileString(path.join(vaultPath, "USER.md"), "# User\n\nOwner context.\n");
   yield* fs.writeFileString(
@@ -449,6 +479,120 @@ Use the durable choice.
 });
 
 describe("semantic index workflow with native libSQL", () => {
+  it.effect("rejects vaults missing a required content folder or control-plane template", () => {
+    const control: FakeModelControl = { calls: 0 };
+    return withServices(
+      control,
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const tempRoot = yield* fs.makeTempDirectoryScoped({
+            prefix: "semantic-index-incomplete-layout-",
+          });
+          const missingEntries = [
+            { vaultName: "missing-maps", relativePath: "maps", warning: "maps/" },
+            {
+              vaultName: "missing-note-template",
+              relativePath: path.join(".agentic-memory", "templates", "note.md"),
+              warning: ".agentic-memory/templates/note.md",
+            },
+          ];
+
+          for (const entry of missingEntries) {
+            const vaultPath = path.join(tempRoot, entry.vaultName);
+            yield* writeVault(vaultPath);
+            yield* fs.remove(path.join(vaultPath, entry.relativePath), {
+              recursive: entry.relativePath === "maps",
+            });
+
+            const readiness = yield* inspectSemanticIndex(vaultPath);
+
+            assert.strictEqual(readiness.status, "invalid");
+            assert.strictEqual(readiness.vault.status, "invalid");
+            assert.strictEqual(readiness.model.status, "not_checked");
+            assert.strictEqual(readiness.index.status, "invalid");
+            assert.include(readiness.warnings.join(" "), entry.warning);
+          }
+
+          assert.strictEqual(control.calls, 0);
+          assert.strictEqual(control.inspections ?? 0, 0);
+        }),
+      ),
+    );
+  });
+
+  it.effect("rejects required vault entries with the wrong filesystem type", () => {
+    const control: FakeModelControl = { calls: 0 };
+    return withServices(
+      control,
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const tempRoot = yield* fs.makeTempDirectoryScoped({
+            prefix: "semantic-index-wrong-entry-type-",
+          });
+          const fileAsDirectoryVault = path.join(tempRoot, "file-as-directory");
+          yield* writeVault(fileAsDirectoryVault);
+          yield* fs.remove(path.join(fileAsDirectoryVault, "AGENTS.md"));
+          yield* fs.makeDirectory(path.join(fileAsDirectoryVault, "AGENTS.md"));
+
+          const fileAsDirectory = yield* inspectSemanticIndex(fileAsDirectoryVault);
+          assert.strictEqual(fileAsDirectory.status, "invalid");
+          assert.strictEqual(fileAsDirectory.vault.status, "invalid");
+          assert.strictEqual(fileAsDirectory.model.status, "not_checked");
+          assert.strictEqual(fileAsDirectory.index.status, "invalid");
+          assert.include(fileAsDirectory.warnings.join(" "), "AGENTS.md must be a file");
+
+          const directoryAsFileVault = path.join(tempRoot, "directory-as-file");
+          yield* writeVault(directoryAsFileVault);
+          yield* fs.remove(path.join(directoryAsFileVault, "maps"), { recursive: true });
+          yield* fs.writeFileString(path.join(directoryAsFileVault, "maps"), "not a directory\n");
+
+          const directoryAsFile = yield* inspectSemanticIndex(directoryAsFileVault);
+          assert.strictEqual(directoryAsFile.status, "invalid");
+          assert.strictEqual(directoryAsFile.vault.status, "invalid");
+          assert.strictEqual(directoryAsFile.model.status, "not_checked");
+          assert.strictEqual(directoryAsFile.index.status, "invalid");
+          assert.include(directoryAsFile.warnings.join(" "), "maps/ must be a directory");
+          assert.strictEqual(control.calls, 0);
+          assert.strictEqual(control.inspections ?? 0, 0);
+        }),
+      ),
+    );
+  });
+
+  it.effect("rejects a directory without the initialized vault control plane", () => {
+    const control: FakeModelControl = { calls: 0 };
+    return withServices(
+      control,
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const vaultPath = yield* fs.makeTempDirectoryScoped({
+            prefix: "semantic-index-invalid-vault-",
+          });
+          yield* fs.makeDirectory(path.join(vaultPath, "projects"), { recursive: true });
+          yield* fs.writeFileString(path.join(vaultPath, "AGENTS.md"), "# Agents\n");
+          yield* fs.writeFileString(path.join(vaultPath, "MEMORY.md"), "# Memory\n");
+          yield* fs.writeFileString(path.join(vaultPath, "USER.md"), "# User\n");
+
+          const readiness = yield* inspectSemanticIndex(vaultPath);
+
+          assert.strictEqual(readiness.status, "invalid");
+          assert.strictEqual(readiness.vault.status, "invalid");
+          assert.strictEqual(readiness.model.status, "not_checked");
+          assert.strictEqual(readiness.index.status, "invalid");
+          assert.strictEqual(control.calls, 0);
+          assert.strictEqual(control.inspections ?? 0, 0);
+          assert.include(readiness.warnings.join(" "), ".agentic-memory");
+        }),
+      ),
+    );
+  });
+
   it.effect("creates the database at reserved-character vault paths", () => {
     const control: FakeModelControl = { calls: 0 };
     return withServices(
@@ -489,7 +633,15 @@ describe("semantic index workflow with native libSQL", () => {
           yield* writeVault(vaultPath);
 
           const missing = yield* inspectSemanticIndex(vaultPath);
-          assert.strictEqual(missing.status, "missing");
+          assert.strictEqual(missing.status, "not_ready");
+          assert.strictEqual(missing.index.status, "missing");
+          assert.deepStrictEqual(missing.index, {
+            status: "missing",
+            newFiles: 4,
+            changedFiles: 0,
+            deletedFiles: 0,
+            unchangedFiles: 0,
+          });
           const initial = yield* synchronizeSemanticIndex(vaultPath);
           assert.strictEqual(initial.status, "indexed");
           assert.strictEqual(initial.files.new, 4);
@@ -511,11 +663,348 @@ describe("semantic index workflow with native libSQL", () => {
           const ranked = yield* searchSemanticIndexExact(databasePath, query, 2);
           assert.strictEqual(ranked[0]?.documentPath, "notes/nearest.md");
           const inspection = yield* inspectSemanticIndex(vaultPath);
-          assert.strictEqual(inspection.status, "complete");
+          assert.strictEqual(inspection.status, "ready");
+          assert.strictEqual(inspection.index.status, "current");
+          assert.isTrue(inspection.recallReady);
 
           const deleted = yield* deleteSemanticIndex(vaultPath);
           assert.strictEqual(deleted.status, "deleted");
           assert.isTrue(yield* fs.exists(path.join(vaultPath, "MEMORY.md")));
+        }),
+      ),
+    );
+  });
+
+  it.effect("reports every readiness state with planner counts and guards future recall", () => {
+    const control: FakeModelControl = { calls: 0 };
+    return withServices(
+      control,
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const vaultPath = yield* fs.makeTempDirectoryScoped({
+            prefix: "semantic-index-readiness-",
+          });
+          yield* writeVault(vaultPath);
+
+          const missing = yield* inspectSemanticIndex(vaultPath);
+          assert.strictEqual(missing.status, "not_ready");
+          assert.strictEqual(missing.model.status, "available");
+          assert.deepStrictEqual(missing.index, {
+            status: "missing",
+            newFiles: 4,
+            changedFiles: 0,
+            deletedFiles: 0,
+            unchangedFiles: 0,
+          });
+
+          yield* synchronizeSemanticIndex(vaultPath);
+          const callsAfterIndex = control.calls;
+          const databasePath = path.join(vaultPath, ".agentic-memory", "index", "recall.db");
+          const databaseBeforeInspection = yield* fs.readFile(databasePath);
+          const ready = yield* requireCurrentSemanticIndex(vaultPath);
+          const databaseAfterInspection = yield* fs.readFile(databasePath);
+          assert.strictEqual(ready.status, "ready");
+          assert.strictEqual(ready.index.status, "current");
+          assert.deepStrictEqual(databaseAfterInspection, databaseBeforeInspection);
+
+          yield* fs.writeFileString(
+            path.join(vaultPath, "notes", "nearest.md"),
+            "# Nearest\n\nChanged after indexing.\n",
+          );
+          yield* fs.writeFileString(
+            path.join(vaultPath, "notes", "added.md"),
+            "# Added\n\nNew after indexing.\n",
+          );
+          yield* fs.remove(path.join(vaultPath, "sources", "evidence.md"));
+          const stale = yield* inspectSemanticIndex(vaultPath);
+          assert.strictEqual(stale.index.status, "stale");
+          assert.deepStrictEqual(stale.index, {
+            status: "stale",
+            newFiles: 1,
+            changedFiles: 1,
+            deletedFiles: 1,
+            unchangedFiles: 2,
+          });
+
+          const databaseUrl = yield* path.toFileUrl(databasePath);
+          const inspections = yield* Effect.acquireUseRelease(
+            Effect.sync(() => createClient({ url: databaseUrl.href, intMode: "number" })),
+            (client) =>
+              Effect.gen(function* () {
+                yield* Effect.promise(() =>
+                  client.execute("UPDATE index_metadata SET state = 'incomplete' WHERE id = 1"),
+                );
+                const incomplete = yield* inspectSemanticIndex(vaultPath);
+
+                yield* Effect.promise(() =>
+                  client.execute("UPDATE index_metadata SET schema_version = 999 WHERE id = 1"),
+                );
+                const incompatible = yield* inspectSemanticIndex(vaultPath);
+
+                yield* Effect.promise(() =>
+                  client.execute("UPDATE index_metadata SET schema_version = 'bad' WHERE id = 1"),
+                );
+                const databaseBeforeInvalidInspection = yield* fs.readFile(databasePath);
+                const invalidIndex = yield* inspectSemanticIndex(vaultPath);
+                const databaseAfterInvalidInspection = yield* fs.readFile(databasePath);
+                return {
+                  incomplete,
+                  incompatible,
+                  invalidIndex,
+                  databaseBeforeInvalidInspection,
+                  databaseAfterInvalidInspection,
+                };
+              }),
+            (resource) => Effect.sync(() => resource.close()),
+          );
+          const {
+            incomplete,
+            incompatible,
+            invalidIndex,
+            databaseBeforeInvalidInspection,
+            databaseAfterInvalidInspection,
+          } = inspections;
+          assert.strictEqual(incomplete.index.status, "incomplete");
+          assert.strictEqual(incomplete.index.newFiles, 1);
+          assert.strictEqual(incomplete.index.changedFiles, 1);
+          assert.strictEqual(incomplete.index.deletedFiles, 1);
+          assert.strictEqual(incompatible.index.status, "incompatible");
+          assert.include(incompatible.warnings.join(" "), "--delete");
+          assert.deepStrictEqual(invalidIndex.index, {
+            status: "invalid",
+            newFiles: 1,
+            changedFiles: 1,
+            deletedFiles: 1,
+            unchangedFiles: 2,
+          });
+          assert.isFalse(invalidIndex.recallReady);
+          assert.deepStrictEqual(databaseAfterInvalidInspection, databaseBeforeInvalidInspection);
+          assert.strictEqual(control.calls, callsAfterIndex);
+
+          yield* deleteSemanticIndex(vaultPath);
+          yield* synchronizeSemanticIndex(vaultPath);
+          control.availability = "missing";
+          const callsBeforeGuard = control.calls;
+          const unavailable = yield* inspectSemanticIndex(vaultPath);
+          assert.strictEqual(unavailable.status, "not_ready");
+          assert.strictEqual(unavailable.model.status, "missing");
+          assert.strictEqual(unavailable.index.status, "current");
+          const guardError = yield* requireCurrentSemanticIndex(vaultPath).pipe(Effect.flip);
+          assert.strictEqual(guardError.reason, "SemanticIndexNotReady");
+          assert.strictEqual(control.calls, callsBeforeGuard);
+        }),
+      ),
+    );
+  });
+
+  it.effect("returns invalid vault observations without inspecting model or storage", () => {
+    const control: FakeModelControl = { calls: 0 };
+    return withServices(
+      control,
+      inspectSemanticIndex("relative/vault").pipe(
+        Effect.map((result) => {
+          assert.strictEqual(result.status, "invalid");
+          assert.strictEqual(result.vault.status, "invalid");
+          assert.strictEqual(result.model.status, "not_checked");
+          assert.strictEqual(result.index.status, "invalid");
+          assert.isFalse(result.recallReady);
+          assert.include(result.warnings.join(" "), "absolute");
+          assert.strictEqual(control.calls, 0);
+        }),
+      ),
+    );
+  });
+
+  it.effect("distinguishes missing vault structure from inventory read failures", () => {
+    const control: FakeModelControl = { calls: 0 };
+    const notFound = PlatformError.systemError({
+      _tag: "NotFound",
+      module: "FileSystem",
+      method: "realPath",
+      pathOrDescriptor: "/missing-vault",
+    });
+    const permissionDenied = PlatformError.systemError({
+      _tag: "PermissionDenied",
+      module: "FileSystem",
+      method: "readDirectory",
+      pathOrDescriptor: "/vault",
+    });
+    const requiredDirectorySuffixes = [
+      "/maps",
+      "/notes",
+      "/people",
+      "/projects",
+      "/records",
+      "/sources",
+    ];
+    const missingInventory = FileSystem.makeNoop({
+      realPath: () => Effect.fail(notFound),
+    });
+    const failingInventory = FileSystem.makeNoop({
+      exists: () => Effect.succeed(true),
+      stat: (entryPath) =>
+        Effect.succeed(
+          fakeFileInfo(
+            requiredDirectorySuffixes.some((suffix) => entryPath.endsWith(suffix))
+              ? "Directory"
+              : "File",
+          ),
+        ),
+      realPath: (path) => Effect.succeed(path),
+      readDirectory: () => Effect.fail(permissionDenied),
+    });
+
+    return withServices(
+      control,
+      Effect.gen(function* () {
+        const missing = yield* inspectSemanticIndex("/missing-vault").pipe(
+          Effect.provideService(FileSystem.FileSystem, missingInventory),
+        );
+        assert.strictEqual(missing.status, "invalid");
+        assert.strictEqual(missing.vault.status, "invalid");
+        assert.strictEqual(missing.model.status, "not_checked");
+
+        const error = yield* inspectSemanticIndex("/vault").pipe(
+          Effect.flip,
+          Effect.provideService(FileSystem.FileSystem, failingInventory),
+        );
+        assert.strictEqual(error.reason, "IndexReadFailed");
+        assert.strictEqual(error.cause, permissionDenied);
+        assert.strictEqual(control.calls, 0);
+      }),
+    );
+  });
+
+  it.effect("classifies entries that disappear during type inspection as missing", () => {
+    const control: FakeModelControl = { calls: 0, inspections: 0 };
+    const notFound = PlatformError.systemError({
+      _tag: "NotFound",
+      module: "FileSystem",
+      method: "stat",
+      pathOrDescriptor: "/vault/AGENTS.md",
+    });
+    let inventoryCalls = 0;
+    const disappearingEntry = FileSystem.makeNoop({
+      exists: () => Effect.succeed(true),
+      stat: () => Effect.fail(notFound),
+      readDirectory: () => {
+        inventoryCalls += 1;
+        return Effect.succeed([]);
+      },
+    });
+
+    return withServices(
+      control,
+      inspectSemanticIndex("/vault").pipe(
+        Effect.map((result) => {
+          assert.strictEqual(result.status, "invalid");
+          assert.strictEqual(result.vault.status, "invalid");
+          assert.strictEqual(result.model.status, "not_checked");
+          assert.strictEqual(result.index.status, "invalid");
+          assert.isFalse(result.recallReady);
+          assert.include(result.warnings.join(" "), "AGENTS.md");
+          assert.strictEqual(control.inspections, 0);
+          assert.strictEqual(control.calls, 0);
+          assert.strictEqual(inventoryCalls, 0);
+        }),
+        Effect.provideService(FileSystem.FileSystem, disappearingEntry),
+      ),
+    );
+  });
+
+  it.effect("preserves non-NotFound type inspection failures", () => {
+    const control: FakeModelControl = { calls: 0, inspections: 0 };
+    const permissionDenied = PlatformError.systemError({
+      _tag: "PermissionDenied",
+      module: "FileSystem",
+      method: "stat",
+      pathOrDescriptor: "/vault/AGENTS.md",
+    });
+    let inventoryCalls = 0;
+    const inaccessibleEntry = FileSystem.makeNoop({
+      exists: () => Effect.succeed(true),
+      stat: () => Effect.fail(permissionDenied),
+      readDirectory: () => {
+        inventoryCalls += 1;
+        return Effect.succeed([]);
+      },
+    });
+
+    return withServices(
+      control,
+      inspectSemanticIndex("/vault").pipe(
+        Effect.flip,
+        Effect.map((error) => {
+          assert.strictEqual(error.reason, "IndexReadFailed");
+          assert.strictEqual(error.cause, permissionDenied);
+          assert.strictEqual(control.inspections, 0);
+          assert.strictEqual(control.calls, 0);
+          assert.strictEqual(inventoryCalls, 0);
+        }),
+        Effect.provideService(FileSystem.FileSystem, inaccessibleEntry),
+      ),
+    );
+  });
+
+  it.effect("rejects incomplete documents and mismatched owned chunk counts", () => {
+    const control: FakeModelControl = { calls: 0 };
+    return withServices(
+      control,
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const vaultPath = yield* fs.makeTempDirectoryScoped({
+            prefix: "semantic-index-document-integrity-",
+          });
+          yield* writeVault(vaultPath);
+          yield* synchronizeSemanticIndex(vaultPath);
+          const callsAfterIndex = control.calls;
+          const databasePath = path.join(vaultPath, ".agentic-memory", "index", "recall.db");
+          const databaseUrl = yield* path.toFileUrl(databasePath);
+
+          const inspections = yield* Effect.acquireUseRelease(
+            Effect.sync(() => createClient({ url: databaseUrl.href, intMode: "number" })),
+            (client) =>
+              Effect.gen(function* () {
+                yield* Effect.promise(() =>
+                  client.execute(
+                    "UPDATE documents SET complete = 0 WHERE path = 'notes/nearest.md'",
+                  ),
+                );
+                const incomplete = yield* inspectSemanticIndex(vaultPath);
+                const incompleteGuard = yield* requireCurrentSemanticIndex(vaultPath).pipe(
+                  Effect.flip,
+                );
+
+                yield* Effect.promise(() =>
+                  client.execute(
+                    "UPDATE documents SET complete = 1 WHERE path = 'notes/nearest.md'",
+                  ),
+                );
+                yield* Effect.promise(() =>
+                  client.execute(
+                    "DELETE FROM chunks WHERE document_path = 'notes/nearest.md' AND ordinal = 0",
+                  ),
+                );
+                const mismatched = yield* inspectSemanticIndex(vaultPath);
+                const mismatchedGuard = yield* requireCurrentSemanticIndex(vaultPath).pipe(
+                  Effect.flip,
+                );
+                return { incomplete, incompleteGuard, mismatched, mismatchedGuard };
+              }),
+            (resource) => Effect.sync(() => resource.close()),
+          );
+
+          assert.strictEqual(inspections.incomplete.index.status, "incomplete");
+          assert.isFalse(inspections.incomplete.recallReady);
+          assert.strictEqual(inspections.incompleteGuard.reason, "SemanticIndexNotReady");
+          assert.strictEqual(inspections.mismatched.index.status, "invalid");
+          assert.isFalse(inspections.mismatched.recallReady);
+          assert.strictEqual(inspections.mismatchedGuard.reason, "SemanticIndexNotReady");
+          assert.strictEqual(control.calls, callsAfterIndex);
         }),
       ),
     );
