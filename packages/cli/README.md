@@ -43,6 +43,21 @@ agentic-memory --help
 
 All examples below assume `agentic-memory` is available on `PATH`; that is the default supported invocation form.
 
+## Resolve paths from another directory
+
+The shared Git-style `-C <directory>` flag makes that existing directory the base for relative
+vault paths without changing process state. The CLI resolves and reports vault paths as absolute
+paths. For example:
+
+```sh
+agentic-memory -C /absolute/path/to init agentic-memory-vault --git --yes
+agentic-memory -C /absolute/path/to index --vault agentic-memory-vault
+agentic-memory -C /absolute/path/to recall "What should I remember?" --vault agentic-memory-vault
+agentic-memory -C /absolute/path/to status --vault agentic-memory-vault
+```
+
+Without `-C`, relative paths resolve from the real invocation directory.
+
 ## Common workflows
 
 ### Initialize a vault

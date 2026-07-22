@@ -86,6 +86,14 @@ Other patterns, such as Reflection, migration, human browsing in Obsidian, or mu
    cd /absolute/path/to/agentic-memory-vault
    ```
 
+   The shared Git-style `-C` flag provides the base directory for relative CLI paths without
+   changing the process working directory. For example, this initializes the same vault as the
+   absolute-path command above:
+
+   ```sh
+   agentic-memory -C /absolute/path/to init agentic-memory-vault --git --yes
+   ```
+
    `init` also ensures the approved embedding model is available in the shared local cache. The first run downloads about 334 MB when the model is absent and reports progress on stderr; later runs reuse it across vaults. Git is optional, but recommended because agents will update plain Markdown and you can review every memory change as a diff. The raw template lives at `packages/vault-template/template/` for manual inspection or copying.
 
 4. **Add the first routing memory.** Open `MEMORY.md` and add only the top-level context future agents should see early: active projects, major domains, and links to maps or project files you expect to create. Keep this file small.
@@ -109,6 +117,9 @@ Other patterns, such as Reflection, migration, human browsing in Obsidian, or mu
    agentic-memory index --vault /absolute/path/to/agentic-memory-vault
    agentic-memory status --vault /absolute/path/to/agentic-memory-vault
    ```
+
+   Vault-oriented commands resolve relative paths from `-C`, so the equivalent contextual form
+   is `agentic-memory -C /absolute/path/to index --vault agentic-memory-vault`.
 
    A current index reports `Agentic Memory vault status: ready` and `Recall ready: yes`. Add `--json` to `status` for the typed readiness report. Run `index` again after changing managed memory; unchanged files are skipped. To safely remove all per-vault derivative index state while preserving Markdown and the shared model, run:
 

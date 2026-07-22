@@ -147,20 +147,42 @@ describe("agentic-memory status command", () => {
     ),
   );
 
-  it.effect("reports invalid vault status as data with exit code zero", () =>
-    withCliRuntime(runCapturedEffect(["status", "--vault", "relative/vault", "--json"])).pipe(
-      Effect.flatMap((output) =>
-        decodeSemanticIndexReadinessJson(output.stdout).pipe(
-          Effect.map((result) => {
-            assert.strictEqual(output.exitCode, 0);
-            assert.strictEqual(result.status, "invalid");
-            assert.strictEqual(result.vault.status, "invalid");
-            assert.strictEqual(result.index.status, "invalid");
-            assert.isFalse(result.recallReady);
-            assert.strictEqual(output.stderr, "");
-          }),
-        ),
+  it.effect("resolves a relative explicit vault from -C and reports invalid status as data", () =>
+    withCliRuntime(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const tempRoot = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-status-directory-",
+          });
+          const effectiveDirectory = yield* fs.realPath(tempRoot);
+          const output = yield* runCapturedEffect([
+            "-C",
+            tempRoot,
+            "status",
+            "--vault",
+            "relative/vault",
+            "--json",
+          ]);
+          const result = yield* decodeSemanticIndexReadinessJson(output.stdout);
+          return {
+            output,
+            result,
+            vaultPath: path.join(effectiveDirectory, "relative", "vault"),
+          };
+        }),
       ),
+    ).pipe(
+      Effect.map(({ output, result, vaultPath }) => {
+        assert.strictEqual(output.exitCode, 0);
+        assert.strictEqual(result.status, "invalid");
+        assert.strictEqual(result.vault.status, "invalid");
+        assert.strictEqual(result.vault.path, vaultPath);
+        assert.strictEqual(result.index.status, "invalid");
+        assert.isFalse(result.recallReady);
+        assert.strictEqual(output.stderr, "");
+      }),
     ),
   );
 
@@ -294,7 +316,8 @@ describe("agentic-memory status command", () => {
       pathOrDescriptor: "/missing-vault",
     });
     const missingInventory = FileSystem.makeNoop({
-      realPath: () => Effect.fail(notFound),
+      realPath: (path) => (path === process.cwd() ? Effect.succeed(path) : Effect.fail(notFound)),
+      stat: () => Effect.succeed(fakeFileInfo("Directory")),
     });
 
     return withCliRuntime(
@@ -324,7 +347,9 @@ describe("agentic-memory status command", () => {
     });
     const disappearingEntry = FileSystem.makeNoop({
       exists: () => Effect.succeed(true),
-      stat: () => Effect.fail(notFound),
+      realPath: (path) => Effect.succeed(path),
+      stat: (path) =>
+        path === process.cwd() ? Effect.succeed(fakeFileInfo("Directory")) : Effect.fail(notFound),
     });
 
     return withCliRuntime(
@@ -356,7 +381,11 @@ describe("agentic-memory status command", () => {
     });
     const inaccessibleEntry = FileSystem.makeNoop({
       exists: () => Effect.succeed(true),
-      stat: () => Effect.fail(permissionDenied),
+      realPath: (path) => Effect.succeed(path),
+      stat: (path) =>
+        path === process.cwd()
+          ? Effect.succeed(fakeFileInfo("Directory"))
+          : Effect.fail(permissionDenied),
     });
 
     return withCliRuntime(
@@ -396,7 +425,8 @@ describe("agentic-memory status command", () => {
       stat: (entryPath) =>
         Effect.succeed(
           fakeFileInfo(
-            requiredDirectorySuffixes.some((suffix) => entryPath.endsWith(suffix))
+            entryPath === process.cwd() ||
+              requiredDirectorySuffixes.some((suffix) => entryPath.endsWith(suffix))
               ? "Directory"
               : "File",
           ),

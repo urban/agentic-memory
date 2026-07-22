@@ -1,10 +1,14 @@
-import { decodeInitCommandResultJson } from "@urban/agentic-memory-core/cli/CliResults";
+import {
+  CliFailureResultJson,
+  decodeInitCommandResultJson,
+} from "@urban/agentic-memory-core/cli/CliResults";
 import { assert, describe, it } from "@effect/vitest";
-import { Effect, FileSystem, Path } from "effect";
+import { Effect, FileSystem, Path, Schema } from "effect";
 import { afterAll } from "vitest";
 import { makeCliTestRuntime } from "../cli-test-support.ts";
 
 const { dispose, runCapturedEffect, withCliRuntime } = makeCliTestRuntime();
+const decodeCliFailureResultJson = Schema.decodeUnknownEffect(CliFailureResultJson);
 
 describe("agentic-memory init command", () => {
   afterAll(dispose);
@@ -79,6 +83,89 @@ describe("agentic-memory init command", () => {
         );
         assert.include(output.stdout, ".agentic-memory/index/");
         assert.strictEqual(output.stderr, "");
+      }),
+    ),
+  );
+
+  it.effect("resolves a relative vault target from the shared -C directory", () =>
+    withCliRuntime(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const tempRoot = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-init-directory-",
+          });
+          const effectiveDirectory = yield* fs.realPath(tempRoot);
+          const output = yield* runCapturedEffect(["-C", tempRoot, "init", "vault", "--json"]);
+          const result = yield* decodeInitCommandResultJson(output.stdout);
+          return { output, result, vaultPath: path.join(effectiveDirectory, "vault") };
+        }),
+      ),
+    ).pipe(
+      Effect.map(({ output, result, vaultPath }) => {
+        assert.strictEqual(output.exitCode, 0);
+        assert.strictEqual(output.stderr, "");
+        assert.strictEqual(result.vaultPath, vaultPath);
+      }),
+    ),
+  );
+
+  it.effect("defaults relative vault targets to the real invocation directory", () =>
+    withCliRuntime(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const tempRoot = yield* fs.makeTempDirectoryScoped({
+            directory: process.cwd(),
+            prefix: "agentic-memory-init-default-directory-",
+          });
+          const effectiveDirectory = yield* fs.realPath(process.cwd());
+          const relativeTarget = path.relative(process.cwd(), path.join(tempRoot, "vault"));
+          const output = yield* runCapturedEffect(["init", relativeTarget, "--json"]);
+          const result = yield* decodeInitCommandResultJson(output.stdout);
+          return {
+            output,
+            result,
+            vaultPath: path.resolve(effectiveDirectory, relativeTarget),
+          };
+        }),
+      ),
+    ).pipe(
+      Effect.map(({ output, result, vaultPath }) => {
+        assert.strictEqual(output.exitCode, 0);
+        assert.strictEqual(output.stderr, "");
+        assert.strictEqual(result.vaultPath, vaultPath);
+      }),
+    ),
+  );
+
+  it.effect("rejects invalid effective directories and path inputs", () =>
+    withCliRuntime(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const tempRoot = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-init-invalid-path-",
+          });
+          const filePath = yield* fs.makeTempFileScoped({
+            directory: tempRoot,
+            prefix: "not-a-directory-",
+          });
+          const directoryOutput = yield* runCapturedEffect(["-C", filePath, "init", "vault"]);
+          const pathOutput = yield* runCapturedEffect(["-C", tempRoot, "init", "", "--json"]);
+          const failure = yield* decodeCliFailureResultJson(pathOutput.stdout);
+          return { directoryOutput, failure, pathOutput };
+        }),
+      ),
+    ).pipe(
+      Effect.map(({ directoryOutput, failure, pathOutput }) => {
+        assert.strictEqual(directoryOutput.exitCode, 1);
+        assert.include(directoryOutput.stderr, "Expected: existing directory");
+        assert.strictEqual(pathOutput.exitCode, 2);
+        assert.strictEqual(failure.error.code, "InvalidPathInput");
+        assert.include(failure.error.message, "non-empty path");
       }),
     ),
   );

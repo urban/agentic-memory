@@ -10,6 +10,7 @@ export const AbsolutePath = Schema.String.check(
   }),
 ).annotate({ identifier: "AbsolutePath" });
 export type AbsolutePath = typeof AbsolutePath.Type;
+export const decodeAbsolutePath = Schema.decodeUnknownEffect(AbsolutePath);
 
 export const LinkConfig = Schema.Struct({
   version: Schema.Literal(1),

@@ -8,6 +8,7 @@ import { checkVaultHealth } from "@urban/agentic-memory-core/vault/VaultStatus";
 import { Console, Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import { toFailure, withCliFailureOutput } from "../output.ts";
+import { resolvePathInput } from "./path-input.ts";
 import { projectRootFlag, resolveProjectRoot } from "./project-root-input.ts";
 import { commandRoot } from "./root.ts";
 
@@ -66,16 +67,19 @@ export const commandStatus = Command.make(
   {
     projectRoot: projectRootFlag,
     vaultPath: Flag.string("vault").pipe(
-      Flag.withDescription(
-        "Absolute vault path for read-only local model and semantic index readiness",
-      ),
+      Flag.withDescription("Vault path for read-only local model and semantic index readiness"),
       Flag.optional,
     ),
   },
   Effect.fnUntraced(function* ({ projectRoot: rawProjectRoot, vaultPath }) {
     const root = yield* commandRoot;
     if (Option.isSome(vaultPath)) {
-      const result = yield* inspectSemanticIndex(vaultPath.value).pipe(
+      const resolvedVaultPath = yield* resolvePathInput(
+        root.directory,
+        vaultPath.value,
+        "Vault path",
+      );
+      const result = yield* inspectSemanticIndex(resolvedVaultPath).pipe(
         Effect.mapError((cause) =>
           toFailure({
             code: cause.reason,
@@ -120,8 +124,8 @@ export const commandStatus = Command.make(
   ),
   Command.withExamples([
     {
-      command: "agentic-memory status --vault /absolute/path/to/vault --json",
-      description: "Inspect semantic recall readiness without changing the vault or model cache",
+      command: "agentic-memory -C /absolute/path/to status --vault vault --json",
+      description: "Resolve a relative vault path and inspect semantic recall readiness",
     },
     {
       command: "agentic-memory status --project-root . --json",

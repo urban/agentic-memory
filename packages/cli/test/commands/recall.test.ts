@@ -1,6 +1,6 @@
 import { decodeRecallSuccessJson } from "@urban/agentic-memory-core/recall/Recall";
 import { assert, describe, it } from "@effect/vitest";
-import { Effect } from "effect";
+import { Effect, Path } from "effect";
 import { fileURLToPath } from "node:url";
 import { afterAll } from "vitest";
 import { makeCliTestRuntime } from "../cli-test-support.ts";
@@ -57,6 +57,32 @@ describe("agentic-memory recall command", () => {
         assert.include(decoded.answer, "capital-letter");
         assert.notInclude(decoded.answer, "5 second batch retry window");
         assert.deepStrictEqual(decoded.warnings, []);
+      }),
+    ),
+  );
+
+  it.effect("resolves a relative recall vault from the shared -C directory", () =>
+    withCliRuntime(
+      Effect.gen(function* () {
+        const path = yield* Path.Path;
+        const output = yield* runCapturedEffect([
+          "-C",
+          path.dirname(recallFixtureVaultPath),
+          "recall",
+          recallQuestion,
+          "--vault",
+          path.basename(recallFixtureVaultPath),
+          "--json",
+        ]);
+        const result = yield* decodeRecallSuccessJson(output.stdout);
+        return { output, result };
+      }),
+    ).pipe(
+      Effect.map(({ output, result }) => {
+        assert.strictEqual(output.exitCode, 0);
+        assert.strictEqual(output.stderr, "");
+        assert.strictEqual(result.status, "answered");
+        assert.include(result.answer, "200ms p95");
       }),
     ),
   );

@@ -13,6 +13,41 @@ const { dispose, runCapturedEffect, withCliRuntime } = makeCliTestRuntime();
 describe("agentic-memory index command", () => {
   afterAll(dispose);
 
+  it.effect("resolves a relative vault path from the shared -C directory", () =>
+    withCliRuntime(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const tempRoot = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-index-directory-",
+          });
+          const effectiveDirectory = yield* fs.realPath(tempRoot);
+          const vaultPath = path.join(effectiveDirectory, "vault");
+          yield* fs.makeDirectory(path.join(vaultPath, ".agentic-memory"), { recursive: true });
+          yield* fs.writeFileString(path.join(vaultPath, "MEMORY.md"), "# Memory\n");
+          yield* fs.writeFileString(path.join(vaultPath, "USER.md"), "# User\n");
+          const output = yield* runCapturedEffect([
+            "-C",
+            tempRoot,
+            "index",
+            "--vault",
+            "vault",
+            "--json",
+          ]);
+          const result = yield* decodeSemanticIndexResultJson(output.stdout);
+          return { output, result, vaultPath };
+        }),
+      ),
+    ).pipe(
+      Effect.map(({ output, result, vaultPath }) => {
+        assert.strictEqual(output.exitCode, 0);
+        assert.strictEqual(output.stderr, "");
+        assert.strictEqual(result.vaultPath, vaultPath);
+      }),
+    ),
+  );
+
   it.effect("reports complete typed counts across the incremental index lifecycle", () =>
     withCliRuntime(
       Effect.scoped(
