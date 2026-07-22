@@ -7,11 +7,12 @@ import * as BunServices from "@effect/platform-bun/BunServices";
 import { createClient } from "@libsql/client";
 import { Config, Console, Effect, FileSystem, ManagedRuntime, Path, Schema, Stream } from "effect";
 import { getLlama, resolveModelFile } from "node-llama-cpp";
-
-const MODEL_URI = "hf:ggml-org/embeddinggemma-300M-GGUF/embeddinggemma-300M-Q8_0.gguf";
-const MODEL_FILE_NAME = "embeddinggemma-300M-Q8_0.gguf";
-const MODEL_SHA256 = "b5ce9d77a3fc4b3b39ccb5643c36777911cc4eb46a66962eadfa3f5f60490d63";
-const MODEL_DIMENSIONS = 768;
+import {
+  EMBEDDING_MODEL_DIMENSIONS,
+  EMBEDDING_MODEL_FILE_NAME,
+  EMBEDDING_MODEL_SHA256,
+  EMBEDDING_MODEL_URI,
+} from "../src/semantic/EmbeddingModel.ts";
 
 class ProbePrerequisiteError extends Schema.TaggedErrorClass<ProbePrerequisiteError>()(
   "ProbePrerequisiteError",
@@ -82,7 +83,7 @@ const probeModel = Effect.fnUntraced(function* (modelDirectory: string) {
   });
   const missingResolution = yield* Effect.result(
     modelOperation("Local-only missing-model resolution failed unexpectedly", () =>
-      resolveModelFile(MODEL_URI, {
+      resolveModelFile(EMBEDDING_MODEL_URI, {
         directory: missingDirectory,
         download: false,
         cli: false,
@@ -102,16 +103,16 @@ const probeModel = Effect.fnUntraced(function* (modelDirectory: string) {
       ),
     );
   const downloadedPath = yield* modelOperation("Failed to resolve or download the model", () =>
-    resolveModelFile(MODEL_URI, {
+    resolveModelFile(EMBEDDING_MODEL_URI, {
       directory: modelDirectory,
-      fileName: MODEL_FILE_NAME,
+      fileName: EMBEDDING_MODEL_FILE_NAME,
       cli: true,
     }),
   );
   const localPath = yield* modelOperation("Failed to resolve the cached model locally", () =>
-    resolveModelFile(MODEL_URI, {
+    resolveModelFile(EMBEDDING_MODEL_URI, {
       directory: modelDirectory,
-      fileName: MODEL_FILE_NAME,
+      fileName: EMBEDDING_MODEL_FILE_NAME,
       download: false,
       cli: false,
     }),
@@ -124,7 +125,7 @@ const probeModel = Effect.fnUntraced(function* (modelDirectory: string) {
   const artifact = yield* inspectArtifact(localPath);
   yield* requireProbe(artifact.magic === "GGUF", `Unexpected GGUF magic: ${artifact.magic}`);
   yield* requireProbe(
-    artifact.sha256 === MODEL_SHA256,
+    artifact.sha256 === EMBEDDING_MODEL_SHA256,
     `Unexpected artifact SHA-256: ${artifact.sha256}`,
   );
 
@@ -164,11 +165,11 @@ const probeModel = Effect.fnUntraced(function* (modelDirectory: string) {
   );
 
   yield* requireProbe(
-    embeddingResult.dimensions === MODEL_DIMENSIONS,
+    embeddingResult.dimensions === EMBEDDING_MODEL_DIMENSIONS,
     `Unexpected model dimensions: ${embeddingResult.dimensions}`,
   );
   yield* requireProbe(
-    embeddingResult.vector.length === MODEL_DIMENSIONS,
+    embeddingResult.vector.length === EMBEDDING_MODEL_DIMENSIONS,
     `Unexpected embedding length: ${embeddingResult.vector.length}`,
   );
   yield* requireProbe(
@@ -287,7 +288,7 @@ const program = Effect.scoped(
         "runtime=node-llama-cpp@3.19.1",
         "client=@libsql/client@0.17.4",
         "native=libsql@0.5.29",
-        `modelUri=${MODEL_URI}`,
+        `modelUri=${EMBEDDING_MODEL_URI}`,
         `artifactPath=${model.artifactPath}`,
         `sha256=${model.sha256}`,
         `dimensions=${model.dimensions}`,

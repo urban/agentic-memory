@@ -37,12 +37,20 @@ export const commandInit = Command.make(
       ),
     );
 
+    const vaultMessage =
+      result.status === "initialized"
+        ? `Initialized Agentic Memory vault at ${result.vaultPath}`
+        : `Agentic Memory vault already initialized at ${result.vaultPath}`;
+    const modelMessage =
+      result.model.installation === "downloaded"
+        ? `Downloaded embedding model ${result.model.id}`
+        : `Embedding model ${result.model.id} was already available`;
+    const ignoreMessage = result.changes.updatedGitIgnore
+      ? "Added .agentic-memory/index/ to the vault .gitignore"
+      : "The vault .gitignore already ignores .agentic-memory/index/";
+
     return yield* Console.log(
-      root.json
-        ? jsonText
-        : result.status === "initialized"
-          ? `Initialized Agentic Memory vault at ${result.vaultPath}`
-          : `Agentic Memory vault already initialized at ${result.vaultPath}`,
+      root.json ? jsonText : `${vaultMessage}\n${modelMessage}\n${ignoreMessage}`,
     );
   }, withCliFailureOutput),
 ).pipe(

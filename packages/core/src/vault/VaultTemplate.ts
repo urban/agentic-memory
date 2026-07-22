@@ -1,6 +1,8 @@
 import { bundledVaultTemplatePath } from "@urban/agentic-memory-vault-template/VaultTemplatePackage";
 import { Effect, FileSystem, Path, Schema, Stream } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+import { EMBEDDING_MODEL_ID, EmbeddingModel } from "../semantic/EmbeddingModel.ts";
+import { ensureSemanticIndexGitIgnore } from "./VaultGitIgnore.ts";
 
 export class VaultTemplateError extends Schema.TaggedErrorClass<VaultTemplateError>()(
   "VaultTemplateError",
@@ -17,6 +19,12 @@ export interface InitVaultResult {
     readonly createdDirectory: boolean;
     readonly copiedTemplate: boolean;
     readonly initializedGit: boolean;
+    readonly updatedGitIgnore: boolean;
+  };
+  readonly model: {
+    readonly id: typeof EMBEDDING_MODEL_ID;
+    readonly status: "available";
+    readonly installation: "downloaded" | "already_available";
   };
   readonly warnings: ReadonlyArray<string>;
 }
@@ -147,10 +155,11 @@ export const initVaultFromTemplate = Effect.fnUntraced(function* (
 ): Effect.fn.Return<
   InitVaultResult,
   VaultTemplateError,
-  ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+  ChildProcessSpawner.ChildProcessSpawner | EmbeddingModel | FileSystem.FileSystem | Path.Path
 > {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const embeddingModel = yield* EmbeddingModel;
   if (!path.isAbsolute(options.targetPath)) {
     return yield* new VaultTemplateError({
       message: `Vault target path must be absolute: ${options.targetPath}`,
@@ -168,6 +177,24 @@ export const initVaultFromTemplate = Effect.fnUntraced(function* (
   );
 
   if (targetExists && (yield* isCompatibleVault(options.targetPath))) {
+    const model = yield* embeddingModel.install.pipe(
+      Effect.mapError(
+        (cause) =>
+          new VaultTemplateError({
+            message: cause.message,
+            cause,
+          }),
+      ),
+    );
+    const updatedGitIgnore = yield* ensureSemanticIndexGitIgnore(options.targetPath).pipe(
+      Effect.mapError(
+        (cause) =>
+          new VaultTemplateError({
+            message: cause.message,
+            cause,
+          }),
+      ),
+    );
     const initializedGit = options.initializeGit ? yield* runGitInit(options.targetPath) : false;
     return {
       status: "already_initialized",
@@ -176,7 +203,9 @@ export const initVaultFromTemplate = Effect.fnUntraced(function* (
         createdDirectory: false,
         copiedTemplate: false,
         initializedGit,
+        updatedGitIgnore,
       },
+      model: { id: model.id, status: "available", installation: model.status },
       warnings: [],
     };
   }
@@ -189,7 +218,19 @@ export const initVaultFromTemplate = Effect.fnUntraced(function* (
           "Target exists and is not an initialized Agentic Memory vault or empty directory; refusing to overwrite.",
       });
     }
-  } else {
+  }
+
+  const model = yield* embeddingModel.install.pipe(
+    Effect.mapError(
+      (cause) =>
+        new VaultTemplateError({
+          message: cause.message,
+          cause,
+        }),
+    ),
+  );
+
+  if (!targetExists) {
     yield* fs.makeDirectory(options.targetPath, { recursive: true }).pipe(
       Effect.mapError(
         (cause) =>
@@ -220,6 +261,16 @@ export const initVaultFromTemplate = Effect.fnUntraced(function* (
     ),
   );
 
+  const updatedGitIgnore = yield* ensureSemanticIndexGitIgnore(options.targetPath).pipe(
+    Effect.mapError(
+      (cause) =>
+        new VaultTemplateError({
+          message: cause.message,
+          cause,
+        }),
+    ),
+  );
+
   const initializedGit = options.initializeGit ? yield* runGitInit(options.targetPath) : false;
 
   return {
@@ -229,7 +280,9 @@ export const initVaultFromTemplate = Effect.fnUntraced(function* (
       createdDirectory: !targetExists,
       copiedTemplate: true,
       initializedGit,
+      updatedGitIgnore,
     },
+    model: { id: model.id, status: "available", installation: model.status },
     warnings: [],
   };
 });

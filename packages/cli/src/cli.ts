@@ -1,6 +1,8 @@
 import packageJson from "../package.json" with { type: "json" };
 import * as BunServices from "@effect/platform-bun/BunServices";
 import { makeCaptureObservabilityLayer } from "@urban/agentic-memory-core/observability/CaptureTelemetry";
+import { EmbeddingModel } from "@urban/agentic-memory-core/semantic/EmbeddingModel";
+import { EmbeddingModelLive } from "@urban/agentic-memory-core/semantic/EmbeddingModelLive";
 import { PiProcessRunnerLayer } from "@urban/agentic-memory-core/steward/PiProcessRunner";
 import { Layer } from "effect";
 import { Command } from "effect/unstable/cli";
@@ -24,10 +26,18 @@ const observabilityLayer = makeCaptureObservabilityLayer({
   component: "cli",
 });
 
-export const appLayer: Layer.Layer<CliRequirements> = Layer.merge(
+const baseAppLayer: Layer.Layer<CliRequirements> = Layer.merge(
   PiProcessRunnerLayer.pipe(Layer.provideMerge(BunServices.layer)),
   observabilityLayer,
 );
+
+export const makeAppLayer = (
+  embeddingModelLayer: Layer.Layer<EmbeddingModel, never, BunServices.BunServices>,
+): Layer.Layer<CliRequirements | EmbeddingModel> =>
+  Layer.merge(baseAppLayer, embeddingModelLayer.pipe(Layer.provide(BunServices.layer)));
+
+export const appLayer: Layer.Layer<CliRequirements | EmbeddingModel> =
+  makeAppLayer(EmbeddingModelLive);
 
 export const agenticMemoryCommand = commandRoot.pipe(
   Command.withSubcommands([

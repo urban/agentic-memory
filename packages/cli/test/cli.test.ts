@@ -1,9 +1,11 @@
 import { decodeRecallSuccessJson } from "@urban/agentic-memory-core/recall/Recall";
+import { decodeInitCommandResultJson } from "@urban/agentic-memory-core/cli/CliResults";
+import { makeFakeEmbeddingModelLayer } from "@urban/agentic-memory-core/semantic/EmbeddingModel";
 import { assert, describe, it } from "@effect/vitest";
 import { Cause, Console, Effect, Exit, FileSystem, ManagedRuntime, Path, Runtime } from "effect";
 import { fileURLToPath } from "node:url";
 import { afterAll } from "vitest";
-import { appLayer, runAgenticMemoryCommand } from "../src/cli.ts";
+import { makeAppLayer, runAgenticMemoryCommand } from "../src/cli.ts";
 
 const formatConsoleArgs = (args: ReadonlyArray<unknown>): string => args.map(String).join(" ");
 
@@ -69,7 +71,7 @@ const unknownRecallQuestion = "What launch window did Gamma Project choose?";
 const sourceVerificationQuestion =
   "What source verification evidence did the Alpha Product responsiveness trial record for the latency decision?";
 
-const AgenticMemoryCliRuntime = ManagedRuntime.make(appLayer);
+const AgenticMemoryCliRuntime = ManagedRuntime.make(makeAppLayer(makeFakeEmbeddingModelLayer()));
 
 const withCliRuntime = <A, E, R>(
   effect: Effect.Effect<A, E, R | import("../src/cli.ts").CliRequirements>,
@@ -296,17 +298,47 @@ describe("agentic-memory cli", () => {
         }),
       ),
     ).pipe(
-      Effect.map(
-        ({ adapterExists, localContractExists, memoryExists, output, sessionCaptureExists }) => {
-          assert.strictEqual(output.exitCode, 0);
-          assert.include(output.stdout, '"status":"initialized"');
-          assert.strictEqual(output.stderr, "");
-          assert.isTrue(memoryExists);
-          assert.isTrue(localContractExists);
-          assert.isTrue(adapterExists);
-          assert.isTrue(sessionCaptureExists);
-        },
+      Effect.flatMap(
+        ({ adapterExists, localContractExists, memoryExists, output, sessionCaptureExists }) =>
+          Effect.gen(function* () {
+            assert.strictEqual(output.exitCode, 0);
+            const result = yield* decodeInitCommandResultJson(output.stdout);
+            assert.strictEqual(result.status, "initialized");
+            assert.strictEqual(result.model.status, "available");
+            assert.strictEqual(result.model.installation, "already_available");
+            assert.isFalse(result.changes.updatedGitIgnore);
+            assert.strictEqual(output.stderr, "");
+            assert.isTrue(memoryExists);
+            assert.isTrue(localContractExists);
+            assert.isTrue(adapterExists);
+            assert.isTrue(sessionCaptureExists);
+          }),
       ),
+    ),
+  );
+
+  it.effect("reports model and semantic-index ignore state in human init output", () =>
+    withCliRuntime(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const tempRoot = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-init-human-",
+          });
+          return yield* runCapturedEffect(["init", path.join(tempRoot, "vault")]);
+        }),
+      ),
+    ).pipe(
+      Effect.map((output) => {
+        assert.strictEqual(output.exitCode, 0);
+        assert.include(
+          output.stdout,
+          "Embedding model embeddinggemma-300M-Q8_0 was already available",
+        );
+        assert.include(output.stdout, ".agentic-memory/index/");
+        assert.strictEqual(output.stderr, "");
+      }),
     ),
   );
 

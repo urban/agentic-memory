@@ -31,6 +31,7 @@ import {
 } from "../src/recall/Recall.ts";
 import { StewardRunner } from "../src/steward/StewardExecution.ts";
 import { decodeStewardResultJson } from "../src/steward/StewardResult.ts";
+import { makeFakeEmbeddingModelLayer } from "../src/semantic/EmbeddingModel.ts";
 import { ensureProjectFile, ensureProjectRouteInMemory } from "../src/vault/ProjectRoute.ts";
 import { checkVaultHealth, validateVaultForLink } from "../src/vault/VaultStatus.ts";
 import { initVaultFromTemplate } from "../src/vault/VaultTemplate.ts";
@@ -41,7 +42,9 @@ const validPayloadJson =
 const sessionHeaderLine =
   '{"type":"session","version":3,"id":"session-1","timestamp":"2026-06-15T12:00:00.000Z","cwd":"/vault"}\n';
 
-const CoreContractsRuntime = ManagedRuntime.make(BunServices.layer);
+const CoreContractsRuntime = ManagedRuntime.make(
+  Layer.merge(BunServices.layer, makeFakeEmbeddingModelLayer()),
+);
 
 const timeoutingSpawnerLayer = Layer.succeed(
   ChildProcessSpawner.ChildProcessSpawner,
