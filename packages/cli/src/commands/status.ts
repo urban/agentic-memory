@@ -66,7 +66,9 @@ export const commandStatus = Command.make(
   {
     projectRoot: projectRootFlag,
     vaultPath: Flag.string("vault").pipe(
-      Flag.withDescription("Absolute path to an initialized Agentic Memory vault"),
+      Flag.withDescription(
+        "Absolute vault path for read-only local model and semantic index readiness",
+      ),
       Flag.optional,
     ),
   },
@@ -113,7 +115,9 @@ export const commandStatus = Command.make(
     return yield* Console.log(root.json ? jsonText : `Agentic Memory status: ${result.status}`);
   }, withCliFailureOutput),
 ).pipe(
-  Command.withDescription("Inspect a vault's semantic readiness or a project-local memory link"),
+  Command.withDescription(
+    "Inspect read-only vault semantic readiness or project-local link health",
+  ),
   Command.withExamples([
     {
       command: "agentic-memory status --vault /absolute/path/to/vault --json",

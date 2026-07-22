@@ -53,6 +53,10 @@ sources/
 records/
 ```
 
+`.agentic-memory/index/` is intentionally absent from this list. It is generated per-vault semantic-index state, not managed memory and not required committed control-plane content. The canonical vault `.gitignore` excludes the whole directory, including `recall.db`, sidecars, locks, and temporary artifacts. It is safe to delete through `agentic-memory index --vault /absolute/path/to/vault --delete`; the command preserves all managed Markdown and the shared embedding-model cache.
+
+Adding or removing this derivative state does not change the Markdown or control-plane schema, so semantic indexing does not require a vault-version bump. Vaults remain at version `0.4.0`.
+
 ## Managed file roles
 
 Allowed managed memory `type` values are only:
@@ -74,7 +78,7 @@ Meanings:
 
 Do not add semantic categories like `preference`, `decision`, or `concept` to `type`. Use links, maps, headings, and optional tags instead. `project` is a managed role because recurring efforts need lifecycle state and project-specific routing that maps and records do not provide.
 
-Control-plane files under `.agentic-memory/` are not managed memory files and do not require Agentic Memory `type` frontmatter. This includes LLM contract files, adapter snippets, instruction files, and templates.
+Control-plane files under `.agentic-memory/` are not managed memory files and do not require Agentic Memory `type` frontmatter. This includes LLM contract files, adapter snippets, instruction files, and templates. Generated files under `.agentic-memory/index/` are neither control-plane contracts nor managed memory.
 
 ## Status values
 

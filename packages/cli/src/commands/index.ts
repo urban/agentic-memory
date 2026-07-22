@@ -15,7 +15,9 @@ export const commandIndex = Command.make(
       Flag.withDescription("Absolute path to an initialized Agentic Memory vault"),
     ),
     deleteIndex: Flag.boolean("delete").pipe(
-      Flag.withDescription("Delete the vault's local derivative semantic index"),
+      Flag.withDescription(
+        "Delete only local derivative index state; preserve Markdown and the shared model",
+      ),
     ),
   },
   Effect.fnUntraced(function* ({ deleteIndex, vaultPath }) {
@@ -49,15 +51,17 @@ export const commandIndex = Command.make(
     return yield* Console.log(root.json ? jsonText : human);
   }, withCliFailureOutput),
 ).pipe(
-  Command.withDescription("Create the local semantic index from managed memory documents"),
+  Command.withDescription(
+    "Explicitly synchronize or delete a vault's local derivative semantic index",
+  ),
   Command.withExamples([
     {
       command: "agentic-memory index --vault /absolute/path/to/vault --json",
-      description: "Index all managed memory documents into local derivative state",
+      description: "Incrementally index managed Markdown using the installed local model",
     },
     {
       command: "agentic-memory index --vault /absolute/path/to/vault --delete",
-      description: "Delete only the vault's local derivative semantic index",
+      description: "Safely delete only per-vault derivative semantic state",
     },
   ]),
 );

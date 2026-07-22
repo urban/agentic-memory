@@ -57,6 +57,18 @@ The control plane lives in a hidden folder:
 
 The control plane stores mode-specific LLM contracts with the local version, version-specific agent instructions, scaffolds agents can use when creating new memory files, and adapter snippets humans can copy into harness-specific entry points such as Pi `APPEND_SYSTEM.md`, user-level `AGENTS.md` / `CLAUDE.md`, or repo-level `AGENTS.md` / `CLAUDE.md`.
 
+### Derivative semantic state
+
+An initialized vault may also contain a generated local semantic index:
+
+```text
+.agentic-memory/index/recall.db
+```
+
+This state is derived from managed Markdown and is not a third memory plane. Markdown remains the source of truth. The entire `.agentic-memory/index/` directory is disposable, Git-ignored, and excluded from the required committed control plane. The embedding model is also derivative: it is shared across vaults in the user's XDG-compatible cache rather than stored in a vault.
+
+Indexing is an explicit lifecycle. `init <vault-path>` provisions the shared model, `index --vault <vault-path>` synchronizes a vault, `status --vault <vault-path>` inspects readiness without mutation or inference, and `index --vault <vault-path> --delete` removes only per-vault derivative state. Neither initialization nor recall implicitly indexes memory.
+
 ## Agent entry points
 
 Agentic Memory has two supported agent entry points.
@@ -206,3 +218,12 @@ Promotion keeps project files concise and makes atomic notes the single source o
 - Prefer Reflection and compaction over endless accumulation.
 - Preserve the distinction between content memory and LLM control-plane instructions.
 - Do not store facts in memory when they can be cheaply re-read from the current project files.
+
+## Future semantic recall handoff
+
+Production recall still uses the existing deterministic retrieval path; semantic candidates are not yet wired into it. The follow-on implementation has two stable core seams:
+
+- `requireCurrentSemanticIndex(vaultPath)` is the single mandatory readiness operation. It must succeed before query embedding or semantic retrieval begins.
+- `searchSemanticIndexExact(...)` is the internal exact-cosine repository operation for retrieving ordered chunk identities.
+
+The recall workflow should compose those operations through the semantic-index module rather than learning embedding-model configuration, cache paths, database locations, vector encoding, or SQL schema details. Approximate indexing and public search commands remain deferred.

@@ -54,11 +54,15 @@ export const commandInit = Command.make(
     );
   }, withCliFailureOutput),
 ).pipe(
-  Command.withDescription("Initialize an Agentic Memory vault from the bundled template"),
+  Command.withDescription("Initialize a vault and ensure its shared embedding model is installed"),
   Command.withExamples([
     {
-      command: "agentic-memory init /absolute/path/to/vault --git --yes --json",
-      description: "Create a vault and print the result as JSON",
+      command: "agentic-memory init /absolute/path/to/vault --git --yes",
+      description: "Create a vault and download the shared model when it is absent",
+    },
+    {
+      command: "agentic-memory init /absolute/path/to/vault --yes --json",
+      description: "Ensure an initialized vault and model are available, then print JSON",
     },
   ]),
 );
