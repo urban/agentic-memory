@@ -71,7 +71,7 @@ Delete only the generated per-vault database and related derivative files with:
 agentic-memory index --vault /absolute/path/to/agentic-memory-vault --delete
 ```
 
-Deletion preserves Markdown and the shared model and is safe to repeat. There is no `--rebuild` flag: delete, then run `index` again. Use that sequence to recover when vault status reports an incompatible or invalid index.
+Deletion preserves Markdown and the shared model and is safe to repeat. Use the delete flag, then run `index` again to recover when vault status reports an incompatible or invalid index.
 
 ### Check vault semantic readiness
 
