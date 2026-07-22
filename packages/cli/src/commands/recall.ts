@@ -35,7 +35,7 @@ export const commandRecall = Command.make(
   },
   Effect.fnUntraced(function* ({ includeSources, question, vaultPath }) {
     const root = yield* commandRoot;
-    const resolvedVaultPath = yield* resolvePathInput(root.directory, vaultPath, "Vault path");
+    const resolvedVaultPath = yield* resolvePathInput(root.directory.path, vaultPath, "Vault path");
     const result = yield* recall({
       includeSources,
       question,

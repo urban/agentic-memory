@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { LinkConfig } from "../link/LinkConfig.ts";
+import { AbsolutePath, LinkConfig } from "../link/LinkConfig.ts";
 import { EMBEDDING_MODEL_ID } from "../semantic/EmbeddingModel.ts";
 import { SemanticIndexReadiness, SemanticIndexResult } from "../semantic/SemanticIndex.ts";
 import { VaultHealth } from "../vault/VaultStatus.ts";
@@ -50,36 +50,54 @@ export const LinkCommandResult = Schema.Struct({
 }).annotate({ identifier: "LinkCommandResult" });
 export type LinkCommandResult = typeof LinkCommandResult.Type;
 
-export const StatusLinkInfo = Schema.Union([
-  Schema.Struct({
-    exists: Schema.Literal(false),
-    path: Schema.String,
+export const ValidLinkedProjectStatus = Schema.TaggedStruct("valid-link", {
+  link: Schema.Struct({
+    path: AbsolutePath,
+    config: LinkConfig,
   }),
-  Schema.Struct({
-    exists: Schema.Literal(true),
-    path: Schema.String,
-    config: Schema.optional(LinkConfig),
-    message: Schema.optional(Schema.String),
+  projectRoute: VaultHealth,
+  semanticReadiness: SemanticIndexReadiness,
+}).annotate({ identifier: "ValidLinkedProjectStatus" });
+export type ValidLinkedProjectStatus = typeof ValidLinkedProjectStatus.Type;
+
+export const InvalidLinkedProjectStatus = Schema.TaggedStruct("invalid-link", {
+  link: Schema.Struct({
+    path: AbsolutePath,
+    message: Schema.String,
   }),
-]).annotate({ identifier: "StatusLinkInfo" });
-export type StatusLinkInfo = typeof StatusLinkInfo.Type;
+}).annotate({ identifier: "InvalidLinkedProjectStatus" });
+export type InvalidLinkedProjectStatus = typeof InvalidLinkedProjectStatus.Type;
 
-export const StatusVaultInfo = Schema.Struct({
-  path: Schema.String,
-  healthy: Schema.Boolean,
-  projectFileExists: Schema.Boolean,
-  memoryRouteExists: Schema.Boolean,
-  details: VaultHealth,
-}).annotate({ identifier: "StatusVaultInfo" });
-export type StatusVaultInfo = typeof StatusVaultInfo.Type;
-
-export const StatusCommandResult = Schema.Struct({
-  status: Schema.Literals(["unlinked", "healthy", "unhealthy"]),
-  projectRoot: Schema.String,
-  link: StatusLinkInfo,
-  vault: Schema.optional(StatusVaultInfo),
+export const LinkedProjectStatusResult = Schema.TaggedStruct("linked-project", {
+  version: Schema.Literal(1),
+  status: Schema.Literals(["healthy", "unhealthy"]),
+  directory: AbsolutePath,
+  inspection: Schema.Union([ValidLinkedProjectStatus, InvalidLinkedProjectStatus]),
   warnings: Schema.Array(Schema.String),
-}).annotate({ identifier: "StatusCommandResult" });
+}).annotate({ identifier: "LinkedProjectStatusResult" });
+export type LinkedProjectStatusResult = typeof LinkedProjectStatusResult.Type;
+
+export const VaultStatusResult = Schema.TaggedStruct("vault", {
+  version: Schema.Literal(1),
+  directory: AbsolutePath,
+  readiness: SemanticIndexReadiness,
+}).annotate({ identifier: "VaultStatusResult" });
+export type VaultStatusResult = typeof VaultStatusResult.Type;
+
+export const UnconfiguredStatusResult = Schema.TaggedStruct("unconfigured", {
+  version: Schema.Literal(1),
+  status: Schema.Literal("unconfigured"),
+  directory: AbsolutePath,
+  expectedLinkPath: AbsolutePath,
+  warnings: Schema.Array(Schema.String),
+}).annotate({ identifier: "UnconfiguredStatusResult" });
+export type UnconfiguredStatusResult = typeof UnconfiguredStatusResult.Type;
+
+export const StatusCommandResult = Schema.Union([
+  LinkedProjectStatusResult,
+  VaultStatusResult,
+  UnconfiguredStatusResult,
+]).annotate({ identifier: "StatusCommandResult" });
 export type StatusCommandResult = typeof StatusCommandResult.Type;
 
 export const CliFailureResultJson = Schema.fromJsonString(CliFailureResult).annotate({
@@ -94,6 +112,9 @@ export const LinkCommandResultJson = Schema.fromJsonString(LinkCommandResult).an
 export const StatusCommandResultJson = Schema.fromJsonString(StatusCommandResult).annotate({
   identifier: "StatusCommandResultJson",
 });
+export const VaultStatusResultJson = Schema.fromJsonString(VaultStatusResult).annotate({
+  identifier: "VaultStatusResultJson",
+});
 export const SemanticIndexResultJson = Schema.fromJsonString(SemanticIndexResult).annotate({
   identifier: "SemanticIndexResultJson",
 });
@@ -106,6 +127,8 @@ export const encodeInitCommandResultJson = Schema.encodeUnknownEffect(InitComman
 export const decodeInitCommandResultJson = Schema.decodeUnknownEffect(InitCommandResultJson);
 export const encodeLinkCommandResultJson = Schema.encodeUnknownEffect(LinkCommandResultJson);
 export const encodeStatusCommandResultJson = Schema.encodeUnknownEffect(StatusCommandResultJson);
+export const decodeStatusCommandResultJson = Schema.decodeUnknownEffect(StatusCommandResultJson);
+export const decodeVaultStatusResultJson = Schema.decodeUnknownEffect(VaultStatusResultJson);
 export const encodeSemanticIndexResultJson = Schema.encodeUnknownEffect(SemanticIndexResultJson);
 export const decodeSemanticIndexResultJson = Schema.decodeUnknownEffect(SemanticIndexResultJson);
 export const encodeSemanticIndexReadinessJson = Schema.encodeUnknownEffect(

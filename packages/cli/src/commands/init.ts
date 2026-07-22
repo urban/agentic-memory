@@ -18,7 +18,7 @@ export const commandInit = Command.make(
   Effect.fnUntraced(function* ({ targetPath, git, yes }) {
     const root = yield* commandRoot;
     const resolvedTargetPath = yield* resolvePathInput(
-      root.directory,
+      root.directory.path,
       targetPath,
       "Vault target path",
     );

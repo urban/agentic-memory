@@ -23,7 +23,7 @@ export const commandIndex = Command.make(
   },
   Effect.fnUntraced(function* ({ deleteIndex, vaultPath }) {
     const root = yield* commandRoot;
-    const resolvedVaultPath = yield* resolvePathInput(root.directory, vaultPath, "Vault path");
+    const resolvedVaultPath = yield* resolvePathInput(root.directory.path, vaultPath, "Vault path");
     const result = yield* (
       deleteIndex
         ? deleteSemanticIndex(resolvedVaultPath)

@@ -1,66 +1,167 @@
 import {
-  encodeSemanticIndexReadinessJson,
   encodeStatusCommandResultJson,
+  StatusCommandResult,
 } from "@urban/agentic-memory-core/cli/CliResults";
-import { loadLinkConfig } from "@urban/agentic-memory-core/link/LinkConfig";
+import { decodeAbsolutePath, loadLinkConfig } from "@urban/agentic-memory-core/link/LinkConfig";
 import { inspectSemanticIndex } from "@urban/agentic-memory-core/semantic/SemanticIndex";
 import { checkVaultHealth } from "@urban/agentic-memory-core/vault/VaultStatus";
-import { Console, Effect, Option } from "effect";
+import { Console, Effect, FileSystem, Option, Path } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import { toFailure, withCliFailureOutput } from "../output.ts";
 import { resolvePathInput } from "./path-input.ts";
-import { projectRootFlag, resolveProjectRoot } from "./project-root-input.ts";
 import { commandRoot } from "./root.ts";
 
-const buildStatusResult = Effect.fnUntraced(function* (projectRoot: string) {
-  const loaded = yield* loadLinkConfig(projectRoot);
-  switch (loaded._tag) {
-    case "missing":
-      return {
-        status: "unlinked",
-        projectRoot,
+type AbsolutePath = import("@urban/agentic-memory-core/link/LinkConfig").AbsolutePath;
+type SemanticIndexReadiness =
+  import("@urban/agentic-memory-core/semantic/SemanticIndex").SemanticIndexReadiness;
+type StatusResult = import("@urban/agentic-memory-core/cli/CliResults").StatusCommandResult;
+
+const projectRootFlag = Flag.string("project-root").pipe(
+  Flag.withDescription(
+    "Deprecated project root containing .agentic-memory-link/config.json; use -C instead",
+  ),
+  Flag.optional,
+);
+
+const inspectReadiness = (vaultPath: AbsolutePath) =>
+  inspectSemanticIndex(vaultPath).pipe(
+    Effect.mapError((cause) =>
+      toFailure({
+        code: cause.reason,
+        message: cause.message,
+      }),
+    ),
+  );
+
+const decodeStatusAbsolutePath = (input: string) =>
+  decodeAbsolutePath(input).pipe(
+    Effect.mapError((cause) =>
+      toFailure({
+        code: "InvalidStatusPath",
+        message: `Status path is invalid: ${cause.message}`,
+      }),
+    ),
+  );
+
+const inspectVault = Effect.fnUntraced(function* (vaultPath: AbsolutePath) {
+  const readiness = yield* inspectReadiness(vaultPath);
+  return StatusCommandResult.make({
+    _tag: "vault",
+    version: 1,
+    directory: vaultPath,
+    readiness,
+  });
+});
+
+const hasVaultControlPlane = Effect.fnUntraced(function* (
+  directory: AbsolutePath,
+): Effect.fn.Return<boolean, never, FileSystem.FileSystem | Path.Path> {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  return yield* fs
+    .exists(path.join(directory, ".agentic-memory"))
+    .pipe(Effect.orElseSucceed(() => false));
+});
+
+const inspectWorkingContext = Effect.fnUntraced(function* (directory: AbsolutePath) {
+  const loaded = yield* loadLinkConfig(directory);
+  if (loaded._tag === "invalid") {
+    return StatusCommandResult.make({
+      _tag: "linked-project",
+      version: 1,
+      status: "unhealthy",
+      directory,
+      inspection: {
+        _tag: "invalid-link",
         link: {
-          exists: false,
-          path: loaded.paths.configFile,
-        },
-        warnings: [],
-      };
-    case "invalid":
-      return {
-        status: "unhealthy",
-        projectRoot,
-        link: {
-          exists: true,
-          path: loaded.paths.configFile,
+          path: yield* decodeStatusAbsolutePath(loaded.paths.configFile),
           message: loaded.message,
         },
-        warnings: [loaded.message],
-      };
-    case "valid": {
-      const health = yield* checkVaultHealth({
-        vaultPath: loaded.config.vaultPath,
-        projectSlug: loaded.config.projectSlug,
+      },
+      warnings: [loaded.message],
+    });
+  }
+
+  const isVault = yield* hasVaultControlPlane(directory);
+  if (loaded._tag === "valid") {
+    if (isVault) {
+      return yield* toFailure({
+        code: "AmbiguousStatusContext",
+        message: `Directory is both an Agentic Memory vault and a linked project: ${directory}`,
+        exitCode: 2,
       });
-      return {
-        status: health.healthy ? "healthy" : "unhealthy",
-        projectRoot,
+    }
+
+    const projectRoute = yield* checkVaultHealth({
+      vaultPath: loaded.config.vaultPath,
+      projectSlug: loaded.config.projectSlug,
+    });
+    const semanticReadiness = yield* inspectReadiness(loaded.config.vaultPath);
+    const warnings = [
+      ...(projectRoute.healthy ? [] : ["Linked vault project route is unhealthy."]),
+      ...semanticReadiness.warnings,
+    ];
+    return StatusCommandResult.make({
+      _tag: "linked-project",
+      version: 1,
+      status: projectRoute.healthy ? "healthy" : "unhealthy",
+      directory,
+      inspection: {
+        _tag: "valid-link",
         link: {
-          exists: true,
-          path: loaded.paths.configFile,
+          path: yield* decodeStatusAbsolutePath(loaded.paths.configFile),
           config: loaded.config,
         },
-        vault: {
-          path: health.path,
-          healthy: health.healthy,
-          projectFileExists: health.projectFileExists,
-          memoryRouteExists: health.memoryRouteExists,
-          details: health,
-        },
-        warnings: health.healthy ? [] : ["Linked vault is unhealthy for this project."],
-      };
-    }
+        projectRoute,
+        semanticReadiness,
+      },
+      warnings,
+    });
   }
+
+  if (isVault) {
+    return yield* inspectVault(directory);
+  }
+
+  return StatusCommandResult.make({
+    _tag: "unconfigured",
+    version: 1,
+    status: "unconfigured",
+    directory,
+    expectedLinkPath: yield* decodeStatusAbsolutePath(loaded.paths.configFile),
+    warnings: [],
+  });
 });
+
+const formatReadiness = (readiness: SemanticIndexReadiness): string =>
+  [
+    `Agentic Memory vault status: ${readiness.status}`,
+    `Vault: ${readiness.vault.status}`,
+    `Model: ${readiness.model.status}`,
+    `Index: ${readiness.index.status} (${readiness.index.newFiles} new, ${readiness.index.changedFiles} changed, ${readiness.index.deletedFiles} deleted, ${readiness.index.unchangedFiles} unchanged)`,
+    `Recall ready: ${readiness.recallReady ? "yes" : "no"}`,
+    ...readiness.warnings.map((warning) => `Warning: ${warning}`),
+  ].join("\n");
+
+const formatHuman = (result: StatusResult): string => {
+  switch (result._tag) {
+    case "vault":
+      return formatReadiness(result.readiness);
+    case "unconfigured":
+      return `Agentic Memory status: unconfigured\nDirectory: ${result.directory}`;
+    case "linked-project":
+      if (result.inspection._tag === "invalid-link") {
+        return `Agentic Memory linked-project status: unhealthy\nLink: invalid\nWarning: ${result.inspection.link.message}`;
+      }
+      return [
+        `Agentic Memory linked-project status: ${result.status}`,
+        `Project route: ${result.inspection.projectRoute.healthy ? "healthy" : "unhealthy"}`,
+        `Linked vault semantic status: ${result.inspection.semanticReadiness.status}`,
+        `Recall ready: ${result.inspection.semanticReadiness.recallReady ? "yes" : "no"}`,
+        ...result.warnings.map((warning) => `Warning: ${warning}`),
+      ].join("\n");
+  }
+};
 
 export const commandStatus = Command.make(
   "status",
@@ -71,42 +172,33 @@ export const commandStatus = Command.make(
       Flag.optional,
     ),
   },
-  Effect.fnUntraced(function* ({ projectRoot: rawProjectRoot, vaultPath }) {
+  Effect.fnUntraced(function* ({ projectRoot, vaultPath }) {
     const root = yield* commandRoot;
-    if (Option.isSome(vaultPath)) {
-      const resolvedVaultPath = yield* resolvePathInput(
-        root.directory,
-        vaultPath.value,
-        "Vault path",
-      );
-      const result = yield* inspectSemanticIndex(resolvedVaultPath).pipe(
-        Effect.mapError((cause) =>
-          toFailure({
-            code: cause.reason,
-            message: cause.message,
-          }),
-        ),
-      );
-      const jsonText = yield* encodeSemanticIndexReadinessJson(result).pipe(
-        Effect.mapError((cause) =>
-          toFailure({
-            code: "EncodeResultFailed",
-            message: `Failed to encode semantic readiness result: ${cause.message}`,
-          }),
-        ),
-      );
-      const human = [
-        `Agentic Memory vault status: ${result.status}`,
-        `Vault: ${result.vault.status}`,
-        `Model: ${result.model.status}`,
-        `Index: ${result.index.status} (${result.index.newFiles} new, ${result.index.changedFiles} changed, ${result.index.deletedFiles} deleted, ${result.index.unchangedFiles} unchanged)`,
-        `Recall ready: ${result.recallReady ? "yes" : "no"}`,
-        ...result.warnings.map((warning) => `Warning: ${warning}`),
-      ].join("\n");
-      return yield* Console.log(root.json ? jsonText : human);
+    const compatibilityDirectory = Option.isSome(projectRoot)
+      ? yield* resolvePathInput(
+          yield* decodeStatusAbsolutePath(process.cwd()),
+          projectRoot.value,
+          "Project root",
+        )
+      : root.directory.path;
+
+    if (
+      root.directory.explicit &&
+      Option.isSome(projectRoot) &&
+      compatibilityDirectory !== root.directory.path
+    ) {
+      return yield* toFailure({
+        code: "ConflictingDirectoryContext",
+        message: `Explicit -C directory conflicts with --project-root: ${root.directory.path} != ${compatibilityDirectory}`,
+        exitCode: 2,
+      });
     }
-    const projectRoot = yield* resolveProjectRoot(rawProjectRoot);
-    const result = yield* buildStatusResult(projectRoot);
+
+    const result = Option.isSome(vaultPath)
+      ? yield* resolvePathInput(root.directory.path, vaultPath.value, "Vault path").pipe(
+          Effect.flatMap(inspectVault),
+        )
+      : yield* inspectWorkingContext(compatibilityDirectory);
     const jsonText = yield* encodeStatusCommandResultJson(result).pipe(
       Effect.mapError((cause) =>
         toFailure({
@@ -116,20 +208,18 @@ export const commandStatus = Command.make(
       ),
     );
 
-    return yield* Console.log(root.json ? jsonText : `Agentic Memory status: ${result.status}`);
+    return yield* Console.log(root.json ? jsonText : formatHuman(result));
   }, withCliFailureOutput),
 ).pipe(
-  Command.withDescription(
-    "Inspect read-only vault semantic readiness or project-local link health",
-  ),
+  Command.withDescription("Inspect the Agentic Memory context at the effective directory"),
   Command.withExamples([
     {
-      command: "agentic-memory -C /absolute/path/to status --vault vault --json",
-      description: "Resolve a relative vault path and inspect semantic recall readiness",
+      command: "agentic-memory -C /absolute/path/to/vault status --json",
+      description: "Inspect the exact vault or linked-project context at a directory",
     },
     {
-      command: "agentic-memory status --project-root . --json",
-      description: "Inspect link status as JSON without searching ancestor directories",
+      command: "agentic-memory -C /absolute/path/to status --vault vault --json",
+      description: "Resolve an explicit relative vault before contextual status detection",
     },
   ]),
 );
