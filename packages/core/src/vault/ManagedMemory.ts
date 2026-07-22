@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { Effect, FileSystem, Path, Schema } from "effect";
+import { isPathInsideRoot } from "./VaultPathSafety.ts";
 
 export type ManagedMemoryLayer =
   | "core"
@@ -224,15 +225,6 @@ export const parseManagedMemoryDocument = (
   };
 };
 
-const isInsideVault = (
-  vaultRealPath: string,
-  candidateRealPath: string,
-  path: Path.Path,
-): boolean => {
-  const relative = path.relative(vaultRealPath, candidateRealPath);
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
-};
-
 export const readManagedMemoryDocuments = Effect.fnUntraced(function* (
   vaultPath: string,
   isEligible: ManagedMemoryEligibility = () => true,
@@ -285,7 +277,7 @@ export const readManagedMemoryDocuments = Effect.fnUntraced(function* (
             }),
         ),
       );
-      if (!isInsideVault(vaultRealPath, candidateRealPath, path)) {
+      if (!isPathInsideRoot(vaultRealPath, candidateRealPath, path)) {
         return yield* new ManagedMemoryError({
           reason: "UnsafeManagedPath",
           message: `Managed memory symlink resolves outside the vault: ${relativePath}`,

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { Clock, Effect, FileSystem, Path, Schema } from "effect";
 import { parseManagedMemoryDocument, readManagedMemoryDocuments } from "../vault/ManagedMemory.ts";
+import { isPathInsideRoot } from "../vault/VaultPathSafety.ts";
 import {
   EMBEDDING_MODEL_DIMENSIONS,
   EMBEDDING_MODEL_ID,
@@ -16,10 +17,13 @@ import {
   initializeSemanticIndexRepository,
   markSemanticIndexIncomplete,
   readSemanticIndexSnapshot,
+  removeSemanticIndexDocuments,
   replaceSemanticIndexDocument,
 } from "./SemanticIndexRepository.ts";
 
 type ManagedMemoryDocument = import("../vault/ManagedMemory.ts").ManagedMemoryDocument;
+type StoredIndexDocument = import("./SemanticIndexRepository.ts").StoredIndexDocument;
+type StoredIndexSnapshot = import("./SemanticIndexRepository.ts").StoredIndexSnapshot;
 
 export const SemanticIndexFileCounts = Schema.Struct({
   new: Schema.Int,
@@ -60,6 +64,8 @@ export class SemanticIndexError extends Schema.TaggedErrorClass<SemanticIndexErr
       "ModelMissing",
       "IndexReadFailed",
       "IndexWriteFailed",
+      "IncompatibleIndex",
+      "IndexBusy",
       "InvalidEmbedding",
       "DeleteFailed",
     ]),
@@ -69,8 +75,17 @@ export class SemanticIndexError extends Schema.TaggedErrorClass<SemanticIndexErr
 ) {}
 
 interface IndexPaths {
+  readonly controlPlaneDirectory: string;
   readonly indexDirectory: string;
   readonly databasePath: string;
+  readonly lockDirectory: string;
+}
+
+interface SynchronizationPlan {
+  readonly added: ReadonlyArray<ManagedMemoryDocument>;
+  readonly changed: ReadonlyArray<ManagedMemoryDocument>;
+  readonly deleted: ReadonlyArray<StoredIndexDocument>;
+  readonly unchanged: ReadonlyArray<ManagedMemoryDocument>;
 }
 
 const zeroFiles = (): SemanticIndexFileCounts => ({
@@ -97,8 +112,95 @@ const indexPaths = Effect.fnUntraced(function* (
       message: "Refused unsafe semantic index path",
     });
   }
-  return { indexDirectory, databasePath: path.join(indexDirectory, "recall.db") };
+  return {
+    controlPlaneDirectory: path.join(vaultPath, ".agentic-memory"),
+    indexDirectory,
+    databasePath: path.join(indexDirectory, "recall.db"),
+    lockDirectory: path.join(vaultPath, ".agentic-memory", "index.lock"),
+  };
 });
+
+const ensureDeletionPathsSafe = Effect.fnUntraced(function* (
+  vaultPath: string,
+  paths: IndexPaths,
+): Effect.fn.Return<void, SemanticIndexError, FileSystem.FileSystem | Path.Path> {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const vaultRealPath = yield* fs.realPath(vaultPath).pipe(
+    Effect.mapError(
+      (cause) =>
+        new SemanticIndexError({
+          reason: "DeleteFailed",
+          message: "Failed to resolve the vault before semantic index deletion",
+          cause,
+        }),
+    ),
+  );
+
+  for (const candidatePath of [
+    paths.controlPlaneDirectory,
+    paths.indexDirectory,
+    paths.lockDirectory,
+  ]) {
+    const exists = yield* fs.exists(candidatePath).pipe(
+      Effect.mapError(
+        (cause) =>
+          new SemanticIndexError({
+            reason: "DeleteFailed",
+            message: "Failed to inspect semantic index paths before deletion",
+            cause,
+          }),
+      ),
+    );
+    if (!exists) {
+      continue;
+    }
+    const candidateRealPath = yield* fs.realPath(candidatePath).pipe(
+      Effect.mapError(
+        (cause) =>
+          new SemanticIndexError({
+            reason: "DeleteFailed",
+            message: "Failed to resolve semantic index paths before deletion",
+            cause,
+          }),
+      ),
+    );
+    if (!isPathInsideRoot(vaultRealPath, candidateRealPath, path)) {
+      return yield* new SemanticIndexError({
+        reason: "DeleteFailed",
+        message: "Refused unsafe semantic index deletion path outside the vault",
+      });
+    }
+  }
+});
+
+const withIndexLock = <A, E, R>(
+  paths: IndexPaths,
+  failureReason: "IndexWriteFailed" | "DeleteFailed",
+  use: Effect.Effect<A, E, R>,
+): Effect.Effect<A, E | SemanticIndexError, R | FileSystem.FileSystem> =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      yield* Effect.acquireRelease(
+        fs.makeDirectory(paths.lockDirectory).pipe(
+          Effect.mapError(
+            (cause) =>
+              new SemanticIndexError({
+                reason: cause.reason._tag === "AlreadyExists" ? "IndexBusy" : failureReason,
+                message:
+                  cause.reason._tag === "AlreadyExists"
+                    ? "Semantic index is busy; wait for the active operation to finish"
+                    : "Failed to acquire the semantic index lock",
+                cause,
+              }),
+          ),
+        ),
+        () => fs.remove(paths.lockDirectory, { recursive: true }).pipe(Effect.exit),
+      );
+      return yield* use;
+    }),
+  );
 
 const loadInventory = Effect.fnUntraced(function* (
   vaultPath: string,
@@ -133,6 +235,47 @@ const inventoryFingerprint = (documents: ReadonlyArray<ManagedMemoryDocument>): 
   createHash("sha256")
     .update(documents.map(({ path, contentHash }) => `${path}\0${contentHash}`).join("\n"))
     .digest("hex");
+
+const planSynchronization = (
+  documents: ReadonlyArray<ManagedMemoryDocument>,
+  snapshot: StoredIndexSnapshot,
+): SynchronizationPlan => {
+  const storedByPath = new Map(snapshot.documents.map((document) => [document.path, document]));
+  const currentPaths = new Set(documents.map(({ path }) => path));
+  return {
+    added: documents.filter(({ path }) => !storedByPath.has(path)),
+    changed: documents.filter(({ path, contentHash }) => {
+      const stored = storedByPath.get(path);
+      return stored !== undefined && stored.contentHash !== contentHash;
+    }),
+    deleted: snapshot.documents.filter(({ path }) => !currentPaths.has(path)),
+    unchanged: documents.filter(({ path, contentHash }) => {
+      const stored = storedByPath.get(path);
+      return stored !== undefined && stored.contentHash === contentHash;
+    }),
+  };
+};
+
+const requireCompatibleSnapshot = (
+  vaultPath: string,
+  snapshot: StoredIndexSnapshot,
+  repositoryOrigin: "fresh" | "existing",
+): Effect.Effect<StoredIndexSnapshot, SemanticIndexError> => {
+  const metadata = snapshot.metadata;
+  const compatible =
+    metadata === undefined
+      ? repositoryOrigin === "fresh"
+      : metadata.schemaVersion === INDEX_SCHEMA_VERSION &&
+        metadata.compatibilityFingerprint === SEMANTIC_INDEX_COMPATIBILITY_FINGERPRINT;
+  return compatible
+    ? Effect.succeed(snapshot)
+    : Effect.fail(
+        new SemanticIndexError({
+          reason: "IncompatibleIndex",
+          message: `Semantic index at ${vaultPath} is incompatible; run agentic-memory index --vault ${vaultPath} --delete, then index again`,
+        }),
+      );
+};
 
 export const inspectSemanticIndex = Effect.fnUntraced(function* (
   vaultPath: string,
@@ -252,79 +395,167 @@ export const synchronizeSemanticIndex = Effect.fnUntraced(function* (
 > {
   const fs = yield* FileSystem.FileSystem;
   const paths = yield* indexPaths(vaultPath);
-  const documents = yield* loadInventory(vaultPath);
-  const model = yield* EmbeddingModel;
-  const modelInspection = yield* model.inspect.pipe(
-    Effect.mapError(
-      (cause) =>
-        new SemanticIndexError({
-          reason: "ModelInspectionFailed",
-          message: cause.message,
-          cause,
-        }),
-    ),
+  yield* loadInventory(vaultPath);
+  return yield* withIndexLock(
+    paths,
+    "IndexWriteFailed",
+    Effect.gen(function* () {
+      const documents = yield* loadInventory(vaultPath);
+      const databaseExists = yield* fs.exists(paths.databasePath).pipe(
+        Effect.mapError(
+          (cause) =>
+            new SemanticIndexError({
+              reason: "IndexReadFailed",
+              message: "Failed to inspect semantic index storage",
+              cause,
+            }),
+        ),
+      );
+
+      yield* fs.makeDirectory(paths.indexDirectory, { recursive: true }).pipe(
+        Effect.mapError(
+          (cause) =>
+            new SemanticIndexError({
+              reason: "IndexWriteFailed",
+              message: "Failed to create semantic index storage",
+              cause,
+            }),
+        ),
+      );
+      if (!databaseExists) {
+        yield* initializeSemanticIndexRepository(
+          paths.databasePath,
+          EMBEDDING_MODEL_DIMENSIONS,
+        ).pipe(
+          Effect.mapError(
+            (cause) =>
+              new SemanticIndexError({
+                reason: "IndexWriteFailed",
+                message: cause.message,
+                cause,
+              }),
+          ),
+        );
+      }
+
+      const snapshot = yield* readSemanticIndexSnapshot(paths.databasePath).pipe(
+        Effect.mapError(
+          (cause) =>
+            new SemanticIndexError({
+              reason: databaseExists ? "IncompatibleIndex" : "IndexReadFailed",
+              message: databaseExists
+                ? `Semantic index at ${vaultPath} is incompatible; run agentic-memory index --vault ${vaultPath} --delete, then index again`
+                : cause.message,
+              cause,
+            }),
+        ),
+        Effect.flatMap((current) =>
+          requireCompatibleSnapshot(vaultPath, current, databaseExists ? "existing" : "fresh"),
+        ),
+      );
+      const plan = planSynchronization(documents, snapshot);
+      const currentFingerprint = inventoryFingerprint(documents);
+      const alreadyCurrent =
+        snapshot.metadata?.state === "complete" &&
+        snapshot.metadata.inventoryFingerprint === currentFingerprint &&
+        plan.added.length === 0 &&
+        plan.changed.length === 0 &&
+        plan.deleted.length === 0;
+      if (alreadyCurrent) {
+        return {
+          status: "already_current",
+          vaultPath,
+          files: {
+            new: 0,
+            changed: 0,
+            deleted: 0,
+            unchanged: plan.unchanged.length,
+          },
+          chunks: { embedded: 0, removed: 0 },
+          warnings: [],
+        } satisfies SemanticIndexResult;
+      }
+
+      const model = yield* EmbeddingModel;
+      const modelInspection = yield* model.inspect.pipe(
+        Effect.mapError(
+          (cause) =>
+            new SemanticIndexError({
+              reason: "ModelInspectionFailed",
+              message: cause.message,
+              cause,
+            }),
+        ),
+      );
+      if (modelInspection.status === "missing") {
+        return yield* new SemanticIndexError({
+          reason: "ModelMissing",
+          message: `Embedding model ${EMBEDDING_MODEL_ID} is not installed; run agentic-memory init first`,
+        });
+      }
+
+      yield* markSemanticIndexIncomplete(
+        paths.databasePath,
+        SEMANTIC_INDEX_COMPATIBILITY_FINGERPRINT,
+      ).pipe(
+        Effect.mapError(
+          (cause) =>
+            new SemanticIndexError({ reason: "IndexWriteFailed", message: cause.message, cause }),
+        ),
+      );
+
+      const removedChunks = [...plan.changed, ...plan.deleted].reduce((total, document) => {
+        const stored = snapshot.documents.find(({ path }) => path === document.path);
+        return total + (stored?.chunkCount ?? 0);
+      }, 0);
+      yield* removeSemanticIndexDocuments(
+        paths.databasePath,
+        plan.deleted.map(({ path }) => path),
+      ).pipe(
+        Effect.mapError(
+          (cause) =>
+            new SemanticIndexError({ reason: "IndexWriteFailed", message: cause.message, cause }),
+        ),
+      );
+
+      let embeddedChunks = 0;
+      for (const document of [...plan.added, ...plan.changed]) {
+        const indexed = yield* embedDocument(document);
+        yield* replaceSemanticIndexDocument(paths.databasePath, indexed).pipe(
+          Effect.mapError(
+            (cause) =>
+              new SemanticIndexError({ reason: "IndexWriteFailed", message: cause.message, cause }),
+          ),
+        );
+        embeddedChunks += indexed.chunks.length;
+      }
+
+      const completedAtMs = yield* Clock.currentTimeMillis;
+      yield* completeSemanticIndex(
+        paths.databasePath,
+        SEMANTIC_INDEX_COMPATIBILITY_FINGERPRINT,
+        currentFingerprint,
+        completedAtMs,
+      ).pipe(
+        Effect.mapError(
+          (cause) =>
+            new SemanticIndexError({ reason: "IndexWriteFailed", message: cause.message, cause }),
+        ),
+      );
+      return {
+        status: "indexed",
+        vaultPath,
+        files: {
+          new: plan.added.length,
+          changed: plan.changed.length,
+          deleted: plan.deleted.length,
+          unchanged: plan.unchanged.length,
+        },
+        chunks: { embedded: embeddedChunks, removed: removedChunks },
+        warnings: [],
+      } satisfies SemanticIndexResult;
+    }),
   );
-  if (modelInspection.status === "missing") {
-    return yield* new SemanticIndexError({
-      reason: "ModelMissing",
-      message: `Embedding model ${EMBEDDING_MODEL_ID} is not installed; run agentic-memory init first`,
-    });
-  }
-  yield* fs.makeDirectory(paths.indexDirectory, { recursive: true }).pipe(
-    Effect.mapError(
-      (cause) =>
-        new SemanticIndexError({
-          reason: "IndexWriteFailed",
-          message: "Failed to create semantic index storage",
-          cause,
-        }),
-    ),
-  );
-  yield* initializeSemanticIndexRepository(paths.databasePath, EMBEDDING_MODEL_DIMENSIONS).pipe(
-    Effect.mapError(
-      (cause) =>
-        new SemanticIndexError({ reason: "IndexWriteFailed", message: cause.message, cause }),
-    ),
-  );
-  yield* markSemanticIndexIncomplete(
-    paths.databasePath,
-    SEMANTIC_INDEX_COMPATIBILITY_FINGERPRINT,
-  ).pipe(
-    Effect.mapError(
-      (cause) =>
-        new SemanticIndexError({ reason: "IndexWriteFailed", message: cause.message, cause }),
-    ),
-  );
-  let embeddedChunks = 0;
-  for (const document of documents) {
-    const indexed = yield* embedDocument(document);
-    yield* replaceSemanticIndexDocument(paths.databasePath, indexed).pipe(
-      Effect.mapError(
-        (cause) =>
-          new SemanticIndexError({ reason: "IndexWriteFailed", message: cause.message, cause }),
-      ),
-    );
-    embeddedChunks += indexed.chunks.length;
-  }
-  const completedAtMs = yield* Clock.currentTimeMillis;
-  yield* completeSemanticIndex(
-    paths.databasePath,
-    SEMANTIC_INDEX_COMPATIBILITY_FINGERPRINT,
-    inventoryFingerprint(documents),
-    completedAtMs,
-  ).pipe(
-    Effect.mapError(
-      (cause) =>
-        new SemanticIndexError({ reason: "IndexWriteFailed", message: cause.message, cause }),
-    ),
-  );
-  return {
-    status: "indexed",
-    vaultPath,
-    files: { new: documents.length, changed: 0, deleted: 0, unchanged: 0 },
-    chunks: { embedded: embeddedChunks, removed: 0 },
-    warnings: [],
-  };
 });
 
 export const deleteSemanticIndex = Effect.fnUntraced(function* (
@@ -332,40 +563,47 @@ export const deleteSemanticIndex = Effect.fnUntraced(function* (
 ): Effect.fn.Return<SemanticIndexResult, SemanticIndexError, FileSystem.FileSystem | Path.Path> {
   const fs = yield* FileSystem.FileSystem;
   const paths = yield* indexPaths(vaultPath);
-  const exists = yield* fs.exists(paths.indexDirectory).pipe(
-    Effect.mapError(
-      (cause) =>
-        new SemanticIndexError({
-          reason: "DeleteFailed",
-          message: "Failed to inspect semantic index storage before deletion",
-          cause,
-        }),
-    ),
+  yield* ensureDeletionPathsSafe(vaultPath, paths);
+  return yield* withIndexLock(
+    paths,
+    "DeleteFailed",
+    Effect.gen(function* () {
+      const exists = yield* fs.exists(paths.indexDirectory).pipe(
+        Effect.mapError(
+          (cause) =>
+            new SemanticIndexError({
+              reason: "DeleteFailed",
+              message: "Failed to inspect semantic index storage before deletion",
+              cause,
+            }),
+        ),
+      );
+      if (!exists) {
+        return {
+          status: "already_absent",
+          vaultPath,
+          files: zeroFiles(),
+          chunks: { embedded: 0, removed: 0 },
+          warnings: [],
+        } satisfies SemanticIndexResult;
+      }
+      yield* fs.remove(paths.indexDirectory, { recursive: true }).pipe(
+        Effect.mapError(
+          (cause) =>
+            new SemanticIndexError({
+              reason: "DeleteFailed",
+              message: "Failed to delete semantic index storage",
+              cause,
+            }),
+        ),
+      );
+      return {
+        status: "deleted",
+        vaultPath,
+        files: zeroFiles(),
+        chunks: { embedded: 0, removed: 0 },
+        warnings: [],
+      } satisfies SemanticIndexResult;
+    }),
   );
-  if (!exists) {
-    return {
-      status: "already_absent",
-      vaultPath,
-      files: zeroFiles(),
-      chunks: { embedded: 0, removed: 0 },
-      warnings: [],
-    };
-  }
-  yield* fs.remove(paths.indexDirectory, { recursive: true }).pipe(
-    Effect.mapError(
-      (cause) =>
-        new SemanticIndexError({
-          reason: "DeleteFailed",
-          message: "Failed to delete semantic index storage",
-          cause,
-        }),
-    ),
-  );
-  return {
-    status: "deleted",
-    vaultPath,
-    files: zeroFiles(),
-    chunks: { embedded: 0, removed: 0 },
-    warnings: [],
-  };
 });

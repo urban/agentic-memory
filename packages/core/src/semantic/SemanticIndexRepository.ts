@@ -282,6 +282,29 @@ export const replaceSemanticIndexDocument = (
     ).pipe(Effect.asVoid);
   });
 
+export const removeSemanticIndexDocuments = (
+  databasePath: string,
+  documentPaths: ReadonlyArray<string>,
+): Effect.Effect<void, SemanticIndexRepositoryError, Path.Path> =>
+  documentPaths.length === 0
+    ? Effect.void
+    : withClient(databasePath, (client) =>
+        repositoryOperation(
+          "WriteFailed",
+          "Failed to remove deleted semantic index documents",
+          () =>
+            client.batch(
+              documentPaths.map(
+                (documentPath): InStatement => ({
+                  sql: "DELETE FROM documents WHERE path = ?",
+                  args: [documentPath],
+                }),
+              ),
+              "write",
+            ),
+        ).pipe(Effect.asVoid),
+      );
+
 export const completeSemanticIndex = (
   databasePath: string,
   compatibilityFingerprint: string,

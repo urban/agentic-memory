@@ -1,8 +1,10 @@
 import * as BunServices from "@effect/platform-bun/BunServices";
+import { createClient } from "@libsql/client";
 import { assert, describe, it } from "@effect/vitest";
 import { Effect, FileSystem, Layer, ManagedRuntime, Path } from "effect";
 import {
   EMBEDDING_MODEL_DIMENSIONS,
+  EmbeddingRuntimeError,
   EmbeddingModel,
   makeEmbeddingModel,
 } from "../src/semantic/EmbeddingModel.ts";
@@ -33,6 +35,7 @@ import {
 
 interface FakeModelControl {
   calls: number;
+  failOnText?: string;
 }
 
 const fakeVector = (text: string): ReadonlyArray<number> =>
@@ -61,7 +64,12 @@ const makeControlledModelLayer = (control: FakeModelControl): Layer.Layer<Embedd
       }),
       embed: (texts) => {
         control.calls += 1;
-        return Effect.succeed(texts.map(fakeVector));
+        return control.failOnText !== undefined &&
+          texts.some((text) => text.includes(control.failOnText ?? ""))
+          ? Effect.fail(
+              new EmbeddingRuntimeError({ message: `Rejected ${control.failOnText} for test` }),
+            )
+          : Effect.succeed(texts.map(fakeVector));
       },
     }),
   );
@@ -512,4 +520,314 @@ describe("semantic index workflow with native libSQL", () => {
       ),
     );
   });
+
+  it.effect("plans no-op, add, change, and delete work from content hashes", () => {
+    const control: FakeModelControl = { calls: 0 };
+    return withServices(
+      control,
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const vaultPath = yield* fs.makeTempDirectoryScoped({ prefix: "semantic-index-plan-" });
+          yield* writeVault(vaultPath);
+
+          const initial = yield* synchronizeSemanticIndex(vaultPath);
+          const callsAfterInitial = control.calls;
+          const current = yield* synchronizeSemanticIndex(vaultPath);
+          assert.strictEqual(current.status, "already_current");
+          assert.deepStrictEqual(current.files, {
+            new: 0,
+            changed: 0,
+            deleted: 0,
+            unchanged: 4,
+          });
+          assert.deepStrictEqual(current.chunks, { embedded: 0, removed: 0 });
+          assert.strictEqual(control.calls, callsAfterInitial);
+
+          yield* fs.writeFileString(
+            path.join(vaultPath, "notes", "added.md"),
+            "# Added\n\nA new durable fact.\n",
+          );
+          const added = yield* synchronizeSemanticIndex(vaultPath);
+          assert.deepStrictEqual(added.files, {
+            new: 1,
+            changed: 0,
+            deleted: 0,
+            unchanged: 4,
+          });
+          assert.strictEqual(added.chunks.embedded, 1);
+          assert.strictEqual(control.calls, callsAfterInitial + 1);
+
+          yield* fs.writeFileString(
+            path.join(vaultPath, "notes", "nearest.md"),
+            "# Nearest\n\nChanged durable fact.\n\n## More\n\nA second chunk.\n",
+          );
+          const changed = yield* synchronizeSemanticIndex(vaultPath);
+          assert.deepStrictEqual(changed.files, {
+            new: 0,
+            changed: 1,
+            deleted: 0,
+            unchanged: 4,
+          });
+          assert.strictEqual(changed.chunks.embedded, 2);
+          assert.strictEqual(changed.chunks.removed, 1);
+          assert.strictEqual(control.calls, callsAfterInitial + 2);
+
+          yield* fs.remove(path.join(vaultPath, "sources", "evidence.md"));
+          const deleted = yield* synchronizeSemanticIndex(vaultPath);
+          assert.deepStrictEqual(deleted.files, {
+            new: 0,
+            changed: 0,
+            deleted: 1,
+            unchanged: 4,
+          });
+          assert.deepStrictEqual(deleted.chunks, { embedded: 0, removed: 1 });
+          assert.strictEqual(control.calls, callsAfterInitial + 2);
+          assert.strictEqual(initial.status, "indexed");
+          assert.isFalse(yield* fs.exists(path.join(vaultPath, ".agentic-memory", "index.lock")));
+        }),
+      ),
+    );
+  });
+
+  it.effect("keeps failed replacements incomplete and finishes them on retry", () => {
+    const control: FakeModelControl = { calls: 0 };
+    return withServices(
+      control,
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const vaultPath = yield* fs.makeTempDirectoryScoped({ prefix: "semantic-index-retry-" });
+          yield* writeVault(vaultPath);
+          yield* synchronizeSemanticIndex(vaultPath);
+          const databasePath = path.join(vaultPath, ".agentic-memory", "index", "recall.db");
+          const before = yield* readSemanticIndexSnapshot(databasePath);
+          const originalHash = before.documents.find(
+            ({ path }) => path === "notes/nearest.md",
+          )?.contentHash;
+
+          yield* fs.writeFileString(
+            path.join(vaultPath, "notes", "nearest.md"),
+            "# Nearest\n\nfail-replacement\n",
+          );
+          control.failOnText = "fail-replacement";
+          const failure = yield* synchronizeSemanticIndex(vaultPath).pipe(Effect.flip);
+          assert.strictEqual(failure.reason, "InvalidEmbedding");
+          const failedSnapshot = yield* readSemanticIndexSnapshot(databasePath);
+          assert.strictEqual(failedSnapshot.metadata?.state, "incomplete");
+          assert.strictEqual(
+            failedSnapshot.documents.find(({ path }) => path === "notes/nearest.md")?.contentHash,
+            originalHash,
+          );
+          assert.isFalse(yield* fs.exists(path.join(vaultPath, ".agentic-memory", "index.lock")));
+
+          delete control.failOnText;
+          const retried = yield* synchronizeSemanticIndex(vaultPath);
+          assert.strictEqual(retried.status, "indexed");
+          assert.deepStrictEqual(retried.files, {
+            new: 0,
+            changed: 1,
+            deleted: 0,
+            unchanged: 3,
+          });
+          const completed = yield* readSemanticIndexSnapshot(databasePath);
+          assert.strictEqual(completed.metadata?.state, "complete");
+          assert.notStrictEqual(
+            completed.documents.find(({ path }) => path === "notes/nearest.md")?.contentHash,
+            originalHash,
+          );
+        }),
+      ),
+    );
+  });
+
+  it.effect.each([
+    {
+      incompatibility: "schema-version-only",
+      updateSql: "UPDATE index_metadata SET schema_version = 999 WHERE id = 1",
+    },
+    {
+      incompatibility: "compatibility-fingerprint-only",
+      updateSql: "UPDATE index_metadata SET compatibility_fingerprint = 'old' WHERE id = 1",
+    },
+  ])(
+    "rejects $incompatibility metadata with delete-then-index guidance",
+    ({ incompatibility, updateSql }) => {
+      const control: FakeModelControl = { calls: 0 };
+      return withServices(
+        control,
+        Effect.scoped(
+          Effect.gen(function* () {
+            const fs = yield* FileSystem.FileSystem;
+            const path = yield* Path.Path;
+            const vaultPath = yield* fs.makeTempDirectoryScoped({
+              prefix: "semantic-index-compat-",
+            });
+            yield* writeVault(vaultPath);
+            yield* synchronizeSemanticIndex(vaultPath);
+            const callsAfterInitial = control.calls;
+            const databasePath = path.join(vaultPath, ".agentic-memory", "index", "recall.db");
+            const before = yield* readSemanticIndexSnapshot(databasePath);
+            const databaseUrl = yield* path.toFileUrl(databasePath);
+            const client = yield* Effect.acquireRelease(
+              Effect.sync(() => createClient({ url: databaseUrl.href, intMode: "number" })),
+              (resource) => Effect.sync(() => resource.close()),
+            );
+            yield* Effect.promise(() => client.execute(updateSql));
+
+            const error = yield* synchronizeSemanticIndex(vaultPath).pipe(Effect.flip);
+            assert.strictEqual(error.reason, "IncompatibleIndex");
+            assert.include(error.message, "--delete");
+            assert.strictEqual(control.calls, callsAfterInitial);
+
+            const after = yield* readSemanticIndexSnapshot(databasePath);
+            assert.strictEqual(after.metadata?.state, before.metadata?.state);
+            assert.strictEqual(
+              after.metadata?.inventoryFingerprint,
+              before.metadata?.inventoryFingerprint,
+            );
+            if (incompatibility === "schema-version-only") {
+              assert.strictEqual(after.metadata?.schemaVersion, 999);
+              assert.strictEqual(
+                after.metadata?.compatibilityFingerprint,
+                before.metadata?.compatibilityFingerprint,
+              );
+            } else {
+              assert.strictEqual(after.metadata?.schemaVersion, before.metadata?.schemaVersion);
+              assert.strictEqual(after.metadata?.compatibilityFingerprint, "old");
+            }
+          }),
+        ),
+      );
+    },
+  );
+
+  it.effect("rejects an existing index whose singleton metadata row is missing", () => {
+    const control: FakeModelControl = { calls: 0 };
+    return withServices(
+      control,
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const vaultPath = yield* fs.makeTempDirectoryScoped({
+            prefix: "semantic-index-missing-metadata-",
+          });
+          yield* writeVault(vaultPath);
+          yield* synchronizeSemanticIndex(vaultPath);
+          const callsAfterInitial = control.calls;
+          const databasePath = path.join(vaultPath, ".agentic-memory", "index", "recall.db");
+          const before = yield* readSemanticIndexSnapshot(databasePath);
+          const query = Array.from({ length: EMBEDDING_MODEL_DIMENSIONS }, (_, index) =>
+            index === 0 ? 1 : 0,
+          );
+          const vectorsBefore = yield* searchSemanticIndexExact(databasePath, query, 10);
+          const databaseUrl = yield* path.toFileUrl(databasePath);
+          const client = yield* Effect.acquireRelease(
+            Effect.sync(() => createClient({ url: databaseUrl.href, intMode: "number" })),
+            (resource) => Effect.sync(() => resource.close()),
+          );
+          yield* Effect.promise(() => client.execute("DELETE FROM index_metadata WHERE id = 1"));
+
+          const error = yield* synchronizeSemanticIndex(vaultPath).pipe(Effect.flip);
+          assert.strictEqual(error.reason, "IncompatibleIndex");
+          assert.include(error.message, "--delete");
+          assert.strictEqual(control.calls, callsAfterInitial);
+
+          const after = yield* readSemanticIndexSnapshot(databasePath);
+          const vectorsAfter = yield* searchSemanticIndexExact(databasePath, query, 10);
+          assert.deepStrictEqual(after.documents, before.documents);
+          assert.deepStrictEqual(vectorsAfter, vectorsBefore);
+          assert.isUndefined(after.metadata);
+        }),
+      ),
+    );
+  });
+
+  it.effect("uses one lock for synchronization and idempotent deletion", () => {
+    const control: FakeModelControl = { calls: 0 };
+    return withServices(
+      control,
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const vaultPath = yield* fs.makeTempDirectoryScoped({ prefix: "semantic-index-delete-" });
+          yield* writeVault(vaultPath);
+          yield* synchronizeSemanticIndex(vaultPath);
+          const indexDirectory = path.join(vaultPath, ".agentic-memory", "index");
+          const lockDirectory = path.join(vaultPath, ".agentic-memory", "index.lock");
+          yield* fs.writeFileString(path.join(indexDirectory, "recall.db-wal"), "sidecar");
+          yield* fs.writeFileString(path.join(indexDirectory, "recall.db-shm"), "sidecar");
+          yield* fs.makeDirectory(lockDirectory);
+          const synchronizeBusy = yield* synchronizeSemanticIndex(vaultPath).pipe(Effect.flip);
+          const deleteBusy = yield* deleteSemanticIndex(vaultPath).pipe(Effect.flip);
+          assert.strictEqual(synchronizeBusy.reason, "IndexBusy");
+          assert.strictEqual(deleteBusy.reason, "IndexBusy");
+          yield* fs.remove(lockDirectory, { recursive: true });
+
+          const deleted = yield* deleteSemanticIndex(vaultPath);
+          assert.strictEqual(deleted.status, "deleted");
+          assert.isFalse(yield* fs.exists(indexDirectory));
+          assert.isFalse(yield* fs.exists(lockDirectory));
+          assert.isTrue(yield* fs.exists(path.join(vaultPath, "MEMORY.md")));
+          const absent = yield* deleteSemanticIndex(vaultPath);
+          assert.strictEqual(absent.status, "already_absent");
+          assert.isFalse(yield* fs.exists(lockDirectory));
+        }),
+      ),
+    );
+  });
+
+  it.effect(
+    "rejects deletion through a control-plane symlink without modifying external state",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const root = yield* fs.makeTempDirectoryScoped({
+            prefix: "semantic-index-unsafe-delete-",
+          });
+          const vaultPath = path.join(root, "vault");
+          const externalControlPlane = path.join(root, "external-control-plane");
+          const externalIndex = path.join(externalControlPlane, "index");
+          const sharedModelCache = path.join(root, "shared-model-cache");
+          const externalPaths = [
+            externalControlPlane,
+            externalIndex,
+            path.join(externalIndex, "recall.db"),
+            path.join(externalIndex, "recall.db-wal"),
+            path.join(externalIndex, "recall.db-shm"),
+            path.join(externalControlPlane, "sentinel.md"),
+            sharedModelCache,
+            path.join(sharedModelCache, "model.gguf"),
+          ];
+
+          yield* fs.makeDirectory(vaultPath);
+          yield* fs.makeDirectory(externalIndex, { recursive: true });
+          yield* fs.makeDirectory(sharedModelCache);
+          yield* fs.writeFileString(path.join(vaultPath, "MEMORY.md"), "# Memory\n");
+          yield* fs.writeFileString(path.join(vaultPath, "USER.md"), "# User\n");
+          yield* fs.writeFileString(path.join(externalIndex, "recall.db"), "database");
+          yield* fs.writeFileString(path.join(externalIndex, "recall.db-wal"), "sidecar");
+          yield* fs.writeFileString(path.join(externalIndex, "recall.db-shm"), "sidecar");
+          yield* fs.writeFileString(path.join(externalControlPlane, "sentinel.md"), "sentinel");
+          yield* fs.writeFileString(path.join(sharedModelCache, "model.gguf"), "model");
+          yield* fs.symlink(externalControlPlane, path.join(vaultPath, ".agentic-memory"));
+
+          const error = yield* deleteSemanticIndex(vaultPath).pipe(Effect.flip);
+          assert.strictEqual(error.reason, "DeleteFailed");
+          assert.include(error.message, "outside the vault");
+          assert.isFalse(yield* fs.exists(path.join(externalControlPlane, "index.lock")));
+          assert.isTrue(yield* fs.exists(path.join(vaultPath, "MEMORY.md")));
+          assert.isTrue(yield* fs.exists(path.join(vaultPath, "USER.md")));
+          for (const externalPath of externalPaths) {
+            assert.isTrue(yield* fs.exists(externalPath));
+          }
+        }),
+      ).pipe((effect) => withServices({ calls: 0 }, effect)),
+  );
 });
