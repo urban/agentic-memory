@@ -16,10 +16,6 @@ import { Clock, Console, Effect, Exit, FileSystem, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import { toFailure, withCliFailureOutput } from "../output.ts";
 import { resolvePathInput } from "./path-input.ts";
-import {
-  compatibilityProjectRootFlag,
-  resolveCompatibilityProjectRoot,
-} from "./project-root-input.ts";
 import { commandRoot } from "./root.ts";
 
 type LinkCommandResult = import("@urban/agentic-memory-core/cli/CliResults").LinkCommandResult;
@@ -38,18 +34,12 @@ export const commandLink = Command.make(
     project: Flag.string("project").pipe(
       Flag.withDescription("Bare lowercase Agentic Memory project slug"),
     ),
-    projectRoot: compatibilityProjectRootFlag,
     yes: Flag.boolean("yes").pipe(Flag.withDescription("Confirm overwriting a differing link")),
   },
-  Effect.fnUntraced(function* ({
-    vaultPath: rawVaultPath,
-    project,
-    projectRoot: rawProjectRoot,
-    yes,
-  }) {
+  Effect.fnUntraced(function* ({ vaultPath: rawVaultPath, project, yes }) {
     const root = yield* commandRoot;
     const fs = yield* FileSystem.FileSystem;
-    const projectRoot = yield* resolveCompatibilityProjectRoot(root.directory, rawProjectRoot);
+    const projectRoot = root.directory.path;
     const vaultPath = yield* resolvePathInput(root.directory.path, rawVaultPath, "Vault path");
     const projectSlug = yield* decodeProjectSlug(project).pipe(
       Effect.mapError((cause) =>

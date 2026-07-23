@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest";
-import { Effect, FileSystem, Path } from "effect";
+import { Effect, FileSystem } from "effect";
 import { afterAll } from "vitest";
 import { makeCliTestRuntime } from "../cli-test-support.ts";
 
@@ -48,39 +48,6 @@ describe("agentic-memory run-steward command", () => {
         assert.strictEqual(output.exitCode, 1);
         assert.include(output.stdout, '"code":"MissingLinkConfig"');
         assert.include(output.stdout, ".agentic-memory-link/config.json");
-      }),
-    ),
-  );
-
-  it.effect("rejects conflicting explicit directory selectors", () =>
-    withCliRuntime(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const fs = yield* FileSystem.FileSystem;
-          const path = yield* Path.Path;
-          const first = yield* fs.makeTempDirectoryScoped({ prefix: "run-steward-first-" });
-          const second = yield* fs.makeTempDirectoryScoped({ prefix: "run-steward-second-" });
-          yield* fs.writeFileString(
-            path.join(first, "payload.json"),
-            '{"version":1,"projectSlug":"example-project","messages":[{"role":"user","text":"hello"}]}',
-          );
-
-          return yield* runCapturedEffect([
-            "-C",
-            first,
-            "run-steward",
-            "--payload",
-            "payload.json",
-            "--project-root",
-            second,
-            "--json",
-          ]);
-        }),
-      ),
-    ).pipe(
-      Effect.map((output) => {
-        assert.strictEqual(output.exitCode, 2);
-        assert.include(output.stdout, '"code":"ConflictingDirectoryContext"');
       }),
     ),
   );

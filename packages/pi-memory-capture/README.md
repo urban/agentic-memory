@@ -94,7 +94,7 @@ Initialization validates the vault, writes `.agentic-memory-link/config.json` us
 If you want to create or refresh the same link non-interactively outside Pi, use:
 
 ```bash
-agentic-memory link --vault /absolute/path/to/agentic-memory-vault --project example-project --project-root /absolute/path/to/project --yes
+agentic-memory -C /absolute/path/to/project link --vault ../agentic-memory-vault --project example-project --yes
 ```
 
 ## Commands

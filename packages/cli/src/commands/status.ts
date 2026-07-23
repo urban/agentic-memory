@@ -9,10 +9,6 @@ import { Console, Effect, FileSystem, Option, Path } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import { toFailure, withCliFailureOutput } from "../output.ts";
 import { resolvePathInput } from "./path-input.ts";
-import {
-  compatibilityProjectRootFlag,
-  resolveCompatibilityProjectRoot,
-} from "./project-root-input.ts";
 import { commandRoot } from "./root.ts";
 
 type AbsolutePath = import("@urban/agentic-memory-core/link/LinkConfig").AbsolutePath;
@@ -163,24 +159,19 @@ const formatHuman = (result: StatusResult): string => {
 export const commandStatus = Command.make(
   "status",
   {
-    projectRoot: compatibilityProjectRootFlag,
     vaultPath: Flag.string("vault").pipe(
       Flag.withDescription("Vault path for read-only local model and semantic index readiness"),
       Flag.optional,
     ),
   },
-  Effect.fnUntraced(function* ({ projectRoot, vaultPath }) {
+  Effect.fnUntraced(function* ({ vaultPath }) {
     const root = yield* commandRoot;
-    const compatibilityDirectory = yield* resolveCompatibilityProjectRoot(
-      root.directory,
-      projectRoot,
-    );
 
     const result = Option.isSome(vaultPath)
       ? yield* resolvePathInput(root.directory.path, vaultPath.value, "Vault path").pipe(
           Effect.flatMap(inspectVault),
         )
-      : yield* inspectWorkingContext(compatibilityDirectory);
+      : yield* inspectWorkingContext(root.directory.path);
     const jsonText = yield* encodeStatusCommandResultJson(result).pipe(
       Effect.mapError((cause) =>
         toFailure({

@@ -6,7 +6,6 @@ import { Console, Effect } from "effect";
 import { Command } from "effect/unstable/cli";
 import { toFailure, withCliFailureOutput } from "../output.ts";
 import { payloadFlag, readPayload } from "./payload-input.ts";
-import { compatibilityProjectRootFlag } from "./project-root-input.ts";
 import { commandRoot } from "./root.ts";
 import {
   optionalProjectFlag,
@@ -18,18 +17,16 @@ export const commandStewardContext = Command.make(
   "steward-context",
   {
     payloadPath: payloadFlag,
-    projectRoot: compatibilityProjectRootFlag,
     vault: optionalVaultFlag,
     project: optionalProjectFlag,
   },
-  Effect.fnUntraced(function* ({ payloadPath, projectRoot, vault, project }) {
+  Effect.fnUntraced(function* ({ payloadPath, vault, project }) {
     const root = yield* commandRoot;
     const payload = yield* readPayload(root.directory.path, payloadPath);
     const target = yield* resolveStewardTarget({
       vault,
       project,
       directory: root.directory,
-      projectRoot,
     });
     const result = yield* buildStewardContext({
       payload,

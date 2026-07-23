@@ -13,7 +13,6 @@ import {
   resolveCaptureCorrelation,
 } from "./capture-correlation-input.ts";
 import { payloadFlag, readPayload } from "./payload-input.ts";
-import { compatibilityProjectRootFlag } from "./project-root-input.ts";
 import { commandRoot } from "./root.ts";
 import {
   modelFlag,
@@ -32,7 +31,6 @@ export const commandRunSteward = Command.make(
   "run-steward",
   {
     payloadPath: payloadFlag,
-    projectRoot: compatibilityProjectRootFlag,
     vault: optionalVaultFlag,
     project: optionalProjectFlag,
     provider: providerFlag,
@@ -51,7 +49,6 @@ export const commandRunSteward = Command.make(
       vault: input.vault,
       project: input.project,
       directory: root.directory,
-      projectRoot: input.projectRoot,
     });
     const options = stewardRunOptionsFromInput({
       provider: input.provider,

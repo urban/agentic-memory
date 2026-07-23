@@ -35,7 +35,7 @@ This command also ensures `projects/example-project.md` exists in the vault, ens
 Inspect the resulting health with:
 
 ```sh
-agentic-memory status --project-root /absolute/path/to/project --json
+agentic-memory -C /absolute/path/to/project status --json
 ```
 
 Humans and setup tools usually use `init`, `link`, and `status` directly. Harness integrations should treat `agentic-memory run-steward` as the stable steward execution boundary rather than calling internal core modules directly.

@@ -4,7 +4,6 @@ import { Effect, FileSystem, Option, Path } from "effect";
 import { Flag } from "effect/unstable/cli";
 import { toFailure } from "../output.ts";
 import { resolvePathInput } from "./path-input.ts";
-import { resolveCompatibilityProjectRoot } from "./project-root-input.ts";
 
 type ProjectSlug = import("@urban/agentic-memory-core/link/ProjectSlug").ProjectSlug;
 type AbsolutePath = import("@urban/agentic-memory-core/link/LinkConfig").AbsolutePath;
@@ -40,10 +39,8 @@ export const resolveStewardTarget: (input: {
   readonly vault: Option.Option<string>;
   readonly project: Option.Option<string>;
   readonly directory: InvocationDirectory;
-  readonly projectRoot: Option.Option<string>;
 }) => Effect.Effect<ResolvedStewardTarget, CliCommandFailure, FileSystem.FileSystem | Path.Path> =
   Effect.fnUntraced(function* (input) {
-    const projectRoot = yield* resolveCompatibilityProjectRoot(input.directory, input.projectRoot);
     if (Option.isSome(input.vault) || Option.isSome(input.project)) {
       if (Option.isNone(input.vault) || Option.isNone(input.project)) {
         return yield* toFailure({
@@ -64,7 +61,7 @@ export const resolveStewardTarget: (input: {
       };
     }
 
-    const loaded = yield* loadLinkConfig(projectRoot);
+    const loaded = yield* loadLinkConfig(input.directory.path);
     switch (loaded._tag) {
       case "missing":
         return yield* toFailure({

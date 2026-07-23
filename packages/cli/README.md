@@ -100,10 +100,9 @@ Vault mode inspects vault, model, and index state without downloading, loading t
 ### Link an external project
 
 ```sh
-agentic-memory link \
+agentic-memory -C /absolute/path/to/project link \
   --vault /absolute/path/to/agentic-memory-vault \
   --project example-project \
-  --project-root /absolute/path/to/project \
   --yes
 ```
 
@@ -114,12 +113,12 @@ Project identifiers are bare lowercase slugs such as `example-project`, not wiki
 ### Check link health
 
 ```sh
-agentic-memory status --project-root /absolute/path/to/project --json
+agentic-memory -C /absolute/path/to/project status --json
 ```
 
 Reports whether the project-local link exists, whether it is valid, and whether the linked vault has the expected project file and `MEMORY.md` route.
 
-This is the separate project-link status mode. Use `--vault` for semantic readiness and `--project-root` (or its current-directory default) for link health.
+This is the separate project-link status mode. Use `--vault` for semantic readiness and `-C` for link health at an external project.
 
 ### Recall from a vault
 
@@ -158,17 +157,17 @@ agentic-memory -C /absolute/path/to/project run-steward \
 
 ## Command reference
 
-| Command                                                                      | Purpose                                                      |
-| ---------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| `agentic-memory init <vault-path>`                                           | Initialize a vault and ensure the shared model is installed. |
-| `agentic-memory index --vault <vault>`                                       | Create or incrementally update local derivative index state. |
-| `agentic-memory index --vault <vault> --delete`                              | Delete only local derivative index state.                    |
-| `agentic-memory link --vault <vault> --project <slug> --project-root <path>` | Link a project root to a vault project.                      |
-| `agentic-memory status --vault <vault>`                                      | Inspect vault semantic readiness without mutation.           |
-| `agentic-memory status --project-root <path>`                                | Inspect project-local link and vault health.                 |
-| `agentic-memory recall <question> --vault <vault> [--include-sources]`       | Answer a memory question from a vault.                       |
-| `agentic-memory steward-context --payload <path-or->`                        | Build Steward context for a capture payload.                 |
-| `agentic-memory run-steward --payload <path-or->`                            | Execute the Memory Steward capture boundary.                 |
+| Command                                                                | Purpose                                                      |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `agentic-memory init <vault-path>`                                     | Initialize a vault and ensure the shared model is installed. |
+| `agentic-memory index --vault <vault>`                                 | Create or incrementally update local derivative index state. |
+| `agentic-memory index --vault <vault> --delete`                        | Delete only local derivative index state.                    |
+| `agentic-memory -C <project> link --vault <vault> --project <slug>`    | Link a project root to a vault project.                      |
+| `agentic-memory status --vault <vault>`                                | Inspect vault semantic readiness without mutation.           |
+| `agentic-memory -C <project> status`                                   | Inspect project-local link and vault health.                 |
+| `agentic-memory recall <question> --vault <vault> [--include-sources]` | Answer a memory question from a vault.                       |
+| `agentic-memory steward-context --payload <path-or->`                  | Build Steward context for a capture payload.                 |
+| `agentic-memory run-steward --payload <path-or->`                      | Execute the Memory Steward capture boundary.                 |
 
 Add `--json` to supported commands when a script or integration needs machine-readable output.
 

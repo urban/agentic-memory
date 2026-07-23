@@ -22,13 +22,8 @@ describe("agentic-memory status command", () => {
         Effect.gen(function* () {
           const fs = yield* FileSystem.FileSystem;
           const projectRoot = yield* fs.makeTempDirectoryScoped({ prefix: "agentic-memory-cli-" });
-          const json = yield* runCapturedEffect([
-            "status",
-            "--project-root",
-            projectRoot,
-            "--json",
-          ]);
-          const human = yield* runCapturedEffect(["status", "--project-root", projectRoot]);
+          const json = yield* runCapturedEffect(["-C", projectRoot, "status", "--json"]);
+          const human = yield* runCapturedEffect(["-C", projectRoot, "status"]);
           return { human, json };
         }),
       ),
@@ -139,7 +134,7 @@ describe("agentic-memory status command", () => {
             "# example-project\n",
           );
 
-          return yield* runCapturedEffect(["status", "--project-root", projectRoot, "--json"]);
+          return yield* runCapturedEffect(["-C", projectRoot, "status", "--json"]);
         }),
       ),
     ).pipe(
@@ -252,29 +247,6 @@ describe("agentic-memory status command", () => {
     ),
   );
 
-  it.effect("rejects conflicting explicit directory selectors", () =>
-    withCliRuntime(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const fs = yield* FileSystem.FileSystem;
-          const first = yield* fs.makeTempDirectoryScoped({ prefix: "status-directory-first-" });
-          const second = yield* fs.makeTempDirectoryScoped({ prefix: "status-directory-second-" });
-          const output = yield* runCapturedEffect([
-            "-C",
-            first,
-            "status",
-            "--project-root",
-            second,
-            "--json",
-          ]);
-          const failure = yield* decodeCliFailureResultJson(output.stdout);
-          assert.strictEqual(output.exitCode, 2);
-          assert.strictEqual(failure.error.code, "ConflictingDirectoryContext");
-        }),
-      ),
-    ),
-  );
-
   it.effect("reports vault semantic readiness with observational exit semantics", () =>
     withCliRuntime(
       Effect.scoped(
@@ -291,15 +263,10 @@ describe("agentic-memory status command", () => {
             path.join(vaultPath, "notes", "fact.md"),
             "# Fact\n\nA durable fact.\n",
           );
-          const compatibilityProjectRoot = path.join(vaultPath, "ignored-project");
-          yield* fs.makeDirectory(compatibilityProjectRoot);
-
           const missingOutput = yield* runCapturedEffect([
             "status",
             "--vault",
             vaultPath,
-            "--project-root",
-            compatibilityProjectRoot,
             "--json",
           ]);
           const missing = yield* decodeVaultReadiness(missingOutput.stdout);

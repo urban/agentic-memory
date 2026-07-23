@@ -242,7 +242,6 @@ describe("MemorySteward", () => {
           expect(seen[0]?.args.slice(0, 3)).toEqual(["-C", projectRoot, "run-steward"]);
           expect(seen[0]?.args).toContain("run-steward");
           expect(seen[0]?.args).toContain("--payload");
-          expect(seen[0]?.args).not.toContain("--project-root");
           expect(seen[0]?.args).toContain("--json");
           expect(seen[0]?.args).toContain("--timeout-ms");
           expect(seen[0]?.args).toContain("--capture-attempt-id");

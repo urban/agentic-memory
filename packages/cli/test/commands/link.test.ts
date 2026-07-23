@@ -1,7 +1,4 @@
-import {
-  CliFailureResultJson,
-  LinkCommandResultJson,
-} from "@urban/agentic-memory-core/cli/CliResults";
+import { LinkCommandResultJson } from "@urban/agentic-memory-core/cli/CliResults";
 import { decodeLinkConfigJson } from "@urban/agentic-memory-core/link/LinkConfig";
 import { assert, describe, it } from "@effect/vitest";
 import { Effect, FileSystem, Path, PlatformError, Schema } from "effect";
@@ -9,7 +6,6 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { afterAll } from "vitest";
 import { makeCliTestRuntime } from "../cli-test-support.ts";
 
-const decodeCliFailureResultJson = Schema.decodeUnknownEffect(CliFailureResultJson);
 const decodeLinkCommandResultJson = Schema.decodeUnknownEffect(LinkCommandResultJson);
 const { dispose, runCapturedEffect, withCliRuntime } = makeCliTestRuntime();
 
@@ -101,38 +97,6 @@ describe("agentic-memory link command", () => {
     ),
   );
 
-  it.effect("rejects conflicting explicit working directories", () =>
-    withCliRuntime(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const fs = yield* FileSystem.FileSystem;
-          const first = yield* fs.makeTempDirectoryScoped({ prefix: "link-directory-first-" });
-          const second = yield* fs.makeTempDirectoryScoped({ prefix: "link-directory-second-" });
-          const output = yield* runCapturedEffect([
-            "-C",
-            first,
-            "link",
-            "--vault",
-            "../vault",
-            "--project",
-            "example-project",
-            "--project-root",
-            second,
-            "--json",
-          ]);
-          const failure = yield* decodeCliFailureResultJson(output.stdout);
-
-          return { failure, output };
-        }),
-      ),
-    ).pipe(
-      Effect.map(({ failure, output }) => {
-        assert.strictEqual(output.exitCode, 2);
-        assert.strictEqual(failure.error.code, "ConflictingDirectoryContext");
-      }),
-    ),
-  );
-
   it.effect("emits JSON command errors to stdout", () =>
     withCliRuntime(
       runCapturedEffect(["link", "--vault", "relative", "--project", "example-project", "--json"]),
@@ -173,13 +137,13 @@ describe("agentic-memory link command", () => {
           );
 
           const output = yield* runCapturedEffect([
+            "-C",
+            projectRoot,
             "link",
             "--vault",
             vaultPath,
             "--project",
             "example-project",
-            "--project-root",
-            projectRoot,
             "--json",
           ]);
           const configExists = yield* fs.exists(configPath);
@@ -230,13 +194,13 @@ describe("agentic-memory link command", () => {
           yield* fs.chmod(projectRoot, 0o555);
 
           const output = yield* runCapturedEffect([
+            "-C",
+            projectRoot,
             "link",
             "--vault",
             vaultPath,
             "--project",
             "example-project",
-            "--project-root",
-            projectRoot,
             "--json",
           ]).pipe(Effect.ensuring(fs.chmod(projectRoot, 0o755).pipe(Effect.orDie)));
 
@@ -289,13 +253,13 @@ describe("agentic-memory link command", () => {
           yield* fs.chmod(path.join(vaultPath, "projects"), 0o555);
 
           const output = yield* runCapturedEffect([
+            "-C",
+            projectRoot,
             "link",
             "--vault",
             vaultPath,
             "--project",
             "example-project",
-            "--project-root",
-            projectRoot,
             "--yes",
             "--json",
           ]).pipe(
