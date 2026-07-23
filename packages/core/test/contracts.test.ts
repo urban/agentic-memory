@@ -18,6 +18,7 @@ import {
   projectFileRelativePathFromSlug,
   projectWikiLinkFromSlug,
 } from "../src/link/ProjectSlug.ts";
+import { decodeCaptureCorrelation } from "../src/observability/CaptureTelemetry.ts";
 import {
   buildPiProcessCommand,
   extractAssistantText,
@@ -321,9 +322,11 @@ describe("core contracts", () => {
             },
             warnings: [],
           },
-          correlation: {
+          correlation: yield* decodeCaptureCorrelation({
             attemptId: "attempt-1",
-          },
+            captureRunId: "run-1",
+            triggerKind: "agent_end",
+          }),
           options: {
             provider: "anthropic",
             model: "claude",
@@ -334,6 +337,32 @@ describe("core contracts", () => {
       const assistantText = extractAssistantText(
         '{"type":"message_update"}\n{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"{\\"status\\":\\"no_changes\\"}"}]}}\n',
       );
+      const manualCommand = buildPiProcessCommand({
+        piBinary: "pi-test",
+        request: {
+          context: {
+            status: "ready",
+            payload: yield* decodeCapturePayloadJson(validPayloadJson),
+            vault: {
+              path: "/vault",
+              projectFile: "/vault/projects/agentic-memory-cli.md",
+              memoryFile: "/vault/MEMORY.md",
+              userFile: "/vault/USER.md",
+              outsideVaultInstructions: "/vault/.agentic-memory/LLM-outside-vault.md",
+            },
+            instructions: {
+              outsideVault: "contract",
+              prompt: "prompt",
+            },
+            resultContract: {
+              statusValues: ["captured", "no_changes"],
+              capturedRequiresSummary: true,
+            },
+            warnings: [],
+          },
+          options: {},
+        },
+      });
 
       assert.strictEqual(command.command, "pi-test");
       assert.include(command.args, "--name");
@@ -347,6 +376,7 @@ describe("core contracts", () => {
       assert.notInclude(command.args, "--no-tools");
       assert.include(command.args, "--provider");
       assert.include(command.args, "anthropic");
+      assert.include(manualCommand.args, "Memory Steward capture manual");
       const stewardSession = extractStewardSessionPointer(
         '{"type":"session","version":3,"id":"session-1","timestamp":"2026-06-15T12:00:00.000Z","cwd":"/vault"}\n',
         "Memory Steward capture attempt-1",
@@ -391,9 +421,11 @@ describe("core contracts", () => {
                 },
                 warnings: [],
               },
-              correlation: {
+              correlation: yield* decodeCaptureCorrelation({
                 attemptId: "attempt-1",
-              },
+                captureRunId: "run-1",
+                triggerKind: "agent_end",
+              }),
               options: {
                 timeoutMillis: 10,
               },

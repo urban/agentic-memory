@@ -25,6 +25,7 @@ describe("agentic-memory command help", () => {
               assert.strictEqual(output.exitCode, 0);
               assert.include(output.stdout, "--directory, -C string");
               assert.notInclude(output.stdout, removedProjectDirectoryFlag);
+              assert.notInclude(output.stdout, "--capture-project-slug");
               assert.strictEqual(output.stderr, "");
             }),
           ),

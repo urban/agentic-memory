@@ -1,13 +1,38 @@
-import { Config, Effect, Layer, Logger } from "effect";
+import { Config, Effect, Layer, Logger, Schema } from "effect";
 import { FetchHttpClient } from "effect/unstable/http";
 import { OtlpLogger, OtlpSerialization, OtlpTracer } from "effect/unstable/observability";
 
-export interface CaptureCorrelation {
-  readonly captureRunId?: string;
-  readonly attemptId?: string;
-  readonly triggerKind?: string;
-  readonly projectSlug?: string;
-}
+type ProjectSlug = import("../link/ProjectSlug.ts").ProjectSlug;
+
+export const CaptureRunId = Schema.String.pipe(Schema.brand("CaptureRunId")).annotate({
+  identifier: "CaptureRunId",
+});
+export type CaptureRunId = typeof CaptureRunId.Type;
+
+export const CaptureAttemptId = Schema.String.pipe(Schema.brand("CaptureAttemptId")).annotate({
+  identifier: "CaptureAttemptId",
+});
+export type CaptureAttemptId = typeof CaptureAttemptId.Type;
+
+export const CaptureTriggerKind = Schema.Literals([
+  "agent_end",
+  "session_before_tree",
+  "session_shutdown",
+]).annotate({
+  identifier: "CaptureTriggerKind",
+});
+export type CaptureTriggerKind = typeof CaptureTriggerKind.Type;
+
+export const CaptureCorrelation = Schema.Struct({
+  captureRunId: CaptureRunId,
+  attemptId: CaptureAttemptId,
+  triggerKind: CaptureTriggerKind,
+}).annotate({ identifier: "CaptureCorrelation" });
+export type CaptureCorrelation = typeof CaptureCorrelation.Type;
+
+export const decodeCaptureRunId = Schema.decodeUnknownEffect(CaptureRunId);
+export const decodeCaptureAttemptId = Schema.decodeUnknownEffect(CaptureAttemptId);
+export const decodeCaptureCorrelation = Schema.decodeUnknownEffect(CaptureCorrelation);
 
 export interface CaptureObservabilityOptions {
   readonly serviceName: string;
@@ -104,19 +129,18 @@ export const makeCaptureObservabilityLayer = (
     }),
   ).pipe(Layer.orDie);
 
-export const captureCorrelationAttributes = (
+export const captureTelemetryContextAttributes = (
+  projectSlug: ProjectSlug,
   correlation: CaptureCorrelation | undefined,
 ): Record<string, unknown> => ({
-  ...(correlation?.captureRunId === undefined
+  "capture.project_slug": projectSlug,
+  ...(correlation === undefined
     ? {}
-    : { "capture.run_id": correlation.captureRunId }),
-  ...(correlation?.attemptId === undefined ? {} : { "capture.attempt_id": correlation.attemptId }),
-  ...(correlation?.triggerKind === undefined
-    ? {}
-    : { "capture.trigger_kind": correlation.triggerKind }),
-  ...(correlation?.projectSlug === undefined
-    ? {}
-    : { "capture.project_slug": correlation.projectSlug }),
+    : {
+        "capture.run_id": correlation.captureRunId,
+        "capture.attempt_id": correlation.attemptId,
+        "capture.trigger_kind": correlation.triggerKind,
+      }),
 });
 
 export const captureDecisionReportAttributes = (

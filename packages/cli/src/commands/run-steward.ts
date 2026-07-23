@@ -7,7 +7,6 @@ import { Command } from "effect/unstable/cli";
 import { exitWith, toFailure, withCliFailureOutput } from "../output.ts";
 import {
   captureAttemptIdFlag,
-  captureProjectSlugFlag,
   captureRunIdFlag,
   captureTriggerKindFlag,
   resolveCaptureCorrelation,
@@ -40,7 +39,6 @@ export const commandRunSteward = Command.make(
     captureAttemptId: captureAttemptIdFlag,
     captureRunId: captureRunIdFlag,
     captureTriggerKind: captureTriggerKindFlag,
-    captureProjectSlug: captureProjectSlugFlag,
   },
   Effect.fnUntraced(function* (input) {
     const root = yield* commandRoot;
@@ -60,7 +58,6 @@ export const commandRunSteward = Command.make(
       attemptId: input.captureAttemptId,
       runId: input.captureRunId,
       triggerKind: input.captureTriggerKind,
-      projectSlug: input.captureProjectSlug,
     });
     const result = yield* runSteward({
       payload,

@@ -2,8 +2,10 @@ import { Clock, DateTime, Effect, Random, Semaphore } from "effect";
 import {
   captureDecisionReportAttributes,
   captureStewardSessionAttributes,
+  decodeCaptureAttemptId,
+  decodeCaptureRunId,
 } from "@urban/agentic-memory-core/observability/CaptureTelemetry";
-import { decodeAttemptId, MARKER_VERSION } from "../markers/CaptureMarker.ts";
+import { MARKER_VERSION } from "../markers/CaptureMarker.ts";
 import { CaptureConfig } from "../services/CaptureConfig.ts";
 import { Markers } from "../services/Markers.ts";
 import { MemorySteward } from "../services/MemorySteward.ts";
@@ -14,10 +16,14 @@ type StewardSessionPointer =
   import("@urban/agentic-memory-core/steward/StewardExecution").StewardSessionPointer;
 type StewardDecisionReport =
   import("@urban/agentic-memory-core/steward/StewardResult").StewardDecisionReport;
-type AttemptId = import("../markers/CaptureMarker.ts").AttemptId;
+type CaptureAttemptId =
+  import("@urban/agentic-memory-core/observability/CaptureTelemetry").CaptureAttemptId;
+type CaptureRunId =
+  import("@urban/agentic-memory-core/observability/CaptureTelemetry").CaptureRunId;
 type CaptureMarker = import("../markers/CaptureMarker.ts").CaptureMarker;
 type PayloadObservation = import("../markers/CaptureMarker.ts").PayloadObservation;
-type TriggerKind = import("../markers/CaptureMarker.ts").TriggerKind;
+type CaptureTriggerKind =
+  import("@urban/agentic-memory-core/observability/CaptureTelemetry").CaptureTriggerKind;
 
 export const CAPTURE_BATCH_SIZE = 10;
 
@@ -36,8 +42,8 @@ export interface CaptureExecution {
   readonly warnings: ReadonlyArray<string>;
   readonly changedFiles: ReadonlyArray<string>;
   readonly markers: ReadonlyArray<CaptureMarker>;
-  readonly captureRunId: string;
-  readonly attemptId?: AttemptId;
+  readonly captureRunId: CaptureRunId;
+  readonly attemptId?: CaptureAttemptId;
   readonly stewardSession?: StewardSessionPointer;
   readonly decisionReport?: StewardDecisionReport;
 }
@@ -45,7 +51,7 @@ export interface CaptureExecution {
 export interface CaptureCommandInput {
   readonly cwd: string;
   readonly branch: ReadonlyArray<SessionEntry>;
-  readonly triggerKind: TriggerKind;
+  readonly triggerKind: CaptureTriggerKind;
   readonly timeoutMillis: number;
   readonly force: boolean;
 }
@@ -73,7 +79,7 @@ const randomByte = (): Effect.Effect<number> => Random.nextIntBetween(0, 256, { 
 
 const hexByte = (byte: number): string => byte.toString(16).padStart(2, "0");
 
-const makeCaptureRunId = Effect.fnUntraced(function* (): Effect.fn.Return<string> {
+const makeCaptureRunId = Effect.fnUntraced(function* (): Effect.fn.Return<CaptureRunId> {
   const b0 = yield* randomByte();
   const b1 = yield* randomByte();
   const b2 = yield* randomByte();
@@ -93,24 +99,25 @@ const makeCaptureRunId = Effect.fnUntraced(function* (): Effect.fn.Return<string
   const versionByte = (b6 & 0x0f) | 0x40;
   const variantByte = (b8 & 0x3f) | 0x80;
 
-  return [
+  const uuid = [
     `${hexByte(b0)}${hexByte(b1)}${hexByte(b2)}${hexByte(b3)}`,
     `${hexByte(b4)}${hexByte(b5)}`,
     `${hexByte(versionByte)}${hexByte(b7)}`,
     `${hexByte(variantByte)}${hexByte(b9)}`,
     `${hexByte(b10)}${hexByte(b11)}${hexByte(b12)}${hexByte(b13)}${hexByte(b14)}${hexByte(b15)}`,
   ].join("-");
+  return yield* decodeCaptureRunId(uuid).pipe(Effect.catch((cause) => Effect.die(cause)));
 });
 
-const makeAttemptId = Effect.fnUntraced(function* (): Effect.fn.Return<AttemptId> {
+const makeAttemptId = Effect.fnUntraced(function* (): Effect.fn.Return<CaptureAttemptId> {
   const uuid = yield* makeCaptureRunId();
-  return yield* decodeAttemptId(uuid).pipe(Effect.catch((cause) => Effect.die(cause)));
+  return yield* decodeCaptureAttemptId(uuid).pipe(Effect.catch((cause) => Effect.die(cause)));
 });
 
 const makeObservationMarker = (input: {
-  readonly attemptId: AttemptId;
+  readonly attemptId: CaptureAttemptId;
   readonly timestamp: string;
-  readonly triggerKind: TriggerKind;
+  readonly triggerKind: CaptureTriggerKind;
   readonly observation: PayloadObservation;
   readonly status: "captured" | "no_changes";
   readonly summary: string | undefined;
@@ -148,9 +155,9 @@ const makeObservationMarker = (input: {
         };
 
 const makeScheduleMarker = (input: {
-  readonly attemptId: AttemptId;
+  readonly attemptId: CaptureAttemptId;
   readonly timestamp: string;
-  readonly triggerKind: TriggerKind;
+  readonly triggerKind: CaptureTriggerKind;
   readonly observation: PayloadObservation;
   readonly sendStatus: "succeeded" | "failed";
   readonly retryFailureReasons: ReadonlyArray<string>;
@@ -165,7 +172,7 @@ const makeScheduleMarker = (input: {
   retryFailureReasons: [...input.retryFailureReasons],
 });
 
-export const timeoutForTrigger = (triggerKind: TriggerKind): number => {
+export const timeoutForTrigger = (triggerKind: CaptureTriggerKind): number => {
   switch (triggerKind) {
     case "agent_end":
       return 20_000;
@@ -338,7 +345,6 @@ export const runCapturePass = (
             captureRunId,
             attemptId,
             triggerKind: input.triggerKind,
-            projectSlug: currentConfig.config.projectSlug,
           })
           .pipe(Effect.withSpan("capture.run_steward", { attributes: attemptAttributes }));
 

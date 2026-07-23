@@ -1,8 +1,8 @@
 import { Cause, Context, Effect, FileSystem, Layer, Path, Ref, Schema } from "effect";
 import {
-  captureCorrelationAttributes,
   captureDecisionReportAttributes,
   captureStewardSessionAttributes,
+  captureTelemetryContextAttributes,
 } from "../observability/CaptureTelemetry.ts";
 import { buildStewardContext, StewardContextError } from "./StewardContext.ts";
 import { StewardResult } from "./StewardResult.ts";
@@ -151,7 +151,7 @@ export const runSteward = Effect.fn("agentic-memory.run_steward")(function* (inp
 > {
   const runner = yield* StewardRunner;
   const baseAttributes = {
-    ...captureCorrelationAttributes(input.correlation),
+    ...captureTelemetryContextAttributes(input.projectSlug, input.correlation),
     "capture.payload.warning_count": input.payloadWarnings.length,
   };
   yield* Effect.annotateCurrentSpan(baseAttributes);

@@ -10,10 +10,14 @@ type StewardSessionPointer =
 type StewardDecisionReport =
   import("@urban/agentic-memory-core/steward/StewardResult").StewardDecisionReport;
 type CapturePayload = import("@urban/agentic-memory-core/capture/CapturePayload").CapturePayload;
-type AttemptId = import("../markers/CaptureMarker.ts").AttemptId;
+type CaptureAttemptId =
+  import("@urban/agentic-memory-core/observability/CaptureTelemetry").CaptureAttemptId;
+type CaptureRunId =
+  import("@urban/agentic-memory-core/observability/CaptureTelemetry").CaptureRunId;
 type StewardResultStatus =
   import("@urban/agentic-memory-core/steward/StewardResult").StewardResultStatus;
-type TriggerKind = import("../markers/CaptureMarker.ts").TriggerKind;
+type CaptureTriggerKind =
+  import("@urban/agentic-memory-core/observability/CaptureTelemetry").CaptureTriggerKind;
 
 export interface StewardObservationResult {
   readonly status: StewardResultStatus;
@@ -82,10 +86,9 @@ export class MemorySteward extends Context.Service<
       readonly payload: CapturePayload;
       readonly payloadWarnings: ReadonlyArray<string>;
       readonly timeoutMillis: number;
-      readonly captureRunId: string;
-      readonly attemptId: AttemptId;
-      readonly triggerKind: TriggerKind;
-      readonly projectSlug: string;
+      readonly captureRunId: CaptureRunId;
+      readonly attemptId: CaptureAttemptId;
+      readonly triggerKind: CaptureTriggerKind;
     }) => Effect.Effect<StewardRunResult>;
   }
 >()("@urban/pi-memory-capture/services/MemorySteward") {
@@ -102,10 +105,9 @@ export class MemorySteward extends Context.Service<
         readonly payload: CapturePayload;
         readonly payloadWarnings: ReadonlyArray<string>;
         readonly timeoutMillis: number;
-        readonly captureRunId: string;
-        readonly attemptId: AttemptId;
-        readonly triggerKind: TriggerKind;
-        readonly projectSlug: string;
+        readonly captureRunId: CaptureRunId;
+        readonly attemptId: CaptureAttemptId;
+        readonly triggerKind: CaptureTriggerKind;
       }): Effect.fn.Return<StewardRunResult> {
         const result = yield* Effect.scoped(
           Effect.gen(function* () {
@@ -157,8 +159,6 @@ export class MemorySteward extends Context.Service<
                 input.captureRunId,
                 "--capture-trigger-kind",
                 input.triggerKind,
-                "--capture-project-slug",
-                input.projectSlug,
               ],
               {
                 cwd: input.projectRoot,

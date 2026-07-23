@@ -1,8 +1,11 @@
+import { decodeCaptureCorrelation } from "@urban/agentic-memory-core/observability/CaptureTelemetry";
 import { Config, Effect, Option } from "effect";
 import { Flag } from "effect/unstable/cli";
+import { toFailure } from "../output.ts";
 
 type CaptureCorrelation =
   import("@urban/agentic-memory-core/observability/CaptureTelemetry").CaptureCorrelation;
+type CliCommandFailure = import("../output.ts").CliCommandFailure;
 
 export const captureAttemptIdFlag = Flag.string("capture-attempt-id").pipe(
   Flag.withDescription("Capture attempt id for telemetry correlation"),
@@ -16,11 +19,6 @@ export const captureRunIdFlag = Flag.string("capture-run-id").pipe(
 
 export const captureTriggerKindFlag = Flag.string("capture-trigger-kind").pipe(
   Flag.withDescription("Capture trigger kind for telemetry correlation"),
-  Flag.optional,
-);
-
-export const captureProjectSlugFlag = Flag.string("capture-project-slug").pipe(
-  Flag.withDescription("Linked project slug for telemetry correlation"),
   Flag.optional,
 );
 
@@ -42,8 +40,7 @@ export const resolveCaptureCorrelation = Effect.fnUntraced(function* (input: {
   readonly attemptId: Option.Option<string>;
   readonly runId: Option.Option<string>;
   readonly triggerKind: Option.Option<string>;
-  readonly projectSlug: Option.Option<string>;
-}): Effect.fn.Return<CaptureCorrelation | undefined> {
+}): Effect.fn.Return<CaptureCorrelation | undefined, CliCommandFailure> {
   const attemptId = yield* optionOrEnvironment(
     input.attemptId,
     "AGENTIC_MEMORY_CAPTURE_ATTEMPT_ID",
@@ -53,24 +50,31 @@ export const resolveCaptureCorrelation = Effect.fnUntraced(function* (input: {
     input.triggerKind,
     "AGENTIC_MEMORY_CAPTURE_TRIGGER_KIND",
   );
-  const projectSlug = yield* optionOrEnvironment(
-    input.projectSlug,
-    "AGENTIC_MEMORY_CAPTURE_PROJECT_SLUG",
-  );
 
-  if (
-    attemptId === undefined &&
-    captureRunId === undefined &&
-    triggerKind === undefined &&
-    projectSlug === undefined
-  ) {
+  if (attemptId === undefined && captureRunId === undefined && triggerKind === undefined) {
     return undefined;
   }
 
-  return {
-    ...(attemptId === undefined ? {} : { attemptId }),
-    ...(captureRunId === undefined ? {} : { captureRunId }),
-    ...(triggerKind === undefined ? {} : { triggerKind }),
-    ...(projectSlug === undefined ? {} : { projectSlug }),
-  };
+  if (attemptId === undefined || captureRunId === undefined || triggerKind === undefined) {
+    return yield* toFailure({
+      code: "InvalidCaptureCorrelation",
+      message:
+        "Capture correlation requires capture attempt id, capture run id, and capture trigger kind together",
+      exitCode: 2,
+    });
+  }
+
+  return yield* decodeCaptureCorrelation({
+    attemptId,
+    captureRunId,
+    triggerKind,
+  }).pipe(
+    Effect.mapError((cause) =>
+      toFailure({
+        code: "InvalidCaptureCorrelation",
+        message: `Invalid capture correlation: ${cause.message}`,
+        exitCode: 2,
+      }),
+    ),
+  );
 });

@@ -2,6 +2,10 @@ import * as BunFileSystem from "@effect/platform-bun/BunFileSystem";
 import * as BunPath from "@effect/platform-bun/BunPath";
 import { encodeLinkConfigJson } from "@urban/agentic-memory-core/link/LinkConfig";
 import { extractAssistantText } from "@urban/agentic-memory-core/steward/PiProcessRunner";
+import {
+  decodeCaptureAttemptId,
+  decodeCaptureRunId,
+} from "@urban/agentic-memory-core/observability/CaptureTelemetry";
 import { Effect, Fiber, Layer, ManagedRuntime, Option } from "effect";
 import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
 // @effect-diagnostics-next-line nodeBuiltinImport:off
@@ -15,7 +19,6 @@ import { MemorySteward, StewardExecutor } from "../../src/services/MemorySteward
 import { Markers } from "../../src/services/Markers.ts";
 import { Preprocessor } from "../../src/services/Preprocessor.ts";
 import { runCapturePass } from "../../src/workflows/capture.ts";
-import { decodeAttemptId } from "../../src/markers/CaptureMarker.ts";
 import {
   createTempDirectory,
   makeAssistantEntry,
@@ -220,16 +223,16 @@ describe("MemorySteward", () => {
       .runPromise(
         Effect.gen(function* () {
           const steward = yield* MemorySteward;
-          const attemptId = yield* decodeAttemptId("attempt-1");
+          const attemptId = yield* decodeCaptureAttemptId("attempt-1");
+          const captureRunId = yield* decodeCaptureRunId("run-1");
           const result = yield* steward.run({
             projectRoot,
             payload: capturePayload,
             payloadWarnings: ["payload warning"],
             timeoutMillis: 12_000,
-            captureRunId: "run-1",
+            captureRunId,
             attemptId,
             triggerKind: "agent_end",
-            projectSlug,
           });
 
           expect(result._tag).toBe("Succeeded");
@@ -250,8 +253,7 @@ describe("MemorySteward", () => {
           expect(seen[0]?.args).toContain("run-1");
           expect(seen[0]?.args).toContain("--capture-trigger-kind");
           expect(seen[0]?.args).toContain("agent_end");
-          expect(seen[0]?.args).toContain("--capture-project-slug");
-          expect(seen[0]?.args).toContain(projectSlug);
+          expect(seen[0]?.args).not.toContain("--capture-project-slug");
           expect(seen[0]?.cwd).toBe(projectRoot);
           expect(seen[0]?.timeout).toBe(17_000);
         }),
@@ -305,17 +307,17 @@ describe("MemorySteward", () => {
       .runPromise(
         Effect.gen(function* () {
           const steward = yield* MemorySteward;
-          const attemptId = yield* decodeAttemptId("attempt-1");
+          const attemptId = yield* decodeCaptureAttemptId("attempt-1");
+          const captureRunId = yield* decodeCaptureRunId("run-1");
           const fiber = yield* Effect.forkChild(
             steward.run({
               projectRoot: vault,
               payload: capturePayload,
               payloadWarnings: [],
               timeoutMillis: 12_000,
-              captureRunId: "run-1",
+              captureRunId,
               attemptId,
               triggerKind: "session_shutdown",
-              projectSlug,
             }),
           );
 
