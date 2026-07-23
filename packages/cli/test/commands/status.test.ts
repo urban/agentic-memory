@@ -1,14 +1,13 @@
+import { assert, describe, it } from "@effect/vitest";
+import { Effect, FileSystem, Path, PlatformError } from "effect";
+import { afterAll } from "vitest";
 import {
-  CliFailureResultJson,
   decodeStatusCommandResultJson,
   decodeVaultStatusResultJson,
-} from "@urban/agentic-memory-core/cli/CliResults";
-import { assert, describe, it } from "@effect/vitest";
-import { Effect, FileSystem, Path, PlatformError, Schema } from "effect";
-import { afterAll } from "vitest";
+} from "../../src/commands/status-output.ts";
+import { decodeCliFailureResultJson } from "../../src/output.ts";
 import { fakeFileInfo, makeCliTestRuntime } from "../cli-test-support.ts";
 
-const decodeCliFailureResultJson = Schema.decodeUnknownEffect(CliFailureResultJson);
 const decodeVaultReadiness = (json: string) =>
   decodeVaultStatusResultJson(json).pipe(Effect.map((result) => result.readiness));
 const { dispose, runCapturedEffect, withCliRuntime } = makeCliTestRuntime();

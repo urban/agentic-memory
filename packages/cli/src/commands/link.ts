@@ -1,4 +1,3 @@
-import { encodeLinkCommandResultJson } from "@urban/agentic-memory-core/cli/CliResults";
 import {
   decodeLinkConfig,
   loadLinkConfig,
@@ -15,10 +14,11 @@ import { validateVaultForLink } from "@urban/agentic-memory-core/vault/VaultStat
 import { Clock, Console, Effect, Exit, FileSystem, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import { toFailure, withCliFailureOutput } from "../output.ts";
+import { encodeLinkCommandResultJson } from "./link-output.ts";
 import { resolvePathInput } from "./path-input.ts";
 import { commandRoot } from "./root.ts";
 
-type LinkCommandResult = import("@urban/agentic-memory-core/cli/CliResults").LinkCommandResult;
+type LinkCommandResult = import("./link-output.ts").LinkCommandResult;
 
 const configsMatch = (
   left: LinkCommandResult["config"],

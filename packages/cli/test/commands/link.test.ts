@@ -1,12 +1,11 @@
-import { LinkCommandResultJson } from "@urban/agentic-memory-core/cli/CliResults";
 import { decodeLinkConfigJson } from "@urban/agentic-memory-core/link/LinkConfig";
 import { assert, describe, it } from "@effect/vitest";
-import { Effect, FileSystem, Path, PlatformError, Schema } from "effect";
+import { Effect, FileSystem, Path, PlatformError } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { afterAll } from "vitest";
+import { decodeLinkCommandResultJson } from "../../src/commands/link-output.ts";
 import { makeCliTestRuntime } from "../cli-test-support.ts";
 
-const decodeLinkCommandResultJson = Schema.decodeUnknownEffect(LinkCommandResultJson);
 const { dispose, runCapturedEffect, withCliRuntime } = makeCliTestRuntime();
 
 const initializeGitRepository = Effect.fnUntraced(function* (

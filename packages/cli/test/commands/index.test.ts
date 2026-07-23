@@ -1,13 +1,10 @@
-import {
-  CliFailureResultJson,
-  decodeSemanticIndexResultJson,
-} from "@urban/agentic-memory-core/cli/CliResults";
 import { assert, describe, it } from "@effect/vitest";
-import { Effect, FileSystem, Path, Schema } from "effect";
+import { Effect, FileSystem, Path } from "effect";
 import { afterAll } from "vitest";
+import { decodeSemanticIndexResultJson } from "../../src/commands/semantic-index-output.ts";
+import { decodeCliFailureResultJson } from "../../src/output.ts";
 import { makeCliTestRuntime } from "../cli-test-support.ts";
 
-const decodeCliFailureResultJson = Schema.decodeUnknownEffect(CliFailureResultJson);
 const { dispose, runCapturedEffect, withCliRuntime } = makeCliTestRuntime();
 
 describe("agentic-memory index command", () => {

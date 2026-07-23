@@ -1,8 +1,8 @@
-import { encodeInitCommandResultJson } from "@urban/agentic-memory-core/cli/CliResults";
 import { initVaultFromTemplate } from "@urban/agentic-memory-core/vault/VaultTemplate";
 import { Console, Effect } from "effect";
 import { Argument, Command, Flag } from "effect/unstable/cli";
 import { toFailure, withCliFailureOutput } from "../output.ts";
+import { encodeInitVaultResultJson } from "./init-output.ts";
 import { resolvePathInput } from "./path-input.ts";
 import { commandRoot } from "./root.ts";
 
@@ -34,7 +34,7 @@ export const commandInit = Command.make(
         }),
       ),
     );
-    const jsonText = yield* encodeInitCommandResultJson(result).pipe(
+    const jsonText = yield* encodeInitVaultResultJson(result).pipe(
       Effect.mapError((cause) =>
         toFailure({
           code: "EncodeResultFailed",

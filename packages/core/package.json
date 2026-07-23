@@ -26,8 +26,7 @@
     "./steward/StewardPrompt": "./src/steward/StewardPrompt.ts",
     "./steward/StewardResult": "./src/steward/StewardResult.ts",
     "./steward/PiProcessRunner": "./src/steward/PiProcessRunner.ts",
-    "./observability/CaptureTelemetry": "./src/observability/CaptureTelemetry.ts",
-    "./cli/CliResults": "./src/cli/CliResults.ts"
+    "./observability/CaptureTelemetry": "./src/observability/CaptureTelemetry.ts"
   },
   "scripts": {
     "check": "bun run lint && bun run typecheck && bun run test",

@@ -1,14 +1,11 @@
-import {
-  CliFailureResultJson,
-  decodeInitCommandResultJson,
-} from "@urban/agentic-memory-core/cli/CliResults";
 import { assert, describe, it } from "@effect/vitest";
-import { Effect, FileSystem, Path, Schema } from "effect";
+import { Effect, FileSystem, Path } from "effect";
 import { afterAll } from "vitest";
+import { decodeInitVaultResultJson } from "../../src/commands/init-output.ts";
+import { decodeCliFailureResultJson } from "../../src/output.ts";
 import { makeCliTestRuntime } from "../cli-test-support.ts";
 
 const { dispose, runCapturedEffect, withCliRuntime } = makeCliTestRuntime();
-const decodeCliFailureResultJson = Schema.decodeUnknownEffect(CliFailureResultJson);
 
 describe("agentic-memory init command", () => {
   afterAll(dispose);
@@ -47,7 +44,7 @@ describe("agentic-memory init command", () => {
         ({ adapterExists, localContractExists, memoryExists, output, sessionCaptureExists }) =>
           Effect.gen(function* () {
             assert.strictEqual(output.exitCode, 0);
-            const result = yield* decodeInitCommandResultJson(output.stdout);
+            const result = yield* decodeInitVaultResultJson(output.stdout);
             assert.strictEqual(result.status, "initialized");
             assert.strictEqual(result.model.status, "available");
             assert.strictEqual(result.model.installation, "already_available");
@@ -98,7 +95,7 @@ describe("agentic-memory init command", () => {
           });
           const effectiveDirectory = yield* fs.realPath(tempRoot);
           const output = yield* runCapturedEffect(["-C", tempRoot, "init", "vault", "--json"]);
-          const result = yield* decodeInitCommandResultJson(output.stdout);
+          const result = yield* decodeInitVaultResultJson(output.stdout);
           return { output, result, vaultPath: path.join(effectiveDirectory, "vault") };
         }),
       ),
@@ -124,7 +121,7 @@ describe("agentic-memory init command", () => {
           const effectiveDirectory = yield* fs.realPath(process.cwd());
           const relativeTarget = path.relative(process.cwd(), path.join(tempRoot, "vault"));
           const output = yield* runCapturedEffect(["init", relativeTarget, "--json"]);
-          const result = yield* decodeInitCommandResultJson(output.stdout);
+          const result = yield* decodeInitVaultResultJson(output.stdout);
           return {
             output,
             result,

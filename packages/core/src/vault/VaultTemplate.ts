@@ -12,22 +12,23 @@ export class VaultTemplateError extends Schema.TaggedErrorClass<VaultTemplateErr
   },
 ) {}
 
-export interface InitVaultResult {
-  readonly status: "initialized" | "already_initialized";
-  readonly vaultPath: string;
-  readonly changes: {
-    readonly createdDirectory: boolean;
-    readonly copiedTemplate: boolean;
-    readonly initializedGit: boolean;
-    readonly updatedGitIgnore: boolean;
-  };
-  readonly model: {
-    readonly id: typeof EMBEDDING_MODEL_ID;
-    readonly status: "available";
-    readonly installation: "downloaded" | "already_available";
-  };
-  readonly warnings: ReadonlyArray<string>;
-}
+export const InitVaultResult = Schema.Struct({
+  status: Schema.Literals(["initialized", "already_initialized"]),
+  vaultPath: Schema.String,
+  changes: Schema.Struct({
+    createdDirectory: Schema.Boolean,
+    copiedTemplate: Schema.Boolean,
+    initializedGit: Schema.Boolean,
+    updatedGitIgnore: Schema.Boolean,
+  }),
+  model: Schema.Struct({
+    id: Schema.Literal(EMBEDDING_MODEL_ID),
+    status: Schema.Literal("available"),
+    installation: Schema.Literals(["downloaded", "already_available"]),
+  }),
+  warnings: Schema.Array(Schema.String),
+}).annotate({ identifier: "InitVaultResult" });
+export type InitVaultResult = typeof InitVaultResult.Type;
 
 export interface InitVaultOptions {
   readonly targetPath: string;

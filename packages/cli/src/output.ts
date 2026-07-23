@@ -1,8 +1,24 @@
-import { encodeCliFailureResultJson } from "@urban/agentic-memory-core/cli/CliResults";
 import { Console, Effect, Runtime, Schema } from "effect";
 import { commandRoot } from "./commands/root.ts";
 
-type CliFailureResult = import("@urban/agentic-memory-core/cli/CliResults").CliFailureResult;
+export const CliError = Schema.Struct({
+  code: Schema.String,
+  message: Schema.String,
+}).annotate({ identifier: "CliError" });
+export type CliError = typeof CliError.Type;
+
+export const CliFailureResult = Schema.Struct({
+  status: Schema.Literal("failed"),
+  error: CliError,
+  warnings: Schema.Array(Schema.String),
+}).annotate({ identifier: "CliFailureResult" });
+export type CliFailureResult = typeof CliFailureResult.Type;
+
+export const CliFailureResultJson = Schema.fromJsonString(CliFailureResult).annotate({
+  identifier: "CliFailureResultJson",
+});
+export const encodeCliFailureResultJson = Schema.encodeUnknownEffect(CliFailureResultJson);
+export const decodeCliFailureResultJson = Schema.decodeUnknownEffect(CliFailureResultJson);
 
 export class CliCommandFailure extends Schema.TaggedErrorClass<CliCommandFailure>()(
   "CliCommandFailure",

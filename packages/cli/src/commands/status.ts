@@ -1,7 +1,3 @@
-import {
-  encodeStatusCommandResultJson,
-  StatusCommandResult,
-} from "@urban/agentic-memory-core/cli/CliResults";
 import { decodeAbsolutePath, loadLinkConfig } from "@urban/agentic-memory-core/link/LinkConfig";
 import { inspectSemanticIndex } from "@urban/agentic-memory-core/semantic/SemanticIndex";
 import { checkVaultHealth } from "@urban/agentic-memory-core/vault/VaultStatus";
@@ -10,11 +6,12 @@ import { Command, Flag } from "effect/unstable/cli";
 import { toFailure, withCliFailureOutput } from "../output.ts";
 import { resolvePathInput } from "./path-input.ts";
 import { commandRoot } from "./root.ts";
+import { encodeStatusCommandResultJson, StatusCommandResult } from "./status-output.ts";
 
 type AbsolutePath = import("@urban/agentic-memory-core/link/LinkConfig").AbsolutePath;
 type SemanticIndexReadiness =
   import("@urban/agentic-memory-core/semantic/SemanticIndex").SemanticIndexReadiness;
-type StatusResult = import("@urban/agentic-memory-core/cli/CliResults").StatusCommandResult;
+type StatusResult = import("./status-output.ts").StatusCommandResult;
 
 const inspectReadiness = (vaultPath: AbsolutePath) =>
   inspectSemanticIndex(vaultPath).pipe(

@@ -1,4 +1,3 @@
-import { encodeSemanticIndexResultJson } from "@urban/agentic-memory-core/cli/CliResults";
 import {
   deleteSemanticIndex,
   synchronizeSemanticIndex,
@@ -8,6 +7,7 @@ import { Command, Flag } from "effect/unstable/cli";
 import { toFailure, withCliFailureOutput } from "../output.ts";
 import { resolvePathInput } from "./path-input.ts";
 import { commandRoot } from "./root.ts";
+import { encodeSemanticIndexResultJson } from "./semantic-index-output.ts";
 
 export const commandIndex = Command.make(
   "index",
