@@ -1,6 +1,16 @@
 import * as BunServices from "@effect/platform-bun/BunServices";
 import { assert, describe, it } from "@effect/vitest";
-import { Context, Effect, FileSystem, Layer, ManagedRuntime, Path, Sink, Stream } from "effect";
+import {
+  Context,
+  Duration,
+  Effect,
+  FileSystem,
+  Layer,
+  ManagedRuntime,
+  Path,
+  Sink,
+  Stream,
+} from "effect";
 import * as Fiber from "effect/Fiber";
 import * as TestClock from "effect/testing/TestClock";
 import { ChildProcessSpawner } from "effect/unstable/process";
@@ -33,7 +43,10 @@ import {
 import {
   decodeStewardModel,
   decodeStewardProvider,
+  decodeStewardDuration,
   decodeStewardThinkingLevel,
+  encodeStewardDurationSync,
+  MAX_STEWARD_TIMEOUT_MILLIS,
   StewardRunner,
 } from "../src/steward/StewardExecution.ts";
 import { decodeStewardResultJson } from "../src/steward/StewardResult.ts";
@@ -324,11 +337,33 @@ describe("core contracts", () => {
     }),
   );
 
+  it.effect("round-trips nanosecond-backed Steward durations", () =>
+    Effect.gen(function* () {
+      const duration = yield* decodeStewardDuration("0.5ms");
+      const encoded = encodeStewardDurationSync(duration);
+      const decoded = yield* decodeStewardDuration(encoded);
+
+      assert.strictEqual(encoded, "500000 nanos");
+      assert.isTrue(Duration.equals(duration, decoded));
+    }),
+  );
+
+  it.effect("rejects exact Steward duration overflow before decimal rounding", () =>
+    Effect.gen(function* () {
+      const overflow = yield* decodeStewardDuration("2147478647.1ms").pipe(Effect.exit);
+      const maximum = yield* decodeStewardDuration("2147478647.0ms");
+
+      assert.strictEqual(overflow._tag, "Failure");
+      assert.strictEqual(Duration.toMillis(maximum), MAX_STEWARD_TIMEOUT_MILLIS);
+    }),
+  );
+
   it.effect("constructs isolated Pi runner commands and extracts final assistant JSON", () =>
     Effect.gen(function* () {
       const provider = yield* decodeStewardProvider("anthropic");
       const model = yield* decodeStewardModel("anthropic/claude:high");
       const thinking = yield* decodeStewardThinkingLevel("medium");
+      const timeout = yield* decodeStewardDuration("30s");
       const context: StewardContextResult = {
         status: "ready",
         payload: yield* decodeCapturePayloadJson(validPayloadJson),
@@ -349,7 +384,7 @@ describe("core contracts", () => {
         },
         warnings: [],
       };
-      const command = buildPiProcessCommand({
+      const command = yield* buildPiProcessCommand({
         piBinary: "pi-test",
         request: {
           context,
@@ -362,27 +397,28 @@ describe("core contracts", () => {
             provider,
             model,
             thinking,
+            timeout,
           },
         },
       });
       const assistantText = extractAssistantText(
         '{"type":"message_update"}\n{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"{\\"status\\":\\"no_changes\\"}"}]}}\n',
       );
-      const manualCommand = buildPiProcessCommand({
+      const manualCommand = yield* buildPiProcessCommand({
         piBinary: "pi-test",
         request: {
           context,
           options: {},
         },
       });
-      const providerOnlyCommand = buildPiProcessCommand({
+      const providerOnlyCommand = yield* buildPiProcessCommand({
         piBinary: "pi-test",
         request: {
           context,
           options: { provider },
         },
       });
-      const modelOnlyCommand = buildPiProcessCommand({
+      const modelOnlyCommand = yield* buildPiProcessCommand({
         piBinary: "pi-test",
         request: {
           context,
@@ -414,6 +450,7 @@ describe("core contracts", () => {
       );
 
       assert.strictEqual(command.cwd, "/vault");
+      assert.strictEqual(command.timeoutMillis, 30_000);
       assert.strictEqual(assistantText, '{"status":"no_changes"}');
       assert.strictEqual(stewardSession?.sessionId, "session-1");
       assert.strictEqual(stewardSession?.name, "Memory Steward capture attempt-1");
@@ -458,7 +495,7 @@ describe("core contracts", () => {
                 triggerKind: "agent_end",
               }),
               options: {
-                timeoutMillis: 10,
+                timeout: yield* decodeStewardDuration("10ms"),
               },
             })
             .pipe(Effect.flip, Effect.forkChild);

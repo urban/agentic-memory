@@ -1,4 +1,13 @@
-import { Config as EffectConfig, Effect, Layer, Option, Ref, Schema, Stream } from "effect";
+import {
+  Config as EffectConfig,
+  Duration,
+  Effect,
+  Layer,
+  Option,
+  Ref,
+  Schema,
+  Stream,
+} from "effect";
 import * as Fiber from "effect/Fiber";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { StewardRunner, StewardRunnerError } from "./StewardExecution.ts";
@@ -77,10 +86,25 @@ export const stewardSessionName = (correlation: CaptureCorrelation | undefined):
   return `Memory Steward capture ${suffix}`;
 };
 
-export const buildPiProcessCommand = (input: {
+const processTimeoutMillis = (
+  duration: Duration.Duration,
+): Effect.Effect<number, StewardRunnerError> => {
+  const timeoutMillis = Duration.toMillis(duration);
+  return Number.isFinite(timeoutMillis) &&
+    timeoutMillis > 0 &&
+    timeoutMillis <= Number.MAX_SAFE_INTEGER
+    ? Effect.succeed(timeoutMillis)
+    : Effect.fail(
+        new StewardRunnerError({
+          message: "Memory Steward timeout cannot be represented as finite positive milliseconds",
+        }),
+      );
+};
+
+export const buildPiProcessCommand = Effect.fnUntraced(function* (input: {
   readonly piBinary: string;
   readonly request: StewardRunnerRequest;
-}): PiProcessCommand => {
+}): Effect.fn.Return<PiProcessCommand, StewardRunnerError> {
   const sessionName = stewardSessionName(input.request.correlation);
   const baseArgs = [
     "--mode",
@@ -96,14 +120,19 @@ export const buildPiProcessCommand = (input: {
     input.request.context.instructions.prompt,
   ];
 
+  const timeoutMillis =
+    input.request.options.timeout === undefined
+      ? undefined
+      : yield* processTimeoutMillis(input.request.options.timeout);
+
   return {
     command: input.piBinary,
     args: withOptionalRunnerFlags(baseArgs, input.request.options),
     cwd: input.request.context.vault.path,
-    timeoutMillis: input.request.options.timeoutMillis,
+    timeoutMillis,
     sessionName,
   };
-};
+});
 
 const assistantTextFromEvent = (event: AssistantMessageEndEvent): string =>
   event.message.content
@@ -332,7 +361,7 @@ export const PiProcessRunnerLayer: Layer.Layer<
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const piBinary = (yield* optionalEnvironmentVariable("AGENTIC_MEMORY_PI_BIN")) ?? "pi";
     const run = Effect.fnUntraced(function* (request: StewardRunnerRequest) {
-      const command = buildPiProcessCommand({ piBinary, request });
+      const command = yield* buildPiProcessCommand({ piBinary, request });
       const processResult = yield* runProcess(spawner, command);
       return yield* decodeProcessResult({
         processResult,

@@ -3,6 +3,11 @@ import * as BunPath from "@effect/platform-bun/BunPath";
 import { encodeLinkConfigJson } from "@urban/agentic-memory-core/link/LinkConfig";
 import { extractAssistantText } from "@urban/agentic-memory-core/steward/PiProcessRunner";
 import {
+  decodeStewardDuration,
+  decodeStewardDurationSync,
+  MAX_STEWARD_TIMEOUT_MILLIS,
+} from "@urban/agentic-memory-core/steward/StewardExecution";
+import {
   decodeCaptureAttemptId,
   decodeCaptureRunId,
 } from "@urban/agentic-memory-core/observability/CaptureTelemetry";
@@ -15,7 +20,11 @@ import { MARKER_VERSION } from "../../src/markers/CaptureMarker.ts";
 import { CAPTURE_BATCH_SIZE } from "../../src/workflows/capture.ts";
 import memoryCapture from "../../src/index.ts";
 import { CaptureConfig } from "../../src/services/CaptureConfig.ts";
-import { MemorySteward, StewardExecutor } from "../../src/services/MemorySteward.ts";
+import {
+  MemorySteward,
+  StewardExecutor,
+  stewardExecutorTimeoutMillis,
+} from "../../src/services/MemorySteward.ts";
 import { Markers } from "../../src/services/Markers.ts";
 import { Preprocessor } from "../../src/services/Preprocessor.ts";
 import { runCapturePass } from "../../src/workflows/capture.ts";
@@ -35,6 +44,8 @@ type ExtensionAPI = import("@earendil-works/pi-coding-agent").ExtensionAPI;
 type SessionEntry = import("@earendil-works/pi-coding-agent").SessionEntry;
 type StewardRunResult = import("../../src/services/MemorySteward.ts").StewardRunResult;
 type CaptureConfigState = import("../../src/services/CaptureConfig.ts").CaptureConfigState;
+type StewardDuration =
+  import("@urban/agentic-memory-core/steward/StewardExecution").StewardDuration;
 
 const capturePayload: import("@urban/agentic-memory-core/capture/CapturePayload").CapturePayload = {
   version: 1,
@@ -71,7 +82,7 @@ type StewardRun = (input: {
   readonly projectRoot: string;
   readonly payload: import("@urban/agentic-memory-core/capture/CapturePayload").CapturePayload;
   readonly payloadWarnings: ReadonlyArray<string>;
-  readonly timeoutMillis: number;
+  readonly timeout: StewardDuration;
 }) => Effect.Effect<StewardRunResult>;
 
 const projectSlug = "capture-extension";
@@ -129,6 +140,28 @@ const makeTurnEntries = (count: number): ReadonlyArray<SessionEntry> =>
   });
 
 describe("MemorySteward", () => {
+  it("accepts the largest outer timeout supported by the executor timer", () =>
+    Effect.runPromise(
+      Effect.gen(function* () {
+        const executorTimeout = yield* stewardExecutorTimeoutMillis(
+          decodeStewardDurationSync(`${MAX_STEWARD_TIMEOUT_MILLIS}ms`),
+        );
+
+        expect(executorTimeout).toBe(2_147_483_647);
+      }),
+    ));
+
+  it("rejects the first Steward timeout whose margin exceeds the executor timer", () =>
+    Effect.runPromise(
+      Effect.gen(function* () {
+        const decoded = yield* decodeStewardDuration(`${MAX_STEWARD_TIMEOUT_MILLIS + 1}ms`).pipe(
+          Effect.exit,
+        );
+
+        expect(decoded._tag).toBe("Failure");
+      }),
+    ));
+
   it("stops decoding once it reaches the final assistant message", () => {
     const finalText = JSON.stringify({
       status: "captured",
@@ -229,7 +262,7 @@ describe("MemorySteward", () => {
             projectRoot,
             payload: capturePayload,
             payloadWarnings: ["payload warning"],
-            timeoutMillis: 12_000,
+            timeout: decodeStewardDurationSync("0.5ms"),
             captureRunId,
             attemptId,
             triggerKind: "agent_end",
@@ -246,7 +279,17 @@ describe("MemorySteward", () => {
           expect(seen[0]?.args).toContain("run-steward");
           expect(seen[0]?.args).toContain("--payload");
           expect(seen[0]?.args).toContain("--json");
-          expect(seen[0]?.args).toContain("--timeout-ms");
+          expect(seen[0]?.args).toContain("--timeout");
+          expect(seen[0]?.args).toContain("500000 nanos");
+          const timeoutFlagIndex = seen[0]?.args.indexOf("--timeout");
+          const forwardedTimeout =
+            timeoutFlagIndex === undefined || timeoutFlagIndex < 0
+              ? undefined
+              : seen[0]?.args[timeoutFlagIndex + 1];
+          expect(forwardedTimeout).toBeDefined();
+          if (forwardedTimeout !== undefined) {
+            expect(decodeStewardDurationSync(forwardedTimeout).toString()).toBe("500000 nanos");
+          }
           expect(seen[0]?.args).toContain("--capture-attempt-id");
           expect(seen[0]?.args).toContain("attempt-1");
           expect(seen[0]?.args).toContain("--capture-run-id");
@@ -255,7 +298,7 @@ describe("MemorySteward", () => {
           expect(seen[0]?.args).toContain("agent_end");
           expect(seen[0]?.args).not.toContain("--capture-project-slug");
           expect(seen[0]?.cwd).toBe(projectRoot);
-          expect(seen[0]?.timeout).toBe(17_000);
+          expect(seen[0]?.timeout).toBe(5_000.5);
         }),
       )
       .finally(() =>
@@ -314,7 +357,7 @@ describe("MemorySteward", () => {
               projectRoot: vault,
               payload: capturePayload,
               payloadWarnings: [],
-              timeoutMillis: 12_000,
+              timeout: decodeStewardDurationSync("12s"),
               captureRunId,
               attemptId,
               triggerKind: "session_shutdown",
@@ -537,7 +580,7 @@ describe("runtime capture flow", () => {
             cwd,
             branch,
             triggerKind: "agent_end",
-            timeoutMillis: 20_000,
+            timeout: decodeStewardDurationSync("20s"),
             force: false,
           });
 
@@ -574,7 +617,7 @@ describe("runtime capture flow", () => {
             cwd,
             branch,
             triggerKind: "agent_end",
-            timeoutMillis: 20_000,
+            timeout: decodeStewardDurationSync("20s"),
             force: false,
           });
 
@@ -622,7 +665,7 @@ describe("runtime capture flow", () => {
             cwd,
             branch,
             triggerKind: "agent_end",
-            timeoutMillis: 20_000,
+            timeout: decodeStewardDurationSync("20s"),
             force: false,
           });
           const markers = yield* Markers;
@@ -701,7 +744,7 @@ describe("runtime capture flow", () => {
             cwd,
             branch,
             triggerKind: "session_shutdown",
-            timeoutMillis: 8_000,
+            timeout: decodeStewardDurationSync("8s"),
             force: true,
           });
 
@@ -735,7 +778,7 @@ describe("runtime capture flow", () => {
             cwd,
             branch,
             triggerKind: "session_shutdown",
-            timeoutMillis: 8_000,
+            timeout: decodeStewardDurationSync("8s"),
             force: true,
           });
 

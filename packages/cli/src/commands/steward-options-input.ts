@@ -1,6 +1,7 @@
 import {
   decodeStewardModel,
   decodeStewardProvider,
+  decodeStewardDuration,
   decodeStewardThinkingLevel,
 } from "@urban/agentic-memory-core/steward/StewardExecution";
 import { Effect, Option } from "effect";
@@ -13,6 +14,8 @@ type StewardRunOptions =
   import("@urban/agentic-memory-core/steward/StewardExecution").StewardRunOptions;
 type StewardThinkingLevel =
   import("@urban/agentic-memory-core/steward/StewardExecution").StewardThinkingLevel;
+type StewardDuration =
+  import("@urban/agentic-memory-core/steward/StewardExecution").StewardDuration;
 
 const invalidStewardOverride = (
   option: "provider" | "model" | "thinking",
@@ -62,19 +65,20 @@ export const thinkingFlag = Flag.string("thinking").pipe(
   Flag.optional,
 );
 
-export const timeoutMillisFlag = Flag.integer("timeout-ms").pipe(
-  Flag.withDescription("Positive timeout in milliseconds for the Memory Steward run"),
+export const timeoutFlag = Flag.string("timeout").pipe(
+  Flag.withDescription("Positive finite Memory Steward timeout, for example 30s or 2m"),
   Flag.mapEffect((value) =>
-    value > 0
-      ? Effect.succeed(value)
-      : Effect.fail(
+    decodeStewardDuration(value).pipe(
+      Effect.mapError(
+        () =>
           new CliError.InvalidValue({
-            option: "timeout-ms",
-            value: String(value),
-            expected: "positive integer",
+            option: "timeout",
+            value,
+            expected: "positive finite duration such as 30s or 2m",
             kind: "flag",
           }),
-        ),
+      ),
+    ),
   ),
   Flag.optional,
 );
@@ -83,10 +87,10 @@ export const stewardRunOptionsFromInput = (input: {
   readonly provider: Option.Option<StewardProvider>;
   readonly model: Option.Option<StewardModel>;
   readonly thinking: Option.Option<StewardThinkingLevel>;
-  readonly timeoutMillis: Option.Option<number>;
+  readonly timeout: Option.Option<StewardDuration>;
 }): StewardRunOptions => ({
   ...(Option.isSome(input.provider) ? { provider: input.provider.value } : {}),
   ...(Option.isSome(input.model) ? { model: input.model.value } : {}),
   ...(Option.isSome(input.thinking) ? { thinking: input.thinking.value } : {}),
-  ...(Option.isSome(input.timeoutMillis) ? { timeoutMillis: input.timeoutMillis.value } : {}),
+  ...(Option.isSome(input.timeout) ? { timeout: input.timeout.value } : {}),
 });

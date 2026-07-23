@@ -5,6 +5,7 @@ import {
   decodeCaptureAttemptId,
   decodeCaptureRunId,
 } from "@urban/agentic-memory-core/observability/CaptureTelemetry";
+import { decodeStewardDurationSync } from "@urban/agentic-memory-core/steward/StewardExecution";
 import { MARKER_VERSION } from "../markers/CaptureMarker.ts";
 import { CaptureConfig } from "../services/CaptureConfig.ts";
 import { Markers } from "../services/Markers.ts";
@@ -24,6 +25,8 @@ type CaptureMarker = import("../markers/CaptureMarker.ts").CaptureMarker;
 type PayloadObservation = import("../markers/CaptureMarker.ts").PayloadObservation;
 type CaptureTriggerKind =
   import("@urban/agentic-memory-core/observability/CaptureTelemetry").CaptureTriggerKind;
+type StewardDuration =
+  import("@urban/agentic-memory-core/steward/StewardExecution").StewardDuration;
 
 export const CAPTURE_BATCH_SIZE = 10;
 
@@ -52,7 +55,7 @@ export interface CaptureCommandInput {
   readonly cwd: string;
   readonly branch: ReadonlyArray<SessionEntry>;
   readonly triggerKind: CaptureTriggerKind;
-  readonly timeoutMillis: number;
+  readonly timeout: StewardDuration;
   readonly force: boolean;
 }
 
@@ -172,14 +175,14 @@ const makeScheduleMarker = (input: {
   retryFailureReasons: [...input.retryFailureReasons],
 });
 
-export const timeoutForTrigger = (triggerKind: CaptureTriggerKind): number => {
+export const timeoutForTrigger = (triggerKind: CaptureTriggerKind): StewardDuration => {
   switch (triggerKind) {
     case "agent_end":
-      return 20_000;
+      return decodeStewardDurationSync("20s");
     case "session_before_tree":
-      return 12_000;
+      return decodeStewardDurationSync("12s");
     case "session_shutdown":
-      return 8_000;
+      return decodeStewardDurationSync("8s");
   }
 };
 
@@ -341,7 +344,7 @@ export const runCapturePass = (
             projectRoot: input.cwd,
             payload: payloadResult.payload,
             payloadWarnings: payloadResult.warnings,
-            timeoutMillis: input.timeoutMillis,
+            timeout: input.timeout,
             captureRunId,
             attemptId,
             triggerKind: input.triggerKind,

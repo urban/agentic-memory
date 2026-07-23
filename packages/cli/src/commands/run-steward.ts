@@ -18,7 +18,7 @@ import {
   providerFlag,
   stewardRunOptionsFromInput,
   thinkingFlag,
-  timeoutMillisFlag,
+  timeoutFlag,
 } from "./steward-options-input.ts";
 import {
   optionalProjectFlag,
@@ -35,7 +35,7 @@ export const commandRunSteward = Command.make(
     provider: providerFlag,
     model: modelFlag,
     thinking: thinkingFlag,
-    timeoutMillis: timeoutMillisFlag,
+    timeout: timeoutFlag,
     captureAttemptId: captureAttemptIdFlag,
     captureRunId: captureRunIdFlag,
     captureTriggerKind: captureTriggerKindFlag,
@@ -52,7 +52,7 @@ export const commandRunSteward = Command.make(
       provider: input.provider,
       model: input.model,
       thinking: input.thinking,
-      timeoutMillis: input.timeoutMillis,
+      timeout: input.timeout,
     });
     const correlation = yield* resolveCaptureCorrelation({
       attemptId: input.captureAttemptId,
@@ -109,6 +109,10 @@ export const commandRunSteward = Command.make(
       command:
         "agentic-memory -C /work run-steward --payload payload.json --vault ../vault --project example-project --json",
       description: "Execute the steward using a direct vault and project target",
+    },
+    {
+      command: "agentic-memory -C . run-steward --payload - --timeout 30s --json",
+      description: "Execute the steward with a 30-second timeout (units such as 2m are supported)",
     },
   ]),
 );

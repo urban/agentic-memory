@@ -44,7 +44,7 @@ export const runCapture = Effect.fn("MemoryCapture.runCapture")(function* (
     cwd: ctx.cwd,
     branch: ctx.sessionManager.getBranch(),
     triggerKind,
-    timeoutMillis: timeoutForTrigger(triggerKind),
+    timeout: timeoutForTrigger(triggerKind),
     force,
   });
 
