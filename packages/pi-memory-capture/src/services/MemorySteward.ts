@@ -143,11 +143,11 @@ export class MemorySteward extends Context.Service<
             return yield* executor.exec(
               cliBinary ?? "agentic-memory",
               [
+                "-C",
+                input.projectRoot,
                 "run-steward",
                 "--payload",
                 payloadPath,
-                "--project-root",
-                input.projectRoot,
                 "--json",
                 "--timeout-ms",
                 String(input.timeoutMillis),

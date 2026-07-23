@@ -13,7 +13,7 @@ import {
   resolveCaptureCorrelation,
 } from "./capture-correlation-input.ts";
 import { payloadFlag, readPayload } from "./payload-input.ts";
-import { projectRootFlag } from "./project-root-input.ts";
+import { compatibilityProjectRootFlag } from "./project-root-input.ts";
 import { commandRoot } from "./root.ts";
 import {
   modelFlag,
@@ -32,7 +32,7 @@ export const commandRunSteward = Command.make(
   "run-steward",
   {
     payloadPath: payloadFlag,
-    projectRoot: projectRootFlag,
+    projectRoot: compatibilityProjectRootFlag,
     vault: optionalVaultFlag,
     project: optionalProjectFlag,
     provider: providerFlag,
@@ -46,10 +46,11 @@ export const commandRunSteward = Command.make(
   },
   Effect.fnUntraced(function* (input) {
     const root = yield* commandRoot;
-    const payload = yield* readPayload(input.payloadPath);
+    const payload = yield* readPayload(root.directory.path, input.payloadPath);
     const target = yield* resolveStewardTarget({
       vault: input.vault,
       project: input.project,
+      directory: root.directory,
       projectRoot: input.projectRoot,
     });
     const options = stewardRunOptionsFromInput({
@@ -107,12 +108,12 @@ export const commandRunSteward = Command.make(
   Command.withDescription("Run the isolated Memory Steward process for a capture payload"),
   Command.withExamples([
     {
-      command: "agentic-memory run-steward --payload - --project-root . --json",
+      command: "agentic-memory -C . run-steward --payload - --json",
       description: "Execute the steward with a payload from stdin and JSON output",
     },
     {
       command:
-        "agentic-memory run-steward --payload - --vault /vault --project example-project --json",
+        "agentic-memory -C /work run-steward --payload payload.json --vault ../vault --project example-project --json",
       description: "Execute the steward using a direct vault and project target",
     },
   ]),

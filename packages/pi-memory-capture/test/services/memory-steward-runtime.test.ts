@@ -239,10 +239,10 @@ describe("MemorySteward", () => {
             expect(result.result.warnings).toContain("steward warning");
           }
           expect(seen[0]?.command).toBe("agentic-memory");
+          expect(seen[0]?.args.slice(0, 3)).toEqual(["-C", projectRoot, "run-steward"]);
           expect(seen[0]?.args).toContain("run-steward");
           expect(seen[0]?.args).toContain("--payload");
-          expect(seen[0]?.args).toContain("--project-root");
-          expect(seen[0]?.args).toContain(projectRoot);
+          expect(seen[0]?.args).not.toContain("--project-root");
           expect(seen[0]?.args).toContain("--json");
           expect(seen[0]?.args).toContain("--timeout-ms");
           expect(seen[0]?.args).toContain("--capture-attempt-id");

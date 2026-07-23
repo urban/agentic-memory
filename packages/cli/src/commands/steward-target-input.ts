@@ -3,15 +3,17 @@ import { decodeProjectSlug } from "@urban/agentic-memory-core/link/ProjectSlug";
 import { Effect, FileSystem, Option, Path } from "effect";
 import { Flag } from "effect/unstable/cli";
 import { toFailure } from "../output.ts";
-import { resolveProjectRoot } from "./project-root-input.ts";
+import { resolvePathInput } from "./path-input.ts";
+import { resolveCompatibilityProjectRoot } from "./project-root-input.ts";
 
 type ProjectSlug = import("@urban/agentic-memory-core/link/ProjectSlug").ProjectSlug;
+type AbsolutePath = import("@urban/agentic-memory-core/link/LinkConfig").AbsolutePath;
 type CliCommandFailure = import("../output.ts").CliCommandFailure;
+type InvocationDirectory = import("./path-input.ts").InvocationDirectory;
 
 export interface ResolvedStewardTarget {
-  readonly vaultPath: string;
+  readonly vaultPath: AbsolutePath;
   readonly projectSlug: ProjectSlug;
-  readonly projectRoot: string | undefined;
 }
 
 export const optionalVaultFlag = Flag.string("vault").pipe(
@@ -37,9 +39,11 @@ const decodeCliProjectSlug = (project: string): Effect.Effect<ProjectSlug, CliCo
 export const resolveStewardTarget: (input: {
   readonly vault: Option.Option<string>;
   readonly project: Option.Option<string>;
-  readonly projectRoot: string;
+  readonly directory: InvocationDirectory;
+  readonly projectRoot: Option.Option<string>;
 }) => Effect.Effect<ResolvedStewardTarget, CliCommandFailure, FileSystem.FileSystem | Path.Path> =
   Effect.fnUntraced(function* (input) {
+    const projectRoot = yield* resolveCompatibilityProjectRoot(input.directory, input.projectRoot);
     if (Option.isSome(input.vault) || Option.isSome(input.project)) {
       if (Option.isNone(input.vault) || Option.isNone(input.project)) {
         return yield* toFailure({
@@ -49,14 +53,17 @@ export const resolveStewardTarget: (input: {
       }
 
       const projectSlug = yield* decodeCliProjectSlug(input.project.value);
+      const vaultPath = yield* resolvePathInput(
+        input.directory.path,
+        input.vault.value,
+        "Vault path",
+      );
       return {
-        vaultPath: input.vault.value,
+        vaultPath,
         projectSlug,
-        projectRoot: undefined,
       };
     }
 
-    const projectRoot = yield* resolveProjectRoot(input.projectRoot);
     const loaded = yield* loadLinkConfig(projectRoot);
     switch (loaded._tag) {
       case "missing":
@@ -73,7 +80,6 @@ export const resolveStewardTarget: (input: {
         return {
           vaultPath: loaded.config.vaultPath,
           projectSlug: loaded.config.projectSlug,
-          projectRoot,
         };
     }
   });

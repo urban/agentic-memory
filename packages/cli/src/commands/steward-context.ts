@@ -6,7 +6,7 @@ import { Console, Effect } from "effect";
 import { Command } from "effect/unstable/cli";
 import { toFailure, withCliFailureOutput } from "../output.ts";
 import { payloadFlag, readPayload } from "./payload-input.ts";
-import { projectRootFlag } from "./project-root-input.ts";
+import { compatibilityProjectRootFlag } from "./project-root-input.ts";
 import { commandRoot } from "./root.ts";
 import {
   optionalProjectFlag,
@@ -18,14 +18,19 @@ export const commandStewardContext = Command.make(
   "steward-context",
   {
     payloadPath: payloadFlag,
-    projectRoot: projectRootFlag,
+    projectRoot: compatibilityProjectRootFlag,
     vault: optionalVaultFlag,
     project: optionalProjectFlag,
   },
   Effect.fnUntraced(function* ({ payloadPath, projectRoot, vault, project }) {
     const root = yield* commandRoot;
-    const payload = yield* readPayload(payloadPath);
-    const target = yield* resolveStewardTarget({ vault, project, projectRoot });
+    const payload = yield* readPayload(root.directory.path, payloadPath);
+    const target = yield* resolveStewardTarget({
+      vault,
+      project,
+      directory: root.directory,
+      projectRoot,
+    });
     const result = yield* buildStewardContext({
       payload,
       vaultPath: target.vaultPath,
@@ -56,12 +61,12 @@ export const commandStewardContext = Command.make(
   Command.withDescription("Build the active-agent Memory Steward context bundle"),
   Command.withExamples([
     {
-      command: "agentic-memory steward-context --payload - --project-root . --json",
+      command: "agentic-memory -C . steward-context --payload - --json",
       description: "Read a capture payload from stdin and resolve the project link",
     },
     {
       command:
-        "agentic-memory steward-context --payload payload.json --vault /vault --project example-project --json",
+        "agentic-memory -C /work steward-context --payload payload.json --vault ../vault --project example-project --json",
       description: "Build context using a direct vault and project target",
     },
   ]),

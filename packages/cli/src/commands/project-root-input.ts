@@ -1,5 +1,5 @@
 import { decodeAbsolutePath } from "@urban/agentic-memory-core/link/LinkConfig";
-import { Effect, Option, Path } from "effect";
+import { Effect, FileSystem, Option, Path } from "effect";
 import { Flag } from "effect/unstable/cli";
 import { toFailure } from "../output.ts";
 import { resolvePathInput } from "./path-input.ts";
@@ -8,10 +8,31 @@ type AbsolutePath = import("@urban/agentic-memory-core/link/LinkConfig").Absolut
 type CliCommandFailure = import("../output.ts").CliCommandFailure;
 type InvocationDirectory = import("./path-input.ts").InvocationDirectory;
 
-export const projectRootFlag = Flag.string("project-root").pipe(
-  Flag.withDescription("Project root containing .agentic-memory-link/config.json"),
-  Flag.withDefault("."),
-);
+const conflictingDirectoryContext = (
+  directory: AbsolutePath,
+  projectRoot: AbsolutePath,
+): CliCommandFailure =>
+  toFailure({
+    code: "ConflictingDirectoryContext",
+    message: `Explicit -C directory conflicts with --project-root: ${directory} != ${projectRoot}`,
+    exitCode: 2,
+  });
+
+const canonicalizeProjectRoot = Effect.fnUntraced(function* (
+  projectRoot: AbsolutePath,
+): Effect.fn.Return<AbsolutePath, CliCommandFailure, FileSystem.FileSystem> {
+  const fs = yield* FileSystem.FileSystem;
+  return yield* fs.realPath(projectRoot).pipe(
+    Effect.flatMap(decodeAbsolutePath),
+    Effect.mapError((cause) =>
+      toFailure({
+        code: "InvalidProjectRoot",
+        message: `Project root is invalid: ${cause.message}`,
+        exitCode: 2,
+      }),
+    ),
+  );
+});
 
 export const compatibilityProjectRootFlag = Flag.string("project-root").pipe(
   Flag.withDescription(
@@ -23,7 +44,7 @@ export const compatibilityProjectRootFlag = Flag.string("project-root").pipe(
 export const resolveCompatibilityProjectRoot = Effect.fnUntraced(function* (
   directory: InvocationDirectory,
   projectRoot: Option.Option<string>,
-): Effect.fn.Return<AbsolutePath, CliCommandFailure, Path.Path> {
+): Effect.fn.Return<AbsolutePath, CliCommandFailure, FileSystem.FileSystem | Path.Path> {
   const compatibilityDirectory = Option.isSome(projectRoot)
     ? yield* resolvePathInput(
         yield* decodeAbsolutePath(process.cwd()).pipe(
@@ -40,22 +61,21 @@ export const resolveCompatibilityProjectRoot = Effect.fnUntraced(function* (
       )
     : directory.path;
 
-  if (
-    directory.explicit &&
-    Option.isSome(projectRoot) &&
-    compatibilityDirectory !== directory.path
-  ) {
-    return yield* toFailure({
-      code: "ConflictingDirectoryContext",
-      message: `Explicit -C directory conflicts with --project-root: ${directory.path} != ${compatibilityDirectory}`,
-      exitCode: 2,
-    });
+  if (Option.isSome(projectRoot)) {
+    const canonicalCompatibilityDirectory = yield* canonicalizeProjectRoot(
+      compatibilityDirectory,
+    ).pipe(
+      Effect.catch((cause) =>
+        directory.explicit
+          ? Effect.fail(conflictingDirectoryContext(directory.path, compatibilityDirectory))
+          : Effect.fail(cause),
+      ),
+    );
+    if (directory.explicit && canonicalCompatibilityDirectory !== directory.path) {
+      return yield* conflictingDirectoryContext(directory.path, canonicalCompatibilityDirectory);
+    }
+    return canonicalCompatibilityDirectory;
   }
 
   return compatibilityDirectory;
-});
-
-export const resolveProjectRoot = Effect.fnUntraced(function* (projectRoot: string) {
-  const path = yield* Path.Path;
-  return path.resolve(projectRoot);
 });

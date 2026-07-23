@@ -133,7 +133,7 @@ Answers a natural-language question using curated Agentic Memory content. Source
 ### Build Steward context
 
 ```sh
-agentic-memory steward-context --payload payload.json --project-root . --json
+agentic-memory -C /absolute/path/to/project steward-context --payload payload.json --json
 ```
 
 Builds the context bundle for Memory Steward workflows. Use `--payload -` to read the capture payload from standard input.
@@ -141,7 +141,7 @@ Builds the context bundle for Memory Steward workflows. Use `--payload -` to rea
 ### Run the Memory Steward
 
 ```sh
-agentic-memory run-steward --payload - --project-root . --json
+agentic-memory -C /absolute/path/to/project run-steward --payload - --json
 ```
 
 Runs the isolated Memory Steward process for a capture payload. Harness integrations should use this command as the stable execution boundary instead of calling internal modules directly.
@@ -149,7 +149,7 @@ Runs the isolated Memory Steward process for a capture payload. Harness integrat
 For direct mode, provide both `--vault` and `--project`:
 
 ```sh
-agentic-memory run-steward \
+agentic-memory -C /absolute/path/to/project run-steward \
   --payload payload.json \
   --vault /absolute/path/to/agentic-memory-vault \
   --project example-project \

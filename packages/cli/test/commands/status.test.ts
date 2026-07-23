@@ -291,13 +291,15 @@ describe("agentic-memory status command", () => {
             path.join(vaultPath, "notes", "fact.md"),
             "# Fact\n\nA durable fact.\n",
           );
+          const compatibilityProjectRoot = path.join(vaultPath, "ignored-project");
+          yield* fs.makeDirectory(compatibilityProjectRoot);
 
           const missingOutput = yield* runCapturedEffect([
             "status",
             "--vault",
             vaultPath,
             "--project-root",
-            path.join(vaultPath, "ignored-project"),
+            compatibilityProjectRoot,
             "--json",
           ]);
           const missing = yield* decodeVaultReadiness(missingOutput.stdout);

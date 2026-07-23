@@ -1,4 +1,5 @@
 import * as BunServices from "@effect/platform-bun/BunServices";
+import { decodeAbsolutePath } from "@urban/agentic-memory-core/link/LinkConfig";
 import { assert, describe, it } from "@effect/vitest";
 import { Effect, FileSystem, ManagedRuntime, Sink, Stdio, Stream } from "effect";
 import { afterAll } from "vitest";
@@ -30,7 +31,7 @@ describe("capture payload CLI input", () => {
           const payloadPath = `${tempRoot}/payload.json`;
           yield* fs.writeFileString(payloadPath, validPayloadJson);
 
-          const payload = yield* readPayload(payloadPath);
+          const payload = yield* readPayload(yield* decodeAbsolutePath(tempRoot), "payload.json");
 
           assert.strictEqual(payload.projectSlug, "agentic-memory-cli");
           assert.deepStrictEqual(payload.messages, [{ role: "user", text: "hello" }]);
@@ -41,7 +42,8 @@ describe("capture payload CLI input", () => {
 
   it.effect("reads and decodes a payload from stdin", () =>
     withPayloadInputRuntime(
-      readPayload("-").pipe(
+      decodeAbsolutePath("/").pipe(
+        Effect.flatMap((effectiveDirectory) => readPayload(effectiveDirectory, "-")),
         Effect.provideService(
           Stdio.Stdio,
           Stdio.make({
@@ -70,7 +72,10 @@ describe("capture payload CLI input", () => {
           const payloadPath = `${tempRoot}/payload.json`;
           yield* fs.writeFileString(payloadPath, "not-json");
 
-          const failure = yield* readPayload(payloadPath).pipe(Effect.flip);
+          const failure = yield* readPayload(
+            yield* decodeAbsolutePath(tempRoot),
+            "payload.json",
+          ).pipe(Effect.flip);
 
           assert.strictEqual(failure.code, "InvalidCapturePayload");
           assert.include(failure.message, "Invalid capture payload JSON:");
@@ -89,7 +94,10 @@ describe("capture payload CLI input", () => {
           });
           const payloadPath = `${tempRoot}/missing.json`;
 
-          const failure = yield* readPayload(payloadPath).pipe(Effect.flip);
+          const failure = yield* readPayload(
+            yield* decodeAbsolutePath(tempRoot),
+            "missing.json",
+          ).pipe(Effect.flip);
 
           assert.strictEqual(failure.code, "ReadPayloadFailed");
           assert.strictEqual(
