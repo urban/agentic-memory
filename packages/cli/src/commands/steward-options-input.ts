@@ -1,20 +1,64 @@
-type StewardRunOptions =
-  import("@urban/agentic-memory-core/steward/StewardExecution").StewardRunOptions;
+import {
+  decodeStewardModel,
+  decodeStewardProvider,
+  decodeStewardThinkingLevel,
+} from "@urban/agentic-memory-core/steward/StewardExecution";
 import { Effect, Option } from "effect";
 import { CliError, Flag } from "effect/unstable/cli";
 
+type StewardModel = import("@urban/agentic-memory-core/steward/StewardExecution").StewardModel;
+type StewardProvider =
+  import("@urban/agentic-memory-core/steward/StewardExecution").StewardProvider;
+type StewardRunOptions =
+  import("@urban/agentic-memory-core/steward/StewardExecution").StewardRunOptions;
+type StewardThinkingLevel =
+  import("@urban/agentic-memory-core/steward/StewardExecution").StewardThinkingLevel;
+
+const invalidStewardOverride = (
+  option: "provider" | "model" | "thinking",
+  value: string,
+  expected: string,
+): CliError.InvalidValue =>
+  new CliError.InvalidValue({
+    option,
+    value,
+    expected,
+    kind: "flag",
+  });
+
 export const providerFlag = Flag.string("provider").pipe(
   Flag.withDescription("Memory Steward provider override"),
+  Flag.mapEffect((value) =>
+    decodeStewardProvider(value).pipe(
+      Effect.mapError(() =>
+        invalidStewardOverride("provider", value, "selector containing non-whitespace content"),
+      ),
+    ),
+  ),
   Flag.optional,
 );
 
 export const modelFlag = Flag.string("model").pipe(
   Flag.withDescription("Memory Steward model override"),
+  Flag.mapEffect((value) =>
+    decodeStewardModel(value).pipe(
+      Effect.mapError(() =>
+        invalidStewardOverride("model", value, "selector containing non-whitespace content"),
+      ),
+    ),
+  ),
   Flag.optional,
 );
 
 export const thinkingFlag = Flag.string("thinking").pipe(
   Flag.withDescription("Memory Steward thinking level override"),
+  Flag.mapEffect((value) =>
+    decodeStewardThinkingLevel(value).pipe(
+      Effect.mapError(() =>
+        invalidStewardOverride("thinking", value, "off, minimal, low, medium, high, xhigh, or max"),
+      ),
+    ),
+  ),
   Flag.optional,
 );
 
@@ -36,9 +80,9 @@ export const timeoutMillisFlag = Flag.integer("timeout-ms").pipe(
 );
 
 export const stewardRunOptionsFromInput = (input: {
-  readonly provider: Option.Option<string>;
-  readonly model: Option.Option<string>;
-  readonly thinking: Option.Option<string>;
+  readonly provider: Option.Option<StewardProvider>;
+  readonly model: Option.Option<StewardModel>;
+  readonly thinking: Option.Option<StewardThinkingLevel>;
   readonly timeoutMillis: Option.Option<number>;
 }): StewardRunOptions => ({
   ...(Option.isSome(input.provider) ? { provider: input.provider.value } : {}),

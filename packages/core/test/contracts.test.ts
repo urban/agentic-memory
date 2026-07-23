@@ -30,13 +30,20 @@ import {
   decodeRecallResponse,
   decodeRecallSuccessJson,
 } from "../src/recall/Recall.ts";
-import { StewardRunner } from "../src/steward/StewardExecution.ts";
+import {
+  decodeStewardModel,
+  decodeStewardProvider,
+  decodeStewardThinkingLevel,
+  StewardRunner,
+} from "../src/steward/StewardExecution.ts";
 import { decodeStewardResultJson } from "../src/steward/StewardResult.ts";
 import { makeFakeEmbeddingModelLayer } from "../src/semantic/EmbeddingModel.ts";
 import { ensureProjectFile, ensureProjectRouteInMemory } from "../src/vault/ProjectRoute.ts";
 import { checkVaultHealth, validateVaultForLink } from "../src/vault/VaultStatus.ts";
 import { initVaultFromTemplate } from "../src/vault/VaultTemplate.ts";
 import { VaultRepositoryLive } from "../src/vault/VaultRepository.ts";
+
+type StewardContextResult = import("../src/steward/StewardContext.ts").StewardContextResult;
 
 const validPayloadJson =
   '{"version":1,"projectSlug":"agentic-memory-cli","messages":[{"role":"user","text":"hello"}]}';
@@ -78,6 +85,26 @@ const timeoutingSpawnerLayer = Layer.succeed(
 );
 
 describe("core contracts", () => {
+  it.effect("decodes typed Steward selectors and supported thinking levels", () =>
+    Effect.gen(function* () {
+      const provider = yield* decodeStewardProvider("custom-provider");
+      const providerModel = yield* decodeStewardModel("custom-provider/model-id");
+      const shorthandModel = yield* decodeStewardModel("sonnet:high");
+      const thinking = yield* decodeStewardThinkingLevel("max");
+      const invalidProvider = yield* decodeStewardProvider(" \t").pipe(Effect.exit);
+      const invalidModel = yield* decodeStewardModel("").pipe(Effect.exit);
+      const invalidThinking = yield* decodeStewardThinkingLevel("ultra").pipe(Effect.exit);
+
+      assert.strictEqual(provider, "custom-provider");
+      assert.strictEqual(providerModel, "custom-provider/model-id");
+      assert.strictEqual(shorthandModel, "sonnet:high");
+      assert.strictEqual(thinking, "max");
+      assert.strictEqual(invalidProvider._tag, "Failure");
+      assert.strictEqual(invalidModel._tag, "Failure");
+      assert.strictEqual(invalidThinking._tag, "Failure");
+    }),
+  );
+
   afterAll(() => CoreContractsRuntime.dispose());
 
   it.effect("validates project slugs and derives vault routes", () =>
@@ -299,38 +326,42 @@ describe("core contracts", () => {
 
   it.effect("constructs isolated Pi runner commands and extracts final assistant JSON", () =>
     Effect.gen(function* () {
+      const provider = yield* decodeStewardProvider("anthropic");
+      const model = yield* decodeStewardModel("anthropic/claude:high");
+      const thinking = yield* decodeStewardThinkingLevel("medium");
+      const context: StewardContextResult = {
+        status: "ready",
+        payload: yield* decodeCapturePayloadJson(validPayloadJson),
+        vault: {
+          path: "/vault",
+          projectFile: "/vault/projects/agentic-memory-cli.md",
+          memoryFile: "/vault/MEMORY.md",
+          userFile: "/vault/USER.md",
+          outsideVaultInstructions: "/vault/.agentic-memory/LLM-outside-vault.md",
+        },
+        instructions: {
+          outsideVault: "contract",
+          prompt: "prompt",
+        },
+        resultContract: {
+          statusValues: ["captured", "no_changes"],
+          capturedRequiresSummary: true,
+        },
+        warnings: [],
+      };
       const command = buildPiProcessCommand({
         piBinary: "pi-test",
         request: {
-          context: {
-            status: "ready",
-            payload: yield* decodeCapturePayloadJson(validPayloadJson),
-            vault: {
-              path: "/vault",
-              projectFile: "/vault/projects/agentic-memory-cli.md",
-              memoryFile: "/vault/MEMORY.md",
-              userFile: "/vault/USER.md",
-              outsideVaultInstructions: "/vault/.agentic-memory/LLM-outside-vault.md",
-            },
-            instructions: {
-              outsideVault: "contract",
-              prompt: "prompt",
-            },
-            resultContract: {
-              statusValues: ["captured", "no_changes"],
-              capturedRequiresSummary: true,
-            },
-            warnings: [],
-          },
+          context,
           correlation: yield* decodeCaptureCorrelation({
             attemptId: "attempt-1",
             captureRunId: "run-1",
             triggerKind: "agent_end",
           }),
           options: {
-            provider: "anthropic",
-            model: "claude",
-            thinking: "medium",
+            provider,
+            model,
+            thinking,
           },
         },
       });
@@ -340,27 +371,22 @@ describe("core contracts", () => {
       const manualCommand = buildPiProcessCommand({
         piBinary: "pi-test",
         request: {
-          context: {
-            status: "ready",
-            payload: yield* decodeCapturePayloadJson(validPayloadJson),
-            vault: {
-              path: "/vault",
-              projectFile: "/vault/projects/agentic-memory-cli.md",
-              memoryFile: "/vault/MEMORY.md",
-              userFile: "/vault/USER.md",
-              outsideVaultInstructions: "/vault/.agentic-memory/LLM-outside-vault.md",
-            },
-            instructions: {
-              outsideVault: "contract",
-              prompt: "prompt",
-            },
-            resultContract: {
-              statusValues: ["captured", "no_changes"],
-              capturedRequiresSummary: true,
-            },
-            warnings: [],
-          },
+          context,
           options: {},
+        },
+      });
+      const providerOnlyCommand = buildPiProcessCommand({
+        piBinary: "pi-test",
+        request: {
+          context,
+          options: { provider },
+        },
+      });
+      const modelOnlyCommand = buildPiProcessCommand({
+        piBinary: "pi-test",
+        request: {
+          context,
+          options: { model },
         },
       });
 
@@ -376,6 +402,11 @@ describe("core contracts", () => {
       assert.notInclude(command.args, "--no-tools");
       assert.include(command.args, "--provider");
       assert.include(command.args, "anthropic");
+      assert.include(command.args, "anthropic/claude:high");
+      assert.include(providerOnlyCommand.args, "--provider");
+      assert.notInclude(providerOnlyCommand.args, "--model");
+      assert.include(modelOnlyCommand.args, "--model");
+      assert.notInclude(modelOnlyCommand.args, "--provider");
       assert.include(manualCommand.args, "Memory Steward capture manual");
       const stewardSession = extractStewardSessionPointer(
         '{"type":"session","version":3,"id":"session-1","timestamp":"2026-06-15T12:00:00.000Z","cwd":"/vault"}\n',

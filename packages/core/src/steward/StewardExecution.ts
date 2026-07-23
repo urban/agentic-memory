@@ -60,10 +60,41 @@ export const RunStewardResultJson = Schema.fromJsonString(RunStewardResult).anno
 export const encodeRunStewardResultJson = Schema.encodeUnknownEffect(RunStewardResultJson);
 export const decodeRunStewardResultJson = Schema.decodeUnknownEffect(RunStewardResultJson);
 
+const StewardSelector = Schema.String.check(
+  Schema.isPattern(/\S/, {
+    message: "Expected a selector containing non-whitespace content",
+  }),
+);
+
+export const StewardProvider = StewardSelector.pipe(Schema.brand("StewardProvider")).annotate({
+  identifier: "StewardProvider",
+});
+export type StewardProvider = typeof StewardProvider.Type;
+
+export const StewardModel = StewardSelector.pipe(Schema.brand("StewardModel")).annotate({
+  identifier: "StewardModel",
+});
+export type StewardModel = typeof StewardModel.Type;
+
+export const StewardThinkingLevel = Schema.Literals([
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+]).annotate({ identifier: "StewardThinkingLevel" });
+export type StewardThinkingLevel = typeof StewardThinkingLevel.Type;
+
+export const decodeStewardProvider = Schema.decodeUnknownEffect(StewardProvider);
+export const decodeStewardModel = Schema.decodeUnknownEffect(StewardModel);
+export const decodeStewardThinkingLevel = Schema.decodeUnknownEffect(StewardThinkingLevel);
+
 export interface StewardRunOptions {
-  readonly provider?: string;
-  readonly model?: string;
-  readonly thinking?: string;
+  readonly provider?: StewardProvider;
+  readonly model?: StewardModel;
+  readonly thinking?: StewardThinkingLevel;
   readonly timeoutMillis?: number;
 }
 

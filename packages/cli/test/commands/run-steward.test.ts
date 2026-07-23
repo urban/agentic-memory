@@ -20,6 +20,33 @@ describe("agentic-memory run-steward command", () => {
     ),
   );
 
+  it.effect.each([
+    {
+      name: "empty provider",
+      args: ["--provider", " "],
+      expected: "selector containing non-whitespace content",
+    },
+    {
+      name: "empty model",
+      args: ["--model", "\t"],
+      expected: "selector containing non-whitespace content",
+    },
+    {
+      name: "unsupported thinking level",
+      args: ["--thinking", "ultra"],
+      expected: "off, minimal, low, medium, high, xhigh, or max",
+    },
+  ])("rejects $name before Steward context construction", ({ args, expected }) =>
+    withCliRuntime(runCapturedEffect(["-C", ".", "run-steward", "--payload", "-", ...args])).pipe(
+      Effect.map((output) => {
+        assert.strictEqual(output.exitCode, 1);
+        assert.include(output.stderr, "Invalid value for flag");
+        assert.include(output.stderr, expected);
+        assert.notInclude(output.stderr, "MissingLinkConfig");
+      }),
+    ),
+  );
+
   it.effect("resolves a relative payload and linked target from -C", () =>
     withCliRuntime(
       Effect.scoped(
