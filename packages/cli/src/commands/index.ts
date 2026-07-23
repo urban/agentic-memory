@@ -1,4 +1,3 @@
-import { encodeSemanticIndexResultJson } from "@urban/agentic-memory-core/cli/CliResults";
 import {
   deleteSemanticIndex,
   synchronizeSemanticIndex,
@@ -6,13 +5,15 @@ import {
 import { Console, Effect } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import { toFailure, withCliFailureOutput } from "../output.ts";
+import { resolvePathInput } from "./path-input.ts";
 import { commandRoot } from "./root.ts";
+import { encodeSemanticIndexResultJson } from "./semantic-index-output.ts";
 
 export const commandIndex = Command.make(
   "index",
   {
     vaultPath: Flag.string("vault").pipe(
-      Flag.withDescription("Absolute path to an initialized Agentic Memory vault"),
+      Flag.withDescription("Path to an initialized Agentic Memory vault"),
     ),
     deleteIndex: Flag.boolean("delete").pipe(
       Flag.withDescription(
@@ -22,8 +23,11 @@ export const commandIndex = Command.make(
   },
   Effect.fnUntraced(function* ({ deleteIndex, vaultPath }) {
     const root = yield* commandRoot;
+    const resolvedVaultPath = yield* resolvePathInput(root.directory.path, vaultPath, "Vault path");
     const result = yield* (
-      deleteIndex ? deleteSemanticIndex(vaultPath) : synchronizeSemanticIndex(vaultPath)
+      deleteIndex
+        ? deleteSemanticIndex(resolvedVaultPath)
+        : synchronizeSemanticIndex(resolvedVaultPath)
     ).pipe(
       Effect.mapError((cause) =>
         toFailure({
@@ -56,8 +60,8 @@ export const commandIndex = Command.make(
   ),
   Command.withExamples([
     {
-      command: "agentic-memory index --vault /absolute/path/to/vault --json",
-      description: "Incrementally index managed Markdown using the installed local model",
+      command: "agentic-memory -C /absolute/path/to index --vault vault --json",
+      description: "Resolve a relative vault path and incrementally index managed Markdown",
     },
     {
       command: "agentic-memory index --vault /absolute/path/to/vault --delete",

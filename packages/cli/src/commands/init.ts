@@ -1,23 +1,29 @@
-import { encodeInitCommandResultJson } from "@urban/agentic-memory-core/cli/CliResults";
 import { initVaultFromTemplate } from "@urban/agentic-memory-core/vault/VaultTemplate";
 import { Console, Effect } from "effect";
 import { Argument, Command, Flag } from "effect/unstable/cli";
 import { toFailure, withCliFailureOutput } from "../output.ts";
+import { encodeInitVaultResultJson } from "./init-output.ts";
+import { resolvePathInput } from "./path-input.ts";
 import { commandRoot } from "./root.ts";
 
 export const commandInit = Command.make(
   "init",
   {
     targetPath: Argument.string("vault-path").pipe(
-      Argument.withDescription("Absolute path for the Agentic Memory vault"),
+      Argument.withDescription("Path for the Agentic Memory vault"),
     ),
     git: Flag.boolean("git").pipe(Flag.withDescription("Initialize a Git repository if needed")),
     yes: Flag.boolean("yes").pipe(Flag.withDescription("Confirm safe non-interactive actions")),
   },
   Effect.fnUntraced(function* ({ targetPath, git, yes }) {
     const root = yield* commandRoot;
-    const result = yield* initVaultFromTemplate({
+    const resolvedTargetPath = yield* resolvePathInput(
+      root.directory.path,
       targetPath,
+      "Vault target path",
+    );
+    const result = yield* initVaultFromTemplate({
+      targetPath: resolvedTargetPath,
       initializeGit: git,
       yes,
     }).pipe(
@@ -28,7 +34,7 @@ export const commandInit = Command.make(
         }),
       ),
     );
-    const jsonText = yield* encodeInitCommandResultJson(result).pipe(
+    const jsonText = yield* encodeInitVaultResultJson(result).pipe(
       Effect.mapError((cause) =>
         toFailure({
           code: "EncodeResultFailed",
@@ -61,8 +67,8 @@ export const commandInit = Command.make(
       description: "Create a vault and download the shared model when it is absent",
     },
     {
-      command: "agentic-memory init /absolute/path/to/vault --yes --json",
-      description: "Ensure an initialized vault and model are available, then print JSON",
+      command: "agentic-memory -C /absolute/path/to init vault --yes --json",
+      description: "Resolve a relative vault target from an explicit invocation directory",
     },
   ]),
 );

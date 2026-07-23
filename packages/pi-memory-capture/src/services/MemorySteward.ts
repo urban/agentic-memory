@@ -1,6 +1,9 @@
-import { Cause, Context, Effect, FileSystem, Layer, Schema } from "effect";
+import { Cause, Context, Duration, Effect, FileSystem, Layer, Schema } from "effect";
 import { encodeCapturePayloadJson } from "@urban/agentic-memory-core/capture/CapturePayload";
-import { decodeRunStewardResultJson } from "@urban/agentic-memory-core/steward/StewardExecution";
+import {
+  decodeRunStewardResultJson,
+  encodeStewardDurationSync,
+} from "@urban/agentic-memory-core/steward/StewardExecution";
 import { CaptureConfig } from "./CaptureConfig.ts";
 
 type ExecOptions = import("@earendil-works/pi-coding-agent").ExecOptions;
@@ -10,10 +13,18 @@ type StewardSessionPointer =
 type StewardDecisionReport =
   import("@urban/agentic-memory-core/steward/StewardResult").StewardDecisionReport;
 type CapturePayload = import("@urban/agentic-memory-core/capture/CapturePayload").CapturePayload;
-type AttemptId = import("../markers/CaptureMarker.ts").AttemptId;
+type CaptureAttemptId =
+  import("@urban/agentic-memory-core/observability/CaptureTelemetry").CaptureAttemptId;
+type CaptureRunId =
+  import("@urban/agentic-memory-core/observability/CaptureTelemetry").CaptureRunId;
 type StewardResultStatus =
   import("@urban/agentic-memory-core/steward/StewardResult").StewardResultStatus;
-type TriggerKind = import("../markers/CaptureMarker.ts").TriggerKind;
+type CaptureTriggerKind =
+  import("@urban/agentic-memory-core/observability/CaptureTelemetry").CaptureTriggerKind;
+type StewardDuration =
+  import("@urban/agentic-memory-core/steward/StewardExecution").StewardDuration;
+
+const MAX_EXECUTOR_TIMEOUT_MILLIS = 2_147_483_647;
 
 export interface StewardObservationResult {
   readonly status: StewardResultStatus;
@@ -74,6 +85,21 @@ const normalizeFailureReason = (message: string): string => {
   return paddedWords.slice(0, 15).join(" ");
 };
 
+export const stewardExecutorTimeoutMillis = (
+  timeout: StewardDuration,
+): Effect.Effect<number, MemoryStewardError> => {
+  const timeoutMillis = Duration.toMillis(Duration.sum(timeout, Duration.seconds(5)));
+  return Number.isFinite(timeoutMillis) &&
+    timeoutMillis > 0 &&
+    timeoutMillis <= MAX_EXECUTOR_TIMEOUT_MILLIS
+    ? Effect.succeed(timeoutMillis)
+    : Effect.fail(
+        new MemoryStewardError({
+          message: "Memory Steward outer timeout exceeds the executor timer ceiling",
+        }),
+      );
+};
+
 export class MemorySteward extends Context.Service<
   MemorySteward,
   {
@@ -81,11 +107,10 @@ export class MemorySteward extends Context.Service<
       readonly projectRoot: string;
       readonly payload: CapturePayload;
       readonly payloadWarnings: ReadonlyArray<string>;
-      readonly timeoutMillis: number;
-      readonly captureRunId: string;
-      readonly attemptId: AttemptId;
-      readonly triggerKind: TriggerKind;
-      readonly projectSlug: string;
+      readonly timeout: StewardDuration;
+      readonly captureRunId: CaptureRunId;
+      readonly attemptId: CaptureAttemptId;
+      readonly triggerKind: CaptureTriggerKind;
     }) => Effect.Effect<StewardRunResult>;
   }
 >()("@urban/pi-memory-capture/services/MemorySteward") {
@@ -101,11 +126,10 @@ export class MemorySteward extends Context.Service<
         readonly projectRoot: string;
         readonly payload: CapturePayload;
         readonly payloadWarnings: ReadonlyArray<string>;
-        readonly timeoutMillis: number;
-        readonly captureRunId: string;
-        readonly attemptId: AttemptId;
-        readonly triggerKind: TriggerKind;
-        readonly projectSlug: string;
+        readonly timeout: StewardDuration;
+        readonly captureRunId: CaptureRunId;
+        readonly attemptId: CaptureAttemptId;
+        readonly triggerKind: CaptureTriggerKind;
       }): Effect.fn.Return<StewardRunResult> {
         const result = yield* Effect.scoped(
           Effect.gen(function* () {
@@ -140,30 +164,29 @@ export class MemorySteward extends Context.Service<
                   }),
               ),
             );
+            const executorTimeoutMillis = yield* stewardExecutorTimeoutMillis(input.timeout);
             return yield* executor.exec(
               cliBinary ?? "agentic-memory",
               [
+                "-C",
+                input.projectRoot,
                 "run-steward",
                 "--payload",
                 payloadPath,
-                "--project-root",
-                input.projectRoot,
                 "--json",
-                "--timeout-ms",
-                String(input.timeoutMillis),
+                "--timeout",
+                encodeStewardDurationSync(input.timeout),
                 "--capture-attempt-id",
                 input.attemptId,
                 "--capture-run-id",
                 input.captureRunId,
                 "--capture-trigger-kind",
                 input.triggerKind,
-                "--capture-project-slug",
-                input.projectSlug,
               ],
               {
                 cwd: input.projectRoot,
                 signal,
-                timeout: input.timeoutMillis + 5_000,
+                timeout: executorTimeoutMillis,
               },
             );
           }),

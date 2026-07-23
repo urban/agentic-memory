@@ -1,34 +1,91 @@
-import {
-  CliFailureResultJson,
-  decodeSemanticIndexReadinessJson,
-} from "@urban/agentic-memory-core/cli/CliResults";
 import { assert, describe, it } from "@effect/vitest";
-import { Effect, FileSystem, Path, PlatformError, Schema } from "effect";
+import { Effect, FileSystem, Path, PlatformError } from "effect";
 import { afterAll } from "vitest";
+import {
+  decodeStatusCommandResultJson,
+  decodeVaultStatusResultJson,
+} from "../../src/commands/status-output.ts";
+import { decodeCliFailureResultJson } from "../../src/output.ts";
 import { fakeFileInfo, makeCliTestRuntime } from "../cli-test-support.ts";
 
-const decodeCliFailureResultJson = Schema.decodeUnknownEffect(CliFailureResultJson);
+const decodeVaultReadiness = (json: string) =>
+  decodeVaultStatusResultJson(json).pipe(Effect.map((result) => result.readiness));
 const { dispose, runCapturedEffect, withCliRuntime } = makeCliTestRuntime();
 
 describe("agentic-memory status command", () => {
   afterAll(dispose);
 
-  it.effect("reports unlinked status without searching ancestors", () =>
+  it.effect("reports an unconfigured exact directory without searching ancestors", () =>
     withCliRuntime(
       Effect.scoped(
         Effect.gen(function* () {
           const fs = yield* FileSystem.FileSystem;
           const projectRoot = yield* fs.makeTempDirectoryScoped({ prefix: "agentic-memory-cli-" });
-          return yield* runCapturedEffect(["status", "--project-root", projectRoot, "--json"]);
+          const json = yield* runCapturedEffect(["-C", projectRoot, "status", "--json"]);
+          const human = yield* runCapturedEffect(["-C", projectRoot, "status"]);
+          return { human, json };
         }),
       ),
     ).pipe(
-      Effect.map((output) => {
-        assert.strictEqual(output.exitCode, 0);
-        assert.include(output.stdout, '"status":"unlinked"');
-        assert.include(output.stdout, ".agentic-memory-link/config.json");
-        assert.strictEqual(output.stderr, "");
+      Effect.map(({ human, json }) => {
+        assert.strictEqual(json.exitCode, 0);
+        assert.include(json.stdout, '"_tag":"unconfigured"');
+        assert.include(json.stdout, '"version":1');
+        assert.include(json.stdout, ".agentic-memory-link/config.json");
+        assert.strictEqual(json.stderr, "");
+        assert.strictEqual(human.exitCode, 0);
+        assert.include(human.stdout, "Agentic Memory status: unconfigured");
       }),
+    ),
+  );
+
+  it.effect("detects a vault from the exact effective directory", () =>
+    withCliRuntime(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const vaultPath = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-status-context-vault-",
+          });
+          yield* runCapturedEffect(["init", vaultPath, "--json"]);
+          const output = yield* runCapturedEffect(["-C", vaultPath, "status", "--json"]);
+          const result = yield* decodeStatusCommandResultJson(output.stdout);
+
+          assert.strictEqual(output.exitCode, 0);
+          assert.strictEqual(result._tag, "vault");
+          if (result._tag === "vault") {
+            assert.strictEqual(result.directory, yield* fs.realPath(vaultPath));
+            assert.strictEqual(result.readiness.status, "not_ready");
+          }
+          assert.strictEqual(output.stderr, "");
+        }),
+      ),
+    ),
+  );
+
+  it.effect("does not inherit a linked-project context from an ancestor", () =>
+    withCliRuntime(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const parent = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-status-exact-",
+          });
+          const child = path.join(parent, "child");
+          yield* fs.makeDirectory(path.join(parent, ".agentic-memory-link"), { recursive: true });
+          yield* fs.makeDirectory(child);
+          yield* fs.writeFileString(
+            path.join(parent, ".agentic-memory-link", "config.json"),
+            '{"version":1,"vaultPath":"/vault","projectSlug":"example-project"}\n',
+          );
+
+          const output = yield* runCapturedEffect(["-C", child, "status", "--json"]);
+          const result = yield* decodeStatusCommandResultJson(output.stdout);
+          assert.strictEqual(output.exitCode, 0);
+          assert.strictEqual(result._tag, "unconfigured");
+        }),
+      ),
     ),
   );
 
@@ -76,15 +133,116 @@ describe("agentic-memory status command", () => {
             "# example-project\n",
           );
 
-          return yield* runCapturedEffect(["status", "--project-root", projectRoot, "--json"]);
+          return yield* runCapturedEffect(["-C", projectRoot, "status", "--json"]);
         }),
       ),
     ).pipe(
       Effect.map((output) => {
         assert.strictEqual(output.exitCode, 0);
+        assert.include(output.stdout, '"_tag":"linked-project"');
         assert.include(output.stdout, '"status":"unhealthy"');
         assert.include(output.stdout, '"sessionCaptureInstructionsExists":false');
+        assert.include(output.stdout, '"semanticReadiness"');
       }),
+    ),
+  );
+
+  it.effect("includes project-route health and linked-vault semantic readiness", () =>
+    withCliRuntime(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const tempRoot = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-status-linked-readiness-",
+          });
+          const vaultPath = path.join(tempRoot, "vault");
+          const projectRoot = path.join(tempRoot, "project");
+          yield* runCapturedEffect(["init", vaultPath, "--json"]);
+          yield* fs.makeDirectory(path.join(projectRoot, ".agentic-memory-link"), {
+            recursive: true,
+          });
+          yield* fs.writeFileString(
+            path.join(projectRoot, ".agentic-memory-link", "config.json"),
+            `{"version":1,"vaultPath":"${vaultPath}","projectSlug":"example-project"}\n`,
+          );
+          yield* fs.writeFileString(
+            path.join(vaultPath, "projects", "example-project.md"),
+            "# Example project\n",
+          );
+          yield* fs.writeFileString(
+            path.join(vaultPath, "MEMORY.md"),
+            "# Memory\n\n## Projects\n\n- [[projects/example-project]] — example-project.\n",
+          );
+
+          const output = yield* runCapturedEffect(["-C", projectRoot, "status", "--json"]);
+          const result = yield* decodeStatusCommandResultJson(output.stdout);
+          assert.strictEqual(output.exitCode, 0);
+          assert.strictEqual(result._tag, "linked-project");
+          if (result._tag === "linked-project") {
+            assert.strictEqual(result.status, "healthy");
+            assert.strictEqual(result.inspection._tag, "valid-link");
+            if (result.inspection._tag === "valid-link") {
+              assert.isTrue(result.inspection.projectRoute.healthy);
+              assert.strictEqual(result.inspection.semanticReadiness.status, "not_ready");
+              assert.isFalse(result.inspection.semanticReadiness.recallReady);
+            }
+          }
+        }),
+      ),
+    ),
+  );
+
+  it.effect("reports invalid link configuration instead of falling back to a vault", () =>
+    withCliRuntime(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const vaultPath = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-status-invalid-link-vault-",
+          });
+          yield* runCapturedEffect(["init", vaultPath, "--json"]);
+          yield* fs.makeDirectory(path.join(vaultPath, ".agentic-memory-link"));
+          yield* fs.writeFileString(
+            path.join(vaultPath, ".agentic-memory-link", "config.json"),
+            "not json\n",
+          );
+
+          const output = yield* runCapturedEffect(["-C", vaultPath, "status", "--json"]);
+          const result = yield* decodeStatusCommandResultJson(output.stdout);
+          assert.strictEqual(output.exitCode, 0);
+          assert.strictEqual(result._tag, "linked-project");
+          if (result._tag === "linked-project") {
+            assert.strictEqual(result.inspection._tag, "invalid-link");
+          }
+        }),
+      ),
+    ),
+  );
+
+  it.effect("fails when the exact directory is both a vault and a linked project", () =>
+    withCliRuntime(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const vaultPath = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-status-ambiguous-",
+          });
+          yield* runCapturedEffect(["init", vaultPath, "--json"]);
+          yield* fs.makeDirectory(path.join(vaultPath, ".agentic-memory-link"));
+          yield* fs.writeFileString(
+            path.join(vaultPath, ".agentic-memory-link", "config.json"),
+            `{"version":1,"vaultPath":"${vaultPath}","projectSlug":"example-project"}\n`,
+          );
+
+          const output = yield* runCapturedEffect(["-C", vaultPath, "status", "--json"]);
+          const failure = yield* decodeCliFailureResultJson(output.stdout);
+          assert.strictEqual(output.exitCode, 2);
+          assert.strictEqual(failure.error.code, "AmbiguousStatusContext");
+        }),
+      ),
     ),
   );
 
@@ -104,16 +262,13 @@ describe("agentic-memory status command", () => {
             path.join(vaultPath, "notes", "fact.md"),
             "# Fact\n\nA durable fact.\n",
           );
-
           const missingOutput = yield* runCapturedEffect([
             "status",
             "--vault",
             vaultPath,
-            "--project-root",
-            path.join(vaultPath, "ignored-project"),
             "--json",
           ]);
-          const missing = yield* decodeSemanticIndexReadinessJson(missingOutput.stdout);
+          const missing = yield* decodeVaultReadiness(missingOutput.stdout);
           assert.strictEqual(missingOutput.exitCode, 0);
           assert.strictEqual(missing.status, "not_ready");
           assert.strictEqual(missing.index.status, "missing");
@@ -123,7 +278,7 @@ describe("agentic-memory status command", () => {
 
           yield* runCapturedEffect(["index", "--vault", vaultPath, "--json"]);
           const readyOutput = yield* runCapturedEffect(["status", "--vault", vaultPath, "--json"]);
-          const ready = yield* decodeSemanticIndexReadinessJson(readyOutput.stdout);
+          const ready = yield* decodeVaultReadiness(readyOutput.stdout);
           assert.strictEqual(readyOutput.exitCode, 0);
           assert.strictEqual(ready.status, "ready");
           assert.strictEqual(ready.index.status, "current");
@@ -147,20 +302,42 @@ describe("agentic-memory status command", () => {
     ),
   );
 
-  it.effect("reports invalid vault status as data with exit code zero", () =>
-    withCliRuntime(runCapturedEffect(["status", "--vault", "relative/vault", "--json"])).pipe(
-      Effect.flatMap((output) =>
-        decodeSemanticIndexReadinessJson(output.stdout).pipe(
-          Effect.map((result) => {
-            assert.strictEqual(output.exitCode, 0);
-            assert.strictEqual(result.status, "invalid");
-            assert.strictEqual(result.vault.status, "invalid");
-            assert.strictEqual(result.index.status, "invalid");
-            assert.isFalse(result.recallReady);
-            assert.strictEqual(output.stderr, "");
-          }),
-        ),
+  it.effect("resolves a relative explicit vault from -C and reports invalid status as data", () =>
+    withCliRuntime(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const tempRoot = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-status-directory-",
+          });
+          const effectiveDirectory = yield* fs.realPath(tempRoot);
+          const output = yield* runCapturedEffect([
+            "-C",
+            tempRoot,
+            "status",
+            "--vault",
+            "relative/vault",
+            "--json",
+          ]);
+          const result = yield* decodeVaultReadiness(output.stdout);
+          return {
+            output,
+            result,
+            vaultPath: path.join(effectiveDirectory, "relative", "vault"),
+          };
+        }),
       ),
+    ).pipe(
+      Effect.map(({ output, result, vaultPath }) => {
+        assert.strictEqual(output.exitCode, 0);
+        assert.strictEqual(result.status, "invalid");
+        assert.strictEqual(result.vault.status, "invalid");
+        assert.strictEqual(result.vault.path, vaultPath);
+        assert.strictEqual(result.index.status, "invalid");
+        assert.isFalse(result.recallReady);
+        assert.strictEqual(output.stderr, "");
+      }),
     ),
   );
 
@@ -191,7 +368,7 @@ describe("agentic-memory status command", () => {
             });
 
             const output = yield* runCapturedEffect(["status", "--vault", vaultPath, "--json"]);
-            const result = yield* decodeSemanticIndexReadinessJson(output.stdout);
+            const result = yield* decodeVaultReadiness(output.stdout);
 
             assert.strictEqual(output.exitCode, 0);
             assert.strictEqual(result.status, "invalid");
@@ -241,7 +418,7 @@ describe("agentic-memory status command", () => {
             yield* entry.replace(path.join(vaultPath, entry.relativePath));
 
             const output = yield* runCapturedEffect(["status", "--vault", vaultPath, "--json"]);
-            const result = yield* decodeSemanticIndexReadinessJson(output.stdout);
+            const result = yield* decodeVaultReadiness(output.stdout);
 
             assert.strictEqual(output.exitCode, 0);
             assert.strictEqual(result.status, "invalid");
@@ -271,7 +448,7 @@ describe("agentic-memory status command", () => {
           yield* fs.writeFileString(path.join(vaultPath, "USER.md"), "# User\n");
 
           const output = yield* runCapturedEffect(["status", "--vault", vaultPath, "--json"]);
-          const result = yield* decodeSemanticIndexReadinessJson(output.stdout);
+          const result = yield* decodeVaultReadiness(output.stdout);
 
           assert.strictEqual(output.exitCode, 0);
           assert.strictEqual(result.status, "invalid");
@@ -294,13 +471,14 @@ describe("agentic-memory status command", () => {
       pathOrDescriptor: "/missing-vault",
     });
     const missingInventory = FileSystem.makeNoop({
-      realPath: () => Effect.fail(notFound),
+      realPath: (path) => (path === process.cwd() ? Effect.succeed(path) : Effect.fail(notFound)),
+      stat: () => Effect.succeed(fakeFileInfo("Directory")),
     });
 
     return withCliRuntime(
       runCapturedEffect(["status", "--vault", "/missing-vault", "--json"]).pipe(
         Effect.flatMap((output) =>
-          decodeSemanticIndexReadinessJson(output.stdout).pipe(
+          decodeVaultReadiness(output.stdout).pipe(
             Effect.map((result) => {
               assert.strictEqual(output.exitCode, 0);
               assert.strictEqual(result.status, "invalid");
@@ -324,13 +502,15 @@ describe("agentic-memory status command", () => {
     });
     const disappearingEntry = FileSystem.makeNoop({
       exists: () => Effect.succeed(true),
-      stat: () => Effect.fail(notFound),
+      realPath: (path) => Effect.succeed(path),
+      stat: (path) =>
+        path === process.cwd() ? Effect.succeed(fakeFileInfo("Directory")) : Effect.fail(notFound),
     });
 
     return withCliRuntime(
       runCapturedEffect(["status", "--vault", "/vault", "--json"]).pipe(
         Effect.flatMap((output) =>
-          decodeSemanticIndexReadinessJson(output.stdout).pipe(
+          decodeVaultReadiness(output.stdout).pipe(
             Effect.map((result) => {
               assert.strictEqual(output.exitCode, 0);
               assert.strictEqual(result.status, "invalid");
@@ -356,7 +536,11 @@ describe("agentic-memory status command", () => {
     });
     const inaccessibleEntry = FileSystem.makeNoop({
       exists: () => Effect.succeed(true),
-      stat: () => Effect.fail(permissionDenied),
+      realPath: (path) => Effect.succeed(path),
+      stat: (path) =>
+        path === process.cwd()
+          ? Effect.succeed(fakeFileInfo("Directory"))
+          : Effect.fail(permissionDenied),
     });
 
     return withCliRuntime(
@@ -396,7 +580,8 @@ describe("agentic-memory status command", () => {
       stat: (entryPath) =>
         Effect.succeed(
           fakeFileInfo(
-            requiredDirectorySuffixes.some((suffix) => entryPath.endsWith(suffix))
+            entryPath === process.cwd() ||
+              requiredDirectorySuffixes.some((suffix) => entryPath.endsWith(suffix))
               ? "Directory"
               : "File",
           ),

@@ -13,7 +13,8 @@ type CapturePayload = import("@urban/agentic-memory-core/capture/CapturePayload"
 type CapturePayloadMessage =
   import("@urban/agentic-memory-core/capture/CapturePayload").CapturePayloadMessage;
 type PayloadObservation = import("../markers/CaptureMarker.ts").PayloadObservation;
-type TriggerKind = import("../markers/CaptureMarker.ts").TriggerKind;
+type CaptureTriggerKind =
+  import("@urban/agentic-memory-core/observability/CaptureTelemetry").CaptureTriggerKind;
 
 type UserVisibleBlock = TextContent | ImageContent;
 type AssistantVisibleBlock = TextContent | ThinkingContent | ToolCall;
@@ -90,7 +91,7 @@ export class Preprocessor extends Context.Service<
   Preprocessor,
   {
     readonly buildPayload: (
-      triggerKind: TriggerKind,
+      triggerKind: CaptureTriggerKind,
       projectSlug: string,
       observedEntries: ReadonlyArray<SessionEntry>,
     ) => Effect.Effect<BuildPayloadResult>;

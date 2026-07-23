@@ -1,21 +1,11 @@
+import {
+  CaptureAttemptId,
+  CaptureTriggerKind,
+} from "@urban/agentic-memory-core/observability/CaptureTelemetry";
 import { Schema } from "effect";
 
 export const CUSTOM_ENTRY_TYPE = "agentic-memory-capture";
 export const MARKER_VERSION = 1;
-
-export const TriggerKind = Schema.Literals([
-  "agent_end",
-  "session_before_tree",
-  "session_shutdown",
-]).annotate({
-  identifier: "TriggerKind",
-});
-export type TriggerKind = typeof TriggerKind.Type;
-
-export const AttemptId = Schema.String.pipe(Schema.brand("AttemptId")).annotate({
-  identifier: "AttemptId",
-});
-export type AttemptId = typeof AttemptId.Type;
 
 export const UtcIsoTimestamp = Schema.String.check(
   Schema.isPattern(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/, {
@@ -55,9 +45,9 @@ export type PayloadObservation = typeof PayloadObservation.Type;
 
 export const MarkerEnvelope = Schema.Struct({
   markerVersion: Schema.Literal(MARKER_VERSION),
-  attemptId: AttemptId,
+  attemptId: CaptureAttemptId,
   timestamp: UtcIsoTimestamp,
-  triggerKind: TriggerKind,
+  triggerKind: CaptureTriggerKind,
   observation: PayloadObservation,
 }).annotate({
   identifier: "MarkerEnvelope",
@@ -110,4 +100,3 @@ export const CaptureMarker = Schema.Union([ObservationResultMarker, ScheduleResu
 export type CaptureMarker = typeof CaptureMarker.Type;
 
 export const decodeCaptureMarkerOption = Schema.decodeUnknownOption(CaptureMarker);
-export const decodeAttemptId = Schema.decodeUnknownEffect(AttemptId);

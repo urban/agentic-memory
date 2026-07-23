@@ -27,7 +27,7 @@ The `0.4.0` contract uses a bare `projectSlug`, not a wiki-link:
 Create or refresh that local link with the CLI:
 
 ```sh
-agentic-memory link --vault /absolute/path/to/agentic-memory-vault --project example-project --project-root /absolute/path/to/project --yes
+agentic-memory -C /absolute/path/to/project link --vault ../agentic-memory-vault --project example-project --yes
 ```
 
 This command also ensures `projects/example-project.md` exists in the vault, ensures `MEMORY.md` routes to `[[projects/example-project]]`, and attempts to add `.agentic-memory-link/` to `.git/info/exclude` in the external project.
@@ -35,7 +35,7 @@ This command also ensures `projects/example-project.md` exists in the vault, ens
 Inspect the resulting health with:
 
 ```sh
-agentic-memory status --project-root /absolute/path/to/project --json
+agentic-memory -C /absolute/path/to/project status --json
 ```
 
 Humans and setup tools usually use `init`, `link`, and `status` directly. Harness integrations should treat `agentic-memory run-steward` as the stable steward execution boundary rather than calling internal core modules directly.

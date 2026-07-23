@@ -1,4 +1,5 @@
 import * as BunServices from "@effect/platform-bun/BunServices";
+import { decodeAbsolutePath } from "@urban/agentic-memory-core/link/LinkConfig";
 import { assert, describe, it } from "@effect/vitest";
 import { Effect, FileSystem, ManagedRuntime, Option, Path } from "effect";
 import { afterAll } from "vitest";
@@ -18,60 +19,65 @@ const noDirectTarget = {
   project: Option.none<string>(),
 };
 
+const makeDirectory = Effect.fnUntraced(function* (path: string, explicit = false) {
+  return {
+    path: yield* decodeAbsolutePath(path),
+    explicit,
+  };
+});
+
 describe("steward target CLI input", () => {
   afterAll(() => StewardTargetInputRuntime.dispose());
 
-  it.effect("resolves a complete direct target", () =>
+  it.effect("resolves a complete direct target relative to the effective directory", () =>
     withStewardTargetInputRuntime(
-      resolveStewardTarget({
-        vault: Option.some("/vault"),
-        project: Option.some("example-project"),
-        projectRoot: ".",
-      }).pipe(
-        Effect.map((target) => {
-          assert.deepStrictEqual(target, {
-            vaultPath: "/vault",
-            projectSlug: "example-project",
-            projectRoot: undefined,
-          });
-        }),
-      ),
+      Effect.gen(function* () {
+        const directory = yield* makeDirectory("/work/project", true);
+        const target = yield* resolveStewardTarget({
+          vault: Option.some("../vault"),
+          project: Option.some("example-project"),
+          directory,
+        });
+
+        assert.deepStrictEqual(target, {
+          vaultPath: "/work/vault",
+          projectSlug: "example-project",
+        });
+      }),
     ),
   );
 
   it.effect("requires both direct target inputs", () =>
     withStewardTargetInputRuntime(
-      resolveStewardTarget({
-        vault: Option.some("/vault"),
-        project: Option.none(),
-        projectRoot: ".",
-      }).pipe(
-        Effect.flip,
-        Effect.map((failure) => {
-          assert.strictEqual(failure.code, "InvalidTarget");
-          assert.strictEqual(failure.message, "Direct mode requires both --vault and --project");
-        }),
-      ),
+      Effect.gen(function* () {
+        const failure = yield* resolveStewardTarget({
+          vault: Option.some("/vault"),
+          project: Option.none(),
+          directory: yield* makeDirectory("/work"),
+        }).pipe(Effect.flip);
+
+        assert.strictEqual(failure.code, "InvalidTarget");
+        assert.strictEqual(failure.message, "Direct mode requires both --vault and --project");
+      }),
     ),
   );
 
   it.effect("rejects an invalid direct project slug", () =>
     withStewardTargetInputRuntime(
-      resolveStewardTarget({
-        vault: Option.some("/vault"),
-        project: Option.some("[[projects/example-project]]"),
-        projectRoot: ".",
-      }).pipe(
-        Effect.flip,
-        Effect.map((failure) => {
-          assert.strictEqual(failure.code, "InvalidProjectSlug");
-          assert.include(failure.message, "Invalid project slug:");
-        }),
-      ),
+      Effect.gen(function* () {
+        const failure = yield* resolveStewardTarget({
+          vault: Option.some("/vault"),
+          project: Option.some("[[projects/example-project]]"),
+          directory: yield* makeDirectory("/work"),
+        }).pipe(Effect.flip);
+
+        assert.strictEqual(failure.code, "InvalidProjectSlug");
+        assert.include(failure.message, "Invalid project slug:");
+      }),
     ),
   );
 
-  it.effect("resolves a linked target from the project root", () =>
+  it.effect("resolves a linked target from the effective directory", () =>
     withStewardTargetInputRuntime(
       Effect.scoped(
         Effect.gen(function* () {
@@ -89,13 +95,12 @@ describe("steward target CLI input", () => {
 
           const target = yield* resolveStewardTarget({
             ...noDirectTarget,
-            projectRoot,
+            directory: yield* makeDirectory(projectRoot, true),
           });
 
           assert.deepStrictEqual(target, {
             vaultPath: "/vault",
             projectSlug: "example-project",
-            projectRoot,
           });
         }),
       ),
@@ -112,7 +117,7 @@ describe("steward target CLI input", () => {
           });
           const failure = yield* resolveStewardTarget({
             ...noDirectTarget,
-            projectRoot,
+            directory: yield* makeDirectory(projectRoot),
           }).pipe(Effect.flip);
 
           assert.strictEqual(failure.code, "MissingLinkConfig");
@@ -137,7 +142,7 @@ describe("steward target CLI input", () => {
 
           const failure = yield* resolveStewardTarget({
             ...noDirectTarget,
-            projectRoot,
+            directory: yield* makeDirectory(projectRoot),
           }).pipe(Effect.flip);
 
           assert.strictEqual(failure.code, "InvalidLinkConfig");

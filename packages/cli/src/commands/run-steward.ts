@@ -7,20 +7,18 @@ import { Command } from "effect/unstable/cli";
 import { exitWith, toFailure, withCliFailureOutput } from "../output.ts";
 import {
   captureAttemptIdFlag,
-  captureProjectSlugFlag,
   captureRunIdFlag,
   captureTriggerKindFlag,
   resolveCaptureCorrelation,
 } from "./capture-correlation-input.ts";
 import { payloadFlag, readPayload } from "./payload-input.ts";
-import { projectRootFlag } from "./project-root-input.ts";
 import { commandRoot } from "./root.ts";
 import {
   modelFlag,
   providerFlag,
   stewardRunOptionsFromInput,
   thinkingFlag,
-  timeoutMillisFlag,
+  timeoutFlag,
 } from "./steward-options-input.ts";
 import {
   optionalProjectFlag,
@@ -32,37 +30,34 @@ export const commandRunSteward = Command.make(
   "run-steward",
   {
     payloadPath: payloadFlag,
-    projectRoot: projectRootFlag,
     vault: optionalVaultFlag,
     project: optionalProjectFlag,
     provider: providerFlag,
     model: modelFlag,
     thinking: thinkingFlag,
-    timeoutMillis: timeoutMillisFlag,
+    timeout: timeoutFlag,
     captureAttemptId: captureAttemptIdFlag,
     captureRunId: captureRunIdFlag,
     captureTriggerKind: captureTriggerKindFlag,
-    captureProjectSlug: captureProjectSlugFlag,
   },
   Effect.fnUntraced(function* (input) {
     const root = yield* commandRoot;
-    const payload = yield* readPayload(input.payloadPath);
+    const payload = yield* readPayload(root.directory.path, input.payloadPath);
     const target = yield* resolveStewardTarget({
       vault: input.vault,
       project: input.project,
-      projectRoot: input.projectRoot,
+      directory: root.directory,
     });
     const options = stewardRunOptionsFromInput({
       provider: input.provider,
       model: input.model,
       thinking: input.thinking,
-      timeoutMillis: input.timeoutMillis,
+      timeout: input.timeout,
     });
     const correlation = yield* resolveCaptureCorrelation({
       attemptId: input.captureAttemptId,
       runId: input.captureRunId,
       triggerKind: input.captureTriggerKind,
-      projectSlug: input.captureProjectSlug,
     });
     const result = yield* runSteward({
       payload,
@@ -107,13 +102,17 @@ export const commandRunSteward = Command.make(
   Command.withDescription("Run the isolated Memory Steward process for a capture payload"),
   Command.withExamples([
     {
-      command: "agentic-memory run-steward --payload - --project-root . --json",
+      command: "agentic-memory -C . run-steward --payload - --json",
       description: "Execute the steward with a payload from stdin and JSON output",
     },
     {
       command:
-        "agentic-memory run-steward --payload - --vault /vault --project example-project --json",
+        "agentic-memory -C /work run-steward --payload payload.json --vault ../vault --project example-project --json",
       description: "Execute the steward using a direct vault and project target",
+    },
+    {
+      command: "agentic-memory -C . run-steward --payload - --timeout 30s --json",
+      description: "Execute the steward with a 30-second timeout (units such as 2m are supported)",
     },
   ]),
 );

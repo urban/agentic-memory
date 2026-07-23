@@ -4,7 +4,8 @@ import { runCapturePass, timeoutForTrigger } from "./workflows/capture.ts";
 
 type ExtensionAPI = import("@earendil-works/pi-coding-agent").ExtensionAPI;
 type ExtensionContext = import("@earendil-works/pi-coding-agent").ExtensionContext;
-type TriggerKind = import("./markers/CaptureMarker.ts").TriggerKind;
+type CaptureTriggerKind =
+  import("@urban/agentic-memory-core/observability/CaptureTelemetry").CaptureTriggerKind;
 type CaptureExecution = import("./workflows/capture.ts").CaptureExecution;
 
 const formatCaptureNotification = (execution: CaptureExecution): string => {
@@ -31,7 +32,7 @@ const isAborted = (signal: AbortSignal | undefined): boolean => signal?.aborted 
 export const runCapture = Effect.fn("MemoryCapture.runCapture")(function* (
   pi: ExtensionAPI,
   ctx: ExtensionContext,
-  triggerKind: TriggerKind,
+  triggerKind: CaptureTriggerKind,
   force: boolean,
   abortSignal?: AbortSignal,
 ) {
@@ -43,7 +44,7 @@ export const runCapture = Effect.fn("MemoryCapture.runCapture")(function* (
     cwd: ctx.cwd,
     branch: ctx.sessionManager.getBranch(),
     triggerKind,
-    timeoutMillis: timeoutForTrigger(triggerKind),
+    timeout: timeoutForTrigger(triggerKind),
     force,
   });
 

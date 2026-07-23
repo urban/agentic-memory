@@ -1,8 +1,21 @@
-import { Cause, Context, Effect, FileSystem, Layer, Path, Ref, Schema } from "effect";
 import {
-  captureCorrelationAttributes,
+  Cause,
+  Context,
+  Duration,
+  Effect,
+  FileSystem,
+  Layer,
+  Option,
+  Path,
+  Ref,
+  Schema,
+  SchemaIssue,
+  SchemaTransformation,
+} from "effect";
+import {
   captureDecisionReportAttributes,
   captureStewardSessionAttributes,
+  captureTelemetryContextAttributes,
 } from "../observability/CaptureTelemetry.ts";
 import { buildStewardContext, StewardContextError } from "./StewardContext.ts";
 import { StewardResult } from "./StewardResult.ts";
@@ -60,11 +73,194 @@ export const RunStewardResultJson = Schema.fromJsonString(RunStewardResult).anno
 export const encodeRunStewardResultJson = Schema.encodeUnknownEffect(RunStewardResultJson);
 export const decodeRunStewardResultJson = Schema.decodeUnknownEffect(RunStewardResultJson);
 
+const StewardSelector = Schema.String.check(
+  Schema.isPattern(/\S/, {
+    message: "Expected a selector containing non-whitespace content",
+  }),
+);
+
+export const StewardProvider = StewardSelector.pipe(Schema.brand("StewardProvider")).annotate({
+  identifier: "StewardProvider",
+});
+export type StewardProvider = typeof StewardProvider.Type;
+
+export const StewardModel = StewardSelector.pipe(Schema.brand("StewardModel")).annotate({
+  identifier: "StewardModel",
+});
+export type StewardModel = typeof StewardModel.Type;
+
+export const StewardThinkingLevel = Schema.Literals([
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+]).annotate({ identifier: "StewardThinkingLevel" });
+export type StewardThinkingLevel = typeof StewardThinkingLevel.Type;
+
+// Leaves the Pi capture executor's five-second outer margin within Node's timer ceiling.
+export const MAX_STEWARD_TIMEOUT_MILLIS = 2_147_478_647;
+
+const maximumStewardTimeoutNanos = BigInt(MAX_STEWARD_TIMEOUT_MILLIS) * 1_000_000n;
+
+const durationUnitNanos = (unit: string): Option.Option<bigint> => {
+  switch (unit) {
+    case "ms":
+    case "milli":
+    case "millis":
+      return Option.some(1_000_000n);
+    case "s":
+    case "second":
+    case "seconds":
+      return Option.some(1_000_000_000n);
+    case "m":
+    case "minute":
+    case "minutes":
+      return Option.some(60_000_000_000n);
+    case "h":
+    case "hour":
+    case "hours":
+      return Option.some(3_600_000_000_000n);
+    case "d":
+    case "day":
+    case "days":
+      return Option.some(86_400_000_000_000n);
+    case "w":
+    case "week":
+    case "weeks":
+      return Option.some(604_800_000_000_000n);
+    default:
+      return Option.none();
+  }
+};
+
+const isWithinMaximumStewardTimeout = (value: string, nanosPerUnit: bigint): boolean => {
+  if (value.startsWith("-")) {
+    return true;
+  }
+
+  const unsignedValue = value.startsWith("+") ? value.slice(1) : value;
+  const decimalIndex = unsignedValue.indexOf(".");
+  const whole = decimalIndex === -1 ? unsignedValue : unsignedValue.slice(0, decimalIndex);
+  const fraction = decimalIndex === -1 ? "" : unsignedValue.slice(decimalIndex + 1);
+  const significand = BigInt(`${whole === "" ? "0" : whole}${fraction}`);
+  const decimalScale = 10n ** BigInt(fraction.length);
+
+  return significand * nanosPerUnit <= maximumStewardTimeoutNanos * decimalScale;
+};
+
+const StewardDurationValue = Schema.Duration.check(
+  Schema.makeFilter(
+    (duration) => {
+      switch (duration.value._tag) {
+        case "Millis":
+          return (
+            Number.isFinite(duration.value.millis) &&
+            duration.value.millis > 0 &&
+            duration.value.millis <= MAX_STEWARD_TIMEOUT_MILLIS
+          );
+        case "Nanos":
+          return duration.value.nanos > 0n && duration.value.nanos <= maximumStewardTimeoutNanos;
+        case "Infinity":
+        case "NegativeInfinity":
+          return false;
+      }
+    },
+    { expected: "a positive finite duration representable in milliseconds" },
+  ),
+)
+  .pipe(Schema.brand("StewardDuration"))
+  .annotate({ identifier: "StewardDurationValue" });
+
+const stewardDurationFromString = SchemaTransformation.transformOrFail<Duration.Duration, string>({
+  decode: (input) => {
+    const nanosMatch = Option.fromNullOr(/^([+-]?\d+)\s*(ns|nano|nanos)$/.exec(input));
+    if (Option.isSome(nanosMatch)) {
+      return Effect.succeed(Duration.nanos(BigInt(nanosMatch.value[1])));
+    }
+
+    const match = Option.fromNullOr(
+      /^([+-]?(?:\d+(?:\.\d*)?|\.\d+))\s*(ms|s|m|h|d|w|milli|millis|second|seconds|minute|minutes|hour|hours|day|days|week|weeks)$/.exec(
+        input,
+      ),
+    );
+    if (Option.isNone(match)) {
+      return Effect.fail(
+        new SchemaIssue.InvalidValue(Option.some(input), {
+          message: `Invalid Steward duration string: ${input}`,
+        }),
+      );
+    }
+    const valueToken = match.value[1];
+    const unit = match.value[2];
+    const nanosPerUnit = durationUnitNanos(unit);
+    if (
+      Option.isNone(nanosPerUnit) ||
+      !isWithinMaximumStewardTimeout(valueToken, nanosPerUnit.value)
+    ) {
+      return Effect.fail(
+        new SchemaIssue.InvalidValue(Option.some(input), {
+          message: `Invalid Steward duration string: ${input}`,
+        }),
+      );
+    }
+
+    const value = Number(valueToken);
+    switch (unit) {
+      case "ms":
+      case "milli":
+      case "millis":
+        return Effect.succeed(Duration.millis(value));
+      case "s":
+      case "second":
+      case "seconds":
+        return Effect.succeed(Duration.seconds(value));
+      case "m":
+      case "minute":
+      case "minutes":
+        return Effect.succeed(Duration.minutes(value));
+      case "h":
+      case "hour":
+      case "hours":
+        return Effect.succeed(Duration.hours(value));
+      case "d":
+      case "day":
+      case "days":
+        return Effect.succeed(Duration.days(value));
+      case "w":
+      case "week":
+      case "weeks":
+        return Effect.succeed(Duration.weeks(value));
+      default:
+        return Effect.fail(
+          new SchemaIssue.InvalidValue(Option.some(input), {
+            message: `Invalid Steward duration string: ${input}`,
+          }),
+        );
+    }
+  },
+  encode: (duration) => Effect.succeed(String(duration)),
+});
+
+export const StewardDuration = Schema.String.pipe(
+  Schema.decodeTo(StewardDurationValue, stewardDurationFromString),
+).annotate({ identifier: "StewardDuration" });
+export type StewardDuration = typeof StewardDuration.Type;
+
+export const decodeStewardProvider = Schema.decodeUnknownEffect(StewardProvider);
+export const decodeStewardModel = Schema.decodeUnknownEffect(StewardModel);
+export const decodeStewardThinkingLevel = Schema.decodeUnknownEffect(StewardThinkingLevel);
+export const decodeStewardDuration = Schema.decodeUnknownEffect(StewardDuration);
+export const decodeStewardDurationSync = Schema.decodeUnknownSync(StewardDuration);
+export const encodeStewardDurationSync = Schema.encodeSync(StewardDuration);
+
 export interface StewardRunOptions {
-  readonly provider?: string;
-  readonly model?: string;
-  readonly thinking?: string;
-  readonly timeoutMillis?: number;
+  readonly provider?: StewardProvider;
+  readonly model?: StewardModel;
+  readonly thinking?: StewardThinkingLevel;
+  readonly timeout?: StewardDuration;
 }
 
 export interface StewardRunnerRequest {
@@ -151,7 +347,7 @@ export const runSteward = Effect.fn("agentic-memory.run_steward")(function* (inp
 > {
   const runner = yield* StewardRunner;
   const baseAttributes = {
-    ...captureCorrelationAttributes(input.correlation),
+    ...captureTelemetryContextAttributes(input.projectSlug, input.correlation),
     "capture.payload.warning_count": input.payloadWarnings.length,
   };
   yield* Effect.annotateCurrentSpan(baseAttributes);

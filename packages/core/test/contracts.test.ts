@@ -1,6 +1,16 @@
 import * as BunServices from "@effect/platform-bun/BunServices";
 import { assert, describe, it } from "@effect/vitest";
-import { Context, Effect, FileSystem, Layer, ManagedRuntime, Path, Sink, Stream } from "effect";
+import {
+  Context,
+  Duration,
+  Effect,
+  FileSystem,
+  Layer,
+  ManagedRuntime,
+  Path,
+  Sink,
+  Stream,
+} from "effect";
 import * as Fiber from "effect/Fiber";
 import * as TestClock from "effect/testing/TestClock";
 import { ChildProcessSpawner } from "effect/unstable/process";
@@ -18,6 +28,7 @@ import {
   projectFileRelativePathFromSlug,
   projectWikiLinkFromSlug,
 } from "../src/link/ProjectSlug.ts";
+import { decodeCaptureCorrelation } from "../src/observability/CaptureTelemetry.ts";
 import {
   buildPiProcessCommand,
   extractAssistantText,
@@ -29,13 +40,23 @@ import {
   decodeRecallResponse,
   decodeRecallSuccessJson,
 } from "../src/recall/Recall.ts";
-import { StewardRunner } from "../src/steward/StewardExecution.ts";
+import {
+  decodeStewardModel,
+  decodeStewardProvider,
+  decodeStewardDuration,
+  decodeStewardThinkingLevel,
+  encodeStewardDurationSync,
+  MAX_STEWARD_TIMEOUT_MILLIS,
+  StewardRunner,
+} from "../src/steward/StewardExecution.ts";
 import { decodeStewardResultJson } from "../src/steward/StewardResult.ts";
 import { makeFakeEmbeddingModelLayer } from "../src/semantic/EmbeddingModel.ts";
 import { ensureProjectFile, ensureProjectRouteInMemory } from "../src/vault/ProjectRoute.ts";
 import { checkVaultHealth, validateVaultForLink } from "../src/vault/VaultStatus.ts";
 import { initVaultFromTemplate } from "../src/vault/VaultTemplate.ts";
 import { VaultRepositoryLive } from "../src/vault/VaultRepository.ts";
+
+type StewardContextResult = import("../src/steward/StewardContext.ts").StewardContextResult;
 
 const validPayloadJson =
   '{"version":1,"projectSlug":"agentic-memory-cli","messages":[{"role":"user","text":"hello"}]}';
@@ -77,6 +98,26 @@ const timeoutingSpawnerLayer = Layer.succeed(
 );
 
 describe("core contracts", () => {
+  it.effect("decodes typed Steward selectors and supported thinking levels", () =>
+    Effect.gen(function* () {
+      const provider = yield* decodeStewardProvider("custom-provider");
+      const providerModel = yield* decodeStewardModel("custom-provider/model-id");
+      const shorthandModel = yield* decodeStewardModel("sonnet:high");
+      const thinking = yield* decodeStewardThinkingLevel("max");
+      const invalidProvider = yield* decodeStewardProvider(" \t").pipe(Effect.exit);
+      const invalidModel = yield* decodeStewardModel("").pipe(Effect.exit);
+      const invalidThinking = yield* decodeStewardThinkingLevel("ultra").pipe(Effect.exit);
+
+      assert.strictEqual(provider, "custom-provider");
+      assert.strictEqual(providerModel, "custom-provider/model-id");
+      assert.strictEqual(shorthandModel, "sonnet:high");
+      assert.strictEqual(thinking, "max");
+      assert.strictEqual(invalidProvider._tag, "Failure");
+      assert.strictEqual(invalidModel._tag, "Failure");
+      assert.strictEqual(invalidThinking._tag, "Failure");
+    }),
+  );
+
   afterAll(() => CoreContractsRuntime.dispose());
 
   it.effect("validates project slugs and derives vault routes", () =>
@@ -296,44 +337,94 @@ describe("core contracts", () => {
     }),
   );
 
+  it.effect("round-trips nanosecond-backed Steward durations", () =>
+    Effect.gen(function* () {
+      const duration = yield* decodeStewardDuration("0.5ms");
+      const encoded = encodeStewardDurationSync(duration);
+      const decoded = yield* decodeStewardDuration(encoded);
+
+      assert.strictEqual(encoded, "500000 nanos");
+      assert.isTrue(Duration.equals(duration, decoded));
+    }),
+  );
+
+  it.effect("rejects exact Steward duration overflow before decimal rounding", () =>
+    Effect.gen(function* () {
+      const overflow = yield* decodeStewardDuration("2147478647.1ms").pipe(Effect.exit);
+      const maximum = yield* decodeStewardDuration("2147478647.0ms");
+
+      assert.strictEqual(overflow._tag, "Failure");
+      assert.strictEqual(Duration.toMillis(maximum), MAX_STEWARD_TIMEOUT_MILLIS);
+    }),
+  );
+
   it.effect("constructs isolated Pi runner commands and extracts final assistant JSON", () =>
     Effect.gen(function* () {
-      const command = buildPiProcessCommand({
+      const provider = yield* decodeStewardProvider("anthropic");
+      const model = yield* decodeStewardModel("anthropic/claude:high");
+      const thinking = yield* decodeStewardThinkingLevel("medium");
+      const timeout = yield* decodeStewardDuration("30s");
+      const context: StewardContextResult = {
+        status: "ready",
+        payload: yield* decodeCapturePayloadJson(validPayloadJson),
+        vault: {
+          path: "/vault",
+          projectFile: "/vault/projects/agentic-memory-cli.md",
+          memoryFile: "/vault/MEMORY.md",
+          userFile: "/vault/USER.md",
+          outsideVaultInstructions: "/vault/.agentic-memory/LLM-outside-vault.md",
+        },
+        instructions: {
+          outsideVault: "contract",
+          prompt: "prompt",
+        },
+        resultContract: {
+          statusValues: ["captured", "no_changes"],
+          capturedRequiresSummary: true,
+        },
+        warnings: [],
+      };
+      const command = yield* buildPiProcessCommand({
         piBinary: "pi-test",
         request: {
-          context: {
-            status: "ready",
-            payload: yield* decodeCapturePayloadJson(validPayloadJson),
-            vault: {
-              path: "/vault",
-              projectFile: "/vault/projects/agentic-memory-cli.md",
-              memoryFile: "/vault/MEMORY.md",
-              userFile: "/vault/USER.md",
-              outsideVaultInstructions: "/vault/.agentic-memory/LLM-outside-vault.md",
-            },
-            instructions: {
-              outsideVault: "contract",
-              prompt: "prompt",
-            },
-            resultContract: {
-              statusValues: ["captured", "no_changes"],
-              capturedRequiresSummary: true,
-            },
-            warnings: [],
-          },
-          correlation: {
+          context,
+          correlation: yield* decodeCaptureCorrelation({
             attemptId: "attempt-1",
-          },
+            captureRunId: "run-1",
+            triggerKind: "agent_end",
+          }),
           options: {
-            provider: "anthropic",
-            model: "claude",
-            thinking: "medium",
+            provider,
+            model,
+            thinking,
+            timeout,
           },
         },
       });
       const assistantText = extractAssistantText(
         '{"type":"message_update"}\n{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"{\\"status\\":\\"no_changes\\"}"}]}}\n',
       );
+      const manualCommand = yield* buildPiProcessCommand({
+        piBinary: "pi-test",
+        request: {
+          context,
+          options: {},
+        },
+      });
+      const providerOnlyCommand = yield* buildPiProcessCommand({
+        piBinary: "pi-test",
+        request: {
+          context,
+          options: { provider },
+        },
+      });
+      const modelOnlyCommand = yield* buildPiProcessCommand({
+        piBinary: "pi-test",
+        request: {
+          context,
+          options: { model },
+        },
+      });
 
       assert.strictEqual(command.command, "pi-test");
       assert.include(command.args, "--name");
@@ -347,12 +438,19 @@ describe("core contracts", () => {
       assert.notInclude(command.args, "--no-tools");
       assert.include(command.args, "--provider");
       assert.include(command.args, "anthropic");
+      assert.include(command.args, "anthropic/claude:high");
+      assert.include(providerOnlyCommand.args, "--provider");
+      assert.notInclude(providerOnlyCommand.args, "--model");
+      assert.include(modelOnlyCommand.args, "--model");
+      assert.notInclude(modelOnlyCommand.args, "--provider");
+      assert.include(manualCommand.args, "Memory Steward capture manual");
       const stewardSession = extractStewardSessionPointer(
         '{"type":"session","version":3,"id":"session-1","timestamp":"2026-06-15T12:00:00.000Z","cwd":"/vault"}\n',
         "Memory Steward capture attempt-1",
       );
 
       assert.strictEqual(command.cwd, "/vault");
+      assert.strictEqual(command.timeoutMillis, 30_000);
       assert.strictEqual(assistantText, '{"status":"no_changes"}');
       assert.strictEqual(stewardSession?.sessionId, "session-1");
       assert.strictEqual(stewardSession?.name, "Memory Steward capture attempt-1");
@@ -391,11 +489,13 @@ describe("core contracts", () => {
                 },
                 warnings: [],
               },
-              correlation: {
+              correlation: yield* decodeCaptureCorrelation({
                 attemptId: "attempt-1",
-              },
+                captureRunId: "run-1",
+                triggerKind: "agent_end",
+              }),
               options: {
-                timeoutMillis: 10,
+                timeout: yield* decodeStewardDuration("10ms"),
               },
             })
             .pipe(Effect.flip, Effect.forkChild);
