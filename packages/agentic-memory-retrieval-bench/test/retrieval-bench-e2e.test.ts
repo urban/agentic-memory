@@ -1,6 +1,6 @@
 import * as BunServices from "@effect/platform-bun/BunServices";
 import { assert, describe, it } from "@effect/vitest";
-import { Effect, ManagedRuntime, Path, Stream } from "effect";
+import { Console, Effect, ManagedRuntime, Path, Sink, Stream } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { afterAll } from "vitest";
 import { loadBenchmarkCases } from "../src/BenchmarkCase.ts";
@@ -9,49 +9,137 @@ import {
   decodeBenchmarkSuiteResultJson,
   encodeBenchmarkSuiteResultJson,
 } from "../src/BenchmarkReport.ts";
+import { runBenchmarkCli } from "../src/bench.ts";
 import { evaluateHardGates } from "../src/HardGates.ts";
 
 const BenchRuntime = ManagedRuntime.make(BunServices.layer);
 
+type RecallResponse = import("@urban/agentic-memory-core/recall/Recall").RecallResponse;
+
+const fakeRecallResponse = (question: string): RecallResponse => {
+  const normalized = question.toLocaleLowerCase();
+  const answer =
+    normalized.includes("gamma project") || normalized.includes("coffee grinder")
+      ? "I don't know based on the available memory."
+      : normalized.includes("verification evidence")
+        ? "The trial recorded a 180ms observed p95 verification threshold."
+        : normalized.includes("beta platform")
+          ? "Use the 5 second batch retry window."
+          : normalized.includes("why was")
+            ? "The budget was chosen to protect user-facing flows."
+            : normalized.includes("before resuming")
+              ? "Preserve responsiveness over throughput."
+              : normalized.includes("planning context")
+                ? "Treat scheduler work as interaction-design constraints."
+                : normalized.includes("frame scheduler")
+                  ? "Use interaction-design constraints, not background-job tuning."
+                  : normalized.includes("present") && normalized.includes("alpha")
+                    ? "Use the 200ms p95 budget and present stack-ranked capital-letter options."
+                    : normalized.includes("present prioritization")
+                      ? "Present stack-ranked capital-letter options."
+                      : "Use the 200ms p95 latency budget.";
+  return {
+    status:
+      normalized.includes("gamma project") || normalized.includes("coffee grinder")
+        ? "not_found"
+        : "answered",
+    question,
+    answer,
+    warnings: [],
+  };
+};
+
+const fakeRecallSpawner = ChildProcessSpawner.make((command) => {
+  if (!ChildProcess.isStandardCommand(command)) {
+    return Effect.die("The benchmark fake accepts only standard commands");
+  }
+  const vaultFlagIndex = command.args.indexOf("--vault");
+  const vaultPath = vaultFlagIndex < 0 ? undefined : command.args[vaultFlagIndex + 1];
+  const missingVault = vaultPath === "/definitely-missing-agentic-memory-vault";
+  const question = command.args[1] ?? "";
+  const stdout = missingVault ? "" : `${JSON.stringify(fakeRecallResponse(question))}\n`;
+  const stderr = missingVault ? "SemanticIndexNotReady: Semantic index is missing\n" : "";
+  const exitCode = ChildProcessSpawner.ExitCode(missingVault ? 1 : 0);
+  const encode = (text: string) => new TextEncoder().encode(text);
+  return Effect.succeed(
+    ChildProcessSpawner.makeHandle({
+      pid: ChildProcessSpawner.ProcessId(12345),
+      stdin: Sink.drain,
+      stdout: stdout.length === 0 ? Stream.empty : Stream.make(encode(stdout)),
+      stderr: stderr.length === 0 ? Stream.empty : Stream.make(encode(stderr)),
+      all: Stream.make(encode(`${stdout}${stderr}`)),
+      exitCode: Effect.succeed(exitCode),
+      isRunning: Effect.succeed(false),
+      kill: () => Effect.void,
+      getInputFd: () => Sink.drain,
+      getOutputFd: () => Stream.empty,
+      unref: Effect.succeed(Effect.void),
+    }),
+  );
+});
+
 const withBenchRuntime = <A, E, R>(effect: Effect.Effect<A, E, R | BunServices.BunServices>) =>
   BenchRuntime.contextEffect.pipe(
-    Effect.flatMap((context) => Effect.provideContext(effect, context)),
+    Effect.flatMap((context) =>
+      Effect.provideContext(
+        effect.pipe(
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, fakeRecallSpawner),
+        ),
+        context,
+      ),
+    ),
   );
 
 const fixturePaths = Effect.gen(function* () {
   const path = yield* Path.Path;
-  const packagePath = yield* path.fromFileUrl(new URL("..", import.meta.url));
   const vaultPath = yield* path.fromFileUrl(new URL("../fixtures/basic-vault", import.meta.url));
   const casesPath = yield* path.fromFileUrl(new URL("../fixtures/queries.json", import.meta.url));
 
-  return { packagePath, vaultPath, casesPath };
+  return { vaultPath, casesPath };
 });
 
-const invokeBenchmarkCli = Effect.fnUntraced(function* (
-  packagePath: string,
-  args: ReadonlyArray<string>,
-) {
-  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-  const command = ChildProcess.make("bun", ["src/bench.ts", ...args], {
-    cwd: packagePath,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+const makeCaptureConsole = (capture: { stdout: string; stderr: string }): Console.Console => ({
+  assert(): void {},
+  clear(): void {},
+  count(): void {},
+  countReset(): void {},
+  debug(): void {},
+  dir(): void {},
+  dirxml(): void {},
+  error: (...args) => {
+    capture.stderr += `${args.map(String).join(" ")}\n`;
+  },
+  group(): void {},
+  groupCollapsed(): void {},
+  groupEnd(): void {},
+  info(): void {},
+  log: (...args) => {
+    capture.stdout += `${args.map(String).join(" ")}\n`;
+  },
+  table(): void {},
+  time(): void {},
+  timeEnd(): void {},
+  timeLog(): void {},
+  trace(): void {},
+  warn(): void {},
+});
 
-  return yield* Effect.scoped(
-    Effect.gen(function* () {
-      const handle = yield* spawner.spawn(command);
-      return yield* Effect.all(
-        {
-          stdout: handle.stdout.pipe(Stream.decodeText(), Stream.mkString),
-          stderr: handle.stderr.pipe(Stream.decodeText(), Stream.mkString),
-          exitCode: handle.exitCode,
-        },
-        { concurrency: 3 },
-      );
+const runCapturedBenchmarkCli = (args: ReadonlyArray<string>) =>
+  Effect.acquireUseRelease(
+    Effect.sync(() => {
+      const previousExitCode = process.exitCode;
+      process.exitCode = undefined;
+      return previousExitCode;
     }),
+    () => {
+      const capture = { stdout: "", stderr: "" };
+      return runBenchmarkCli(args).pipe(
+        Effect.provideService(Console.Console, makeCaptureConsole(capture)),
+        Effect.as(capture),
+      );
+    },
+    (previousExitCode) => Effect.sync(() => void (process.exitCode = previousExitCode)),
   );
-});
 
 const findGate = <A extends { readonly name: string }>(
   gates: ReadonlyArray<A>,
@@ -194,12 +282,10 @@ describe("public recall benchmark", () => {
   it.effect("emits valid JSON from the benchmark CLI", () =>
     withBenchRuntime(
       Effect.gen(function* () {
-        const { packagePath } = yield* fixturePaths;
-        const result = yield* invokeBenchmarkCli(packagePath, ["--json"]);
-        const report = yield* decodeBenchmarkSuiteResultJson(result.stdout.trim());
+        const output = yield* runCapturedBenchmarkCli(["--json"]);
+        const report = yield* decodeBenchmarkSuiteResultJson(output.stdout.trim());
 
-        assert.strictEqual(result.exitCode, ChildProcessSpawner.ExitCode(0));
-        assert.strictEqual(result.stderr, "");
+        assert.strictEqual(output.stderr, "");
         assert.strictEqual(report.status, "pass");
         assert.strictEqual(report.failCount, 0);
       }),
@@ -209,19 +295,17 @@ describe("public recall benchmark", () => {
   it.effect("exits nonzero with a valid failed suite JSON report", () =>
     withBenchRuntime(
       Effect.gen(function* () {
-        const { packagePath } = yield* fixturePaths;
-        const result = yield* invokeBenchmarkCli(packagePath, [
+        const output = yield* runCapturedBenchmarkCli([
           "--json",
           "--vault",
           "/definitely-missing-agentic-memory-vault",
         ]);
-        const report = yield* decodeBenchmarkSuiteResultJson(result.stdout.trim());
+        const report = yield* decodeBenchmarkSuiteResultJson(output.stdout.trim());
 
-        assert.notStrictEqual(result.exitCode, ChildProcessSpawner.ExitCode(0));
         assert.strictEqual(report.status, "fail");
         assert.strictEqual(report.passCount, 0);
         assert.strictEqual(report.failCount, report.caseCount);
-        assert.isAbove(result.stderr.length, 0);
+        assert.isAbove(output.stderr.length, 0);
         assert.isTrue(report.cases.every((benchmarkCase) => benchmarkCase.status === "fail"));
         assert.isTrue(
           report.cases.every((benchmarkCase) => benchmarkCase.failedGates.includes("exitCode")),

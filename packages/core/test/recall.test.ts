@@ -3,8 +3,12 @@ import { assert, describe, it } from "@effect/vitest";
 import { Cause, Effect, FileSystem, ManagedRuntime, Path } from "effect";
 import { afterAll } from "vitest";
 import { fileURLToPath } from "node:url";
-import { recall } from "../src/recall/Recall.ts";
+import {
+  filesystemRecallCandidateRetrieval,
+  RecallCandidateRetrieval,
+} from "../src/recall/RecallCandidateRetrieval.ts";
 import { normalizeForDeduplication } from "../src/recall/RecallText.ts";
+import { recallWithCandidateRetrieval } from "../src/recall/RecallWorkflow.ts";
 
 const fixtureVaultPath = fileURLToPath(
   new URL("./fixtures/retrieval/basic-vault/", import.meta.url),
@@ -35,6 +39,11 @@ const forbiddenGeneratedSubstrings = [
 ] satisfies ReadonlyArray<string>;
 
 const CoreRecallRuntime = ManagedRuntime.make(BunServices.layer);
+
+const recall = (request: import("../src/recall/RecallContract.ts").RecallRequest) =>
+  recallWithCandidateRetrieval(request).pipe(
+    Effect.provideService(RecallCandidateRetrieval, filesystemRecallCandidateRetrieval),
+  );
 
 const occurrenceCount = (text: string, fragment: string): number =>
   text.toLocaleLowerCase().split(fragment.toLocaleLowerCase()).length - 1;

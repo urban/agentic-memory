@@ -19,6 +19,11 @@ const toRecallFailure = (cause: RecallError) => {
         code: "ReadVaultFailed",
         message: cause.message,
       });
+    case "SemanticIndexNotReady":
+      return toFailure({
+        code: "SemanticIndexNotReady",
+        message: cause.message,
+      });
   }
 };
 

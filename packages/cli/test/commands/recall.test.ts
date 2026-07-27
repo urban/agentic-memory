@@ -1,6 +1,8 @@
 import { decodeRecallSuccessJson } from "@urban/agentic-memory-core/recall/Recall";
+import { synchronizeSemanticIndex } from "@urban/agentic-memory-core/semantic/SemanticIndex";
+import { initVaultFromTemplate } from "@urban/agentic-memory-core/vault/VaultTemplate";
 import { assert, describe, it } from "@effect/vitest";
-import { Effect, Path } from "effect";
+import { Effect, FileSystem, Path } from "effect";
 import { fileURLToPath } from "node:url";
 import { afterAll } from "vitest";
 import { makeCliTestRuntime } from "../cli-test-support.ts";
@@ -14,6 +16,24 @@ const unknownRecallQuestion = "What launch window did Gamma Project choose?";
 const sourceVerificationQuestion =
   "What source verification evidence did the Alpha Product responsiveness trial record for the latency decision?";
 const { dispose, runCapturedEffect, withCliRuntime } = makeCliTestRuntime();
+
+const withIndexedRecallFixture = <A, E, R>(use: (vaultPath: string) => Effect.Effect<A, E, R>) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const vaultPath = yield* fs.makeTempDirectoryScoped({
+        prefix: "agentic-memory-cli-recall-indexed-",
+      });
+      yield* initVaultFromTemplate({
+        targetPath: vaultPath,
+        initializeGit: false,
+        yes: true,
+      });
+      yield* fs.copy(recallFixtureVaultPath, vaultPath, { overwrite: true });
+      yield* synchronizeSemanticIndex(vaultPath);
+      return yield* use(vaultPath);
+    }),
+  );
 
 describe("agentic-memory recall command", () => {
   afterAll(dispose);
@@ -30,19 +50,15 @@ describe("agentic-memory recall command", () => {
   );
   it.effect("emits public recall success JSON for answered recall", () =>
     withCliRuntime(
-      runCapturedEffect([
-        "recall",
-        recallQuestion,
-        "--vault",
-        recallFixtureVaultPath,
-        "--json",
-      ]).pipe(
-        Effect.flatMap((output) =>
-          decodeRecallSuccessJson(output.stdout.trim()).pipe(
-            Effect.map((decoded) => ({
-              decoded,
-              output,
-            })),
+      withIndexedRecallFixture((vaultPath) =>
+        runCapturedEffect(["recall", recallQuestion, "--vault", vaultPath, "--json"]).pipe(
+          Effect.flatMap((output) =>
+            decodeRecallSuccessJson(output.stdout.trim()).pipe(
+              Effect.map((decoded) => ({
+                decoded,
+                output,
+              })),
+            ),
           ),
         ),
       ),
@@ -63,20 +79,22 @@ describe("agentic-memory recall command", () => {
 
   it.effect("resolves a relative recall vault from the shared -C directory", () =>
     withCliRuntime(
-      Effect.gen(function* () {
-        const path = yield* Path.Path;
-        const output = yield* runCapturedEffect([
-          "-C",
-          path.dirname(recallFixtureVaultPath),
-          "recall",
-          recallQuestion,
-          "--vault",
-          path.basename(recallFixtureVaultPath),
-          "--json",
-        ]);
-        const result = yield* decodeRecallSuccessJson(output.stdout);
-        return { output, result };
-      }),
+      withIndexedRecallFixture((vaultPath) =>
+        Effect.gen(function* () {
+          const path = yield* Path.Path;
+          const output = yield* runCapturedEffect([
+            "-C",
+            path.dirname(vaultPath),
+            "recall",
+            recallQuestion,
+            "--vault",
+            path.basename(vaultPath),
+            "--json",
+          ]);
+          const result = yield* decodeRecallSuccessJson(output.stdout);
+          return { output, result };
+        }),
+      ),
     ).pipe(
       Effect.map(({ output, result }) => {
         assert.strictEqual(output.exitCode, 0);
@@ -89,20 +107,22 @@ describe("agentic-memory recall command", () => {
 
   it.effect("passes --include-sources into core recall without changing public JSON fields", () =>
     withCliRuntime(
-      runCapturedEffect([
-        "recall",
-        sourceVerificationQuestion,
-        "--vault",
-        recallFixtureVaultPath,
-        "--include-sources",
-        "--json",
-      ]).pipe(
-        Effect.flatMap((output) =>
-          decodeRecallSuccessJson(output.stdout.trim()).pipe(
-            Effect.map((decoded) => ({
-              decoded,
-              output,
-            })),
+      withIndexedRecallFixture((vaultPath) =>
+        runCapturedEffect([
+          "recall",
+          sourceVerificationQuestion,
+          "--vault",
+          vaultPath,
+          "--include-sources",
+          "--json",
+        ]).pipe(
+          Effect.flatMap((output) =>
+            decodeRecallSuccessJson(output.stdout.trim()).pipe(
+              Effect.map((decoded) => ({
+                decoded,
+                output,
+              })),
+            ),
           ),
         ),
       ),
@@ -127,19 +147,15 @@ describe("agentic-memory recall command", () => {
 
   it.effect("emits public recall success JSON for not_found recall", () =>
     withCliRuntime(
-      runCapturedEffect([
-        "recall",
-        unknownRecallQuestion,
-        "--vault",
-        recallFixtureVaultPath,
-        "--json",
-      ]).pipe(
-        Effect.flatMap((output) =>
-          decodeRecallSuccessJson(output.stdout.trim()).pipe(
-            Effect.map((decoded) => ({
-              decoded,
-              output,
-            })),
+      withIndexedRecallFixture((vaultPath) =>
+        runCapturedEffect(["recall", unknownRecallQuestion, "--vault", vaultPath, "--json"]).pipe(
+          Effect.flatMap((output) =>
+            decodeRecallSuccessJson(output.stdout.trim()).pipe(
+              Effect.map((decoded) => ({
+                decoded,
+                output,
+              })),
+            ),
           ),
         ),
       ),

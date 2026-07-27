@@ -11,21 +11,26 @@ import { analyzeQuestion, projectEntitiesFromDocuments } from "./QuestionAnalysi
 type RecallRequest = import("./RecallContract.ts").RecallRequest;
 type RecallResponse = import("./RecallContract.ts").RecallResponse;
 
-export const recallWithCandidateRetrieval = Effect.fnUntraced(function* (
+export const validateRecallQuestion = (question: string): Effect.Effect<string, RecallError> => {
+  const trimmed = question.trim();
+  return trimmed.length === 0
+    ? Effect.fail(
+        new RecallError({
+          reason: "InvalidQuestion",
+          message: "Recall question must not be empty or whitespace.",
+        }),
+      )
+    : Effect.succeed(trimmed);
+};
+
+export const recallValidatedWithCandidateRetrieval = Effect.fnUntraced(function* (
   request: RecallRequest,
+  question: string,
 ): Effect.fn.Return<
   RecallResponse,
   RecallError,
   FileSystem.FileSystem | Path.Path | RecallCandidateRetrieval
 > {
-  const question = request.question.trim();
-  if (question.length === 0) {
-    return yield* new RecallError({
-      reason: "InvalidQuestion",
-      message: "Recall question must not be empty or whitespace.",
-    });
-  }
-
   const candidateRetrieval = yield* RecallCandidateRetrieval;
   const documents = yield* candidateRetrieval.retrieve({
     vaultPath: request.vaultPath,
@@ -50,4 +55,15 @@ export const recallWithCandidateRetrieval = Effect.fnUntraced(function* (
   } satisfies RecallResponse;
 
   return sanitizeGeneratedFields(response);
+});
+
+export const recallWithCandidateRetrieval = Effect.fnUntraced(function* (
+  request: RecallRequest,
+): Effect.fn.Return<
+  RecallResponse,
+  RecallError,
+  FileSystem.FileSystem | Path.Path | RecallCandidateRetrieval
+> {
+  const question = yield* validateRecallQuestion(request.question);
+  return yield* recallValidatedWithCandidateRetrieval(request, question);
 });
