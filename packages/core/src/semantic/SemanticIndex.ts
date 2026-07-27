@@ -21,6 +21,7 @@ import {
   readSemanticIndexSnapshot,
   removeSemanticIndexDocuments,
   replaceSemanticIndexDocument,
+  searchSemanticIndexExact,
 } from "./SemanticIndexRepository.ts";
 
 type ManagedMemoryDocument = import("../vault/ManagedMemory.ts").ManagedMemoryDocument;
@@ -93,6 +94,7 @@ export class SemanticIndexError extends Schema.TaggedErrorClass<SemanticIndexErr
       "IndexBusy",
       "InvalidEmbedding",
       "SemanticIndexNotReady",
+      "SearchFailed",
       "DeleteFailed",
     ]),
     message: Schema.String,
@@ -533,6 +535,29 @@ export const requireCurrentSemanticIndex = Effect.fnUntraced(function* (
     });
   }
   return readiness;
+});
+
+export interface SemanticRecallCandidate {
+  readonly text: string;
+}
+
+export const searchSemanticIndex = Effect.fnUntraced(function* (
+  vaultPath: string,
+  query: ReadonlyArray<number>,
+  limit: number,
+): Effect.fn.Return<ReadonlyArray<SemanticRecallCandidate>, SemanticIndexError, Path.Path> {
+  const paths = yield* indexPaths(vaultPath);
+  return yield* searchSemanticIndexExact(paths.databasePath, query, limit, "exclude_sources").pipe(
+    Effect.map((hits) => hits.map(({ text }) => ({ text }))),
+    Effect.mapError(
+      (cause) =>
+        new SemanticIndexError({
+          reason: "SearchFailed",
+          message: "Failed to search the semantic index",
+          cause,
+        }),
+    ),
+  );
 });
 
 const embedDocument = Effect.fnUntraced(function* (

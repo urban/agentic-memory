@@ -686,7 +686,7 @@ describe("semantic index workflow with native libSQL", () => {
           const query = Array.from({ length: EMBEDDING_MODEL_DIMENSIONS }, (_, index) =>
             index === 0 ? 1 : 0,
           );
-          const ranked = yield* searchSemanticIndexExact(databasePath, query, 2);
+          const ranked = yield* searchSemanticIndexExact(databasePath, query, 2, "all");
           assert.strictEqual(ranked[0]?.documentPath, "notes/nearest.md");
           const inspection = yield* inspectSemanticIndex(vaultPath);
           assert.strictEqual(inspection.status, "ready");
@@ -1389,7 +1389,7 @@ describe("semantic index workflow with native libSQL", () => {
           const query = Array.from({ length: EMBEDDING_MODEL_DIMENSIONS }, (_, index) =>
             index === 0 ? 1 : 0,
           );
-          const vectorsBefore = yield* searchSemanticIndexExact(databasePath, query, 10);
+          const vectorsBefore = yield* searchSemanticIndexExact(databasePath, query, 10, "all");
           const databaseUrl = yield* path.toFileUrl(databasePath);
           const client = yield* Effect.acquireRelease(
             Effect.sync(() => createClient({ url: databaseUrl.href, intMode: "number" })),
@@ -1403,7 +1403,7 @@ describe("semantic index workflow with native libSQL", () => {
           assert.strictEqual(control.calls, callsAfterInitial);
 
           const after = yield* readSemanticIndexSnapshot(databasePath);
-          const vectorsAfter = yield* searchSemanticIndexExact(databasePath, query, 10);
+          const vectorsAfter = yield* searchSemanticIndexExact(databasePath, query, 10, "all");
           assert.deepStrictEqual(after.documents, before.documents);
           assert.deepStrictEqual(vectorsAfter, vectorsBefore);
           assert.isUndefined(after.metadata);

@@ -1,13 +1,8 @@
 import { Effect, FileSystem, Path } from "effect";
-import { requireCurrentSemanticIndex } from "../semantic/SemanticIndex.ts";
-import {
-  filesystemRecallCandidateRetrieval,
-  RecallCandidateRetrieval,
-} from "./RecallCandidateRetrieval.ts";
+import { EmbeddingModel } from "../semantic/EmbeddingModel.ts";
+import { formatQueryEmbeddingInput } from "../semantic/MarkdownChunking.ts";
+import { requireCurrentSemanticIndex, searchSemanticIndex } from "../semantic/SemanticIndex.ts";
 import { RecallError } from "./RecallContract.ts";
-import { recallValidatedWithCandidateRetrieval, validateRecallQuestion } from "./RecallWorkflow.ts";
-
-type EmbeddingModel = import("../semantic/EmbeddingModel.ts").EmbeddingModel;
 type RecallRequest = import("./RecallContract.ts").RecallRequest;
 type RecallResponse = import("./RecallContract.ts").RecallResponse;
 
@@ -21,6 +16,20 @@ export {
   RecallResponse,
   RecallSuccessJson,
 } from "./RecallContract.ts";
+
+const validateRecallQuestion = (question: string): Effect.Effect<string, RecallError> => {
+  const trimmed = question.trim();
+  return trimmed.length === 0
+    ? Effect.fail(
+        new RecallError({
+          reason: "InvalidQuestion",
+          message: "Recall question must not be empty or whitespace.",
+        }),
+      )
+    : Effect.succeed(trimmed);
+};
+
+const notFoundAnswer = "I don't know based on the available Agentic Memory.";
 
 export const recall = Effect.fnUntraced(function* (
   request: RecallRequest,
@@ -40,7 +49,46 @@ export const recall = Effect.fnUntraced(function* (
         }),
     ),
   );
-  return yield* recallValidatedWithCandidateRetrieval(request, question).pipe(
-    Effect.provideService(RecallCandidateRetrieval, filesystemRecallCandidateRetrieval),
+  const model = yield* EmbeddingModel;
+  const queryVectors = yield* model.embed([formatQueryEmbeddingInput(question)]).pipe(
+    Effect.mapError(
+      (cause) =>
+        new RecallError({
+          reason: "QueryEmbeddingFailed",
+          message: "Failed to embed the recall question",
+          cause,
+        }),
+    ),
   );
+  const query = queryVectors[0];
+  if (query === undefined) {
+    return yield* new RecallError({
+      reason: "QueryEmbeddingFailed",
+      message: "The embedding model omitted the recall question vector",
+    });
+  }
+  const hits = yield* searchSemanticIndex(request.vaultPath, query, 10).pipe(
+    Effect.mapError(
+      (cause) =>
+        new RecallError({
+          reason: "SemanticSearchFailed",
+          message: "Failed to search Agentic Memory",
+          cause,
+        }),
+    ),
+  );
+  const bestHit = hits[0];
+  return bestHit === undefined
+    ? {
+        status: "not_found",
+        question: request.question,
+        answer: notFoundAnswer,
+        warnings: [],
+      }
+    : {
+        status: "answered",
+        question: request.question,
+        answer: bestHit.text,
+        warnings: [],
+      };
 });

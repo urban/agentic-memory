@@ -24,6 +24,16 @@ const toRecallFailure = (cause: RecallError) => {
         code: "SemanticIndexNotReady",
         message: cause.message,
       });
+    case "QueryEmbeddingFailed":
+      return toFailure({
+        code: "QueryEmbeddingFailed",
+        message: cause.message,
+      });
+    case "SemanticSearchFailed":
+      return toFailure({
+        code: "SemanticSearchFailed",
+        message: cause.message,
+      });
   }
 };
 
