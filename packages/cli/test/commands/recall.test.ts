@@ -1,10 +1,17 @@
 import { decodeRecallSuccessJson } from "@urban/agentic-memory-core/recall/Recall";
+import {
+  EmbeddingModel,
+  EmbeddingRuntimeError,
+  makeFakeEmbeddingModel,
+} from "@urban/agentic-memory-core/semantic/EmbeddingModel";
 import { synchronizeSemanticIndex } from "@urban/agentic-memory-core/semantic/SemanticIndex";
 import { initVaultFromTemplate } from "@urban/agentic-memory-core/vault/VaultTemplate";
 import { assert, describe, it } from "@effect/vitest";
+import { createClient } from "@libsql/client";
 import { Effect, FileSystem, Path } from "effect";
 import { fileURLToPath } from "node:url";
 import { afterAll } from "vitest";
+import { decodeCliFailureResultJson } from "../../src/output.ts";
 import { makeCliTestRuntime } from "../cli-test-support.ts";
 
 const recallFixtureVaultPath = fileURLToPath(
@@ -12,7 +19,8 @@ const recallFixtureVaultPath = fileURLToPath(
 );
 const recallQuestion =
   "In Alpha Product, what latency budget should I follow, and how should I present options back to Urban?";
-const { dispose, runCapturedEffect, withCliRuntime } = makeCliTestRuntime();
+const { dispose, runCapturedEffect, runCapturedEffectWithEmbeddingModel, withCliRuntime } =
+  makeCliTestRuntime();
 
 const withIndexedRecallFixture = <A, E, R>(use: (vaultPath: string) => Effect.Effect<A, E, R>) =>
   Effect.scoped(
@@ -71,6 +79,284 @@ describe("agentic-memory recall command", () => {
         );
         assert.deepStrictEqual(decoded.warnings, []);
       }),
+    ),
+  );
+
+  it.effect("maps a missing semantic index to indexing guidance", () =>
+    withCliRuntime(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const vaultPath = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-cli-recall-missing-index-",
+          });
+          yield* initVaultFromTemplate({
+            targetPath: vaultPath,
+            initializeGit: false,
+            yes: true,
+          });
+
+          const output = yield* runCapturedEffect([
+            "recall",
+            recallQuestion,
+            "--vault",
+            vaultPath,
+            "--json",
+          ]);
+          const failure = yield* decodeCliFailureResultJson(output.stdout);
+
+          assert.strictEqual(output.exitCode, 1);
+          assert.strictEqual(failure.error.code, "SemanticIndexMissing");
+          assert.include(failure.error.message, `agentic-memory index --vault ${vaultPath}`);
+          assert.notInclude(failure.error.message, ".agentic-memory");
+          assert.notInclude(failure.error.message, "recall.db");
+          assert.notInclude(failure.error.message, "embeddinggemma");
+        }),
+      ),
+    ),
+  );
+
+  it.effect("maps a stale semantic index to indexing guidance", () =>
+    withCliRuntime(
+      withIndexedRecallFixture((vaultPath) =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          yield* fs.writeFileString(
+            path.join(vaultPath, "MEMORY.md"),
+            "# Memory\n\nChanged after indexing.\n",
+          );
+
+          const output = yield* runCapturedEffect([
+            "recall",
+            recallQuestion,
+            "--vault",
+            vaultPath,
+            "--json",
+          ]);
+          const failure = yield* decodeCliFailureResultJson(output.stdout);
+
+          assert.strictEqual(output.exitCode, 1);
+          assert.strictEqual(failure.error.code, "SemanticIndexStale");
+          assert.include(failure.error.message, `agentic-memory index --vault ${vaultPath}`);
+          assert.notInclude(failure.error.message, ".agentic-memory");
+          assert.notInclude(failure.error.message, "recall.db");
+          assert.notInclude(failure.error.message, "768");
+        }),
+      ),
+    ),
+  );
+
+  it.effect("maps an incomplete semantic index to indexing guidance", () =>
+    withCliRuntime(
+      withIndexedRecallFixture((vaultPath) =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          yield* fs.writeFileString(
+            path.join(vaultPath, "MEMORY.md"),
+            "# Memory\n\nChanged before interrupted indexing.\n",
+          );
+          const fakeModel = makeFakeEmbeddingModel();
+          const failedSynchronization = yield* synchronizeSemanticIndex(vaultPath).pipe(
+            Effect.provideService(
+              EmbeddingModel,
+              EmbeddingModel.of({
+                ...fakeModel,
+                embed: () =>
+                  Effect.fail(
+                    new EmbeddingRuntimeError({ message: "Rejected embedding for test" }),
+                  ),
+              }),
+            ),
+            Effect.result,
+          );
+          assert.strictEqual(failedSynchronization._tag, "Failure");
+
+          const output = yield* runCapturedEffect([
+            "recall",
+            recallQuestion,
+            "--vault",
+            vaultPath,
+            "--json",
+          ]);
+          const failure = yield* decodeCliFailureResultJson(output.stdout);
+
+          assert.strictEqual(output.exitCode, 1);
+          assert.strictEqual(failure.error.code, "SemanticIndexIncomplete");
+          assert.include(failure.error.message, `agentic-memory index --vault ${vaultPath}`);
+          assert.notInclude(failure.error.message, ".agentic-memory");
+          assert.notInclude(failure.error.message, "recall.db");
+          assert.notInclude(failure.error.message, "Rejected embedding");
+        }),
+      ),
+    ),
+  );
+
+  it.effect("maps an invalid semantic index to delete-and-rebuild guidance", () =>
+    withCliRuntime(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const vaultPath = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-cli-recall-invalid-index-",
+          });
+          yield* initVaultFromTemplate({
+            targetPath: vaultPath,
+            initializeGit: false,
+            yes: true,
+          });
+          const indexDirectory = path.join(vaultPath, ".agentic-memory", "index");
+          yield* fs.makeDirectory(indexDirectory, { recursive: true });
+          const databasePath = path.join(indexDirectory, "recall.db");
+          const databaseUrl = yield* path.toFileUrl(databasePath);
+          yield* Effect.acquireUseRelease(
+            Effect.sync(() => createClient({ url: databaseUrl.href })),
+            (client) =>
+              Effect.promise(() =>
+                client.execute("CREATE TABLE private_database_details (id TEXT)"),
+              ),
+            (client) => Effect.sync(() => client.close()),
+          );
+
+          const output = yield* runCapturedEffect([
+            "recall",
+            recallQuestion,
+            "--vault",
+            vaultPath,
+            "--json",
+          ]);
+          const failure = yield* decodeCliFailureResultJson(output.stdout);
+
+          assert.strictEqual(output.exitCode, 1);
+          assert.strictEqual(failure.error.code, "SemanticIndexInvalid");
+          assert.include(
+            failure.error.message,
+            `agentic-memory index --vault ${vaultPath} --delete`,
+          );
+          assert.include(failure.error.message, `agentic-memory index --vault ${vaultPath}`);
+          assert.notInclude(failure.error.message, ".agentic-memory");
+          assert.notInclude(failure.error.message, "recall.db");
+          assert.notInclude(failure.error.message, "private-database-details");
+        }),
+      ),
+    ),
+  );
+
+  it.effect("maps an incompatible semantic index to delete-and-rebuild guidance", () =>
+    withCliRuntime(
+      withIndexedRecallFixture((vaultPath) =>
+        Effect.gen(function* () {
+          const path = yield* Path.Path;
+          const databasePath = path.join(vaultPath, ".agentic-memory", "index", "recall.db");
+          const databaseUrl = yield* path.toFileUrl(databasePath);
+          yield* Effect.acquireUseRelease(
+            Effect.sync(() => createClient({ url: databaseUrl.href })),
+            (client) =>
+              Effect.promise(() =>
+                client.execute(
+                  "UPDATE index_metadata SET compatibility_fingerprint = 'private-old-fingerprint' WHERE id = 1",
+                ),
+              ),
+            (client) => Effect.sync(() => client.close()),
+          );
+
+          const output = yield* runCapturedEffect([
+            "recall",
+            recallQuestion,
+            "--vault",
+            vaultPath,
+            "--json",
+          ]);
+          const failure = yield* decodeCliFailureResultJson(output.stdout);
+
+          assert.strictEqual(output.exitCode, 1);
+          assert.strictEqual(failure.error.code, "SemanticIndexIncompatible");
+          assert.include(
+            failure.error.message,
+            `agentic-memory index --vault ${vaultPath} --delete`,
+          );
+          assert.include(failure.error.message, `agentic-memory index --vault ${vaultPath}`);
+          assert.notInclude(failure.error.message, ".agentic-memory");
+          assert.notInclude(failure.error.message, "recall.db");
+          assert.notInclude(failure.error.message, "private-old-fingerprint");
+        }),
+      ),
+    ),
+  );
+
+  it.effect("maps query preparation failure without exposing embedding internals", () =>
+    withCliRuntime(
+      withIndexedRecallFixture((vaultPath) => {
+        const fakeModel = makeFakeEmbeddingModel();
+        const rejectingModel = EmbeddingModel.of({
+          ...fakeModel,
+          embed: () =>
+            Effect.fail(
+              new EmbeddingRuntimeError({
+                message: "Private vector dimension 768 failed in provider /tmp/model.gguf",
+              }),
+            ),
+        });
+        return Effect.gen(function* () {
+          const output = yield* runCapturedEffectWithEmbeddingModel(
+            ["recall", recallQuestion, "--vault", vaultPath, "--json"],
+            rejectingModel,
+          );
+          const failure = yield* decodeCliFailureResultJson(output.stdout);
+
+          assert.strictEqual(output.exitCode, 1);
+          assert.strictEqual(failure.error.code, "QueryEmbeddingFailed");
+          assert.include(failure.error.message, `agentic-memory status --vault ${vaultPath}`);
+          assert.notInclude(failure.error.message, "768");
+          assert.notInclude(failure.error.message, "provider");
+          assert.notInclude(failure.error.message, "/tmp/model.gguf");
+        });
+      }),
+    ),
+  );
+
+  it.effect("maps semantic search failure without exposing database internals", () =>
+    withCliRuntime(
+      withIndexedRecallFixture((vaultPath) =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const databasePath = path.join(vaultPath, ".agentic-memory", "index", "recall.db");
+          const fakeModel = makeFakeEmbeddingModel();
+          const removingModel = EmbeddingModel.of({
+            ...fakeModel,
+            embed: (texts) =>
+              fakeModel.embed(texts).pipe(
+                Effect.tap(() =>
+                  fs.remove(databasePath).pipe(
+                    Effect.mapError(
+                      (cause) =>
+                        new EmbeddingRuntimeError({
+                          message: "Failed to prepare the search failure fixture",
+                          cause,
+                        }),
+                    ),
+                  ),
+                ),
+              ),
+          });
+
+          const output = yield* runCapturedEffectWithEmbeddingModel(
+            ["recall", recallQuestion, "--vault", vaultPath, "--json"],
+            removingModel,
+          );
+          const failure = yield* decodeCliFailureResultJson(output.stdout);
+
+          assert.strictEqual(output.exitCode, 1);
+          assert.strictEqual(failure.error.code, "SemanticSearchFailed");
+          assert.include(failure.error.message, `agentic-memory status --vault ${vaultPath}`);
+          assert.notInclude(failure.error.message, ".agentic-memory");
+          assert.notInclude(failure.error.message, "recall.db");
+          assert.notInclude(failure.error.message, "libSQL");
+        }),
+      ),
     ),
   );
 

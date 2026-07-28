@@ -1026,10 +1026,10 @@ describe("semantic index workflow with native libSQL", () => {
 
           assert.strictEqual(inspections.incomplete.index.status, "incomplete");
           assert.isFalse(inspections.incomplete.recallReady);
-          assert.strictEqual(inspections.incompleteGuard.reason, "SemanticIndexNotReady");
+          assert.strictEqual(inspections.incompleteGuard.reason, "IndexIncomplete");
           assert.strictEqual(inspections.mismatched.index.status, "invalid");
           assert.isFalse(inspections.mismatched.recallReady);
-          assert.strictEqual(inspections.mismatchedGuard.reason, "SemanticIndexNotReady");
+          assert.strictEqual(inspections.mismatchedGuard.reason, "InvalidIndex");
           assert.strictEqual(control.calls, callsAfterIndex);
         }),
       ),

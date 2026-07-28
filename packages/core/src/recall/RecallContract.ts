@@ -39,6 +39,11 @@ export class RecallError extends Schema.TaggedErrorClass<RecallError>()("RecallE
   reason: Schema.Literals([
     "InvalidQuestion",
     "ReadVaultFailed",
+    "SemanticIndexMissing",
+    "SemanticIndexStale",
+    "SemanticIndexIncomplete",
+    "SemanticIndexInvalid",
+    "SemanticIndexIncompatible",
     "SemanticIndexNotReady",
     "QueryEmbeddingFailed",
     "SemanticSearchFailed",

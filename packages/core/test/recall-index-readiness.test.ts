@@ -121,7 +121,7 @@ describe("recall semantic index readiness", () => {
 
           assert.strictEqual(result._tag, "Failure");
           if (result._tag === "Failure") {
-            assert.strictEqual(result.failure.reason, "SemanticIndexNotReady");
+            assert.strictEqual(result.failure.reason, "SemanticIndexMissing");
             assert.include(result.failure.message, "Semantic index is missing");
           }
           assert.strictEqual(access.embedCalls, 0);
@@ -167,7 +167,7 @@ describe("recall semantic index readiness", () => {
 
           assert.strictEqual(result._tag, "Failure");
           if (result._tag === "Failure") {
-            assert.strictEqual(result.failure.reason, "SemanticIndexNotReady");
+            assert.strictEqual(result.failure.reason, "SemanticIndexStale");
             assert.include(result.failure.message, "Semantic index is stale");
           }
           assert.strictEqual(access.embedCalls, 0);
@@ -218,7 +218,7 @@ describe("recall semantic index readiness", () => {
 
           assert.strictEqual(result._tag, "Failure");
           if (result._tag === "Failure") {
-            assert.strictEqual(result.failure.reason, "SemanticIndexNotReady");
+            assert.strictEqual(result.failure.reason, "SemanticIndexIncomplete");
             assert.include(result.failure.message, "Semantic index is incomplete");
           }
           assert.strictEqual(access.embedCalls, 0);

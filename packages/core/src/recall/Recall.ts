@@ -5,6 +5,7 @@ import { requireCurrentSemanticIndex, searchSemanticIndex } from "../semantic/Se
 import { RecallError } from "./RecallContract.ts";
 type RecallRequest = import("./RecallContract.ts").RecallRequest;
 type RecallResponse = import("./RecallContract.ts").RecallResponse;
+type SemanticIndexError = import("../semantic/SemanticIndex.ts").SemanticIndexError;
 
 export {
   decodeRecallRequest,
@@ -31,6 +32,26 @@ const validateRecallQuestion = (question: string): Effect.Effect<string, RecallE
 
 const notFoundAnswer = "I don't know based on the available Agentic Memory.";
 
+const toRecallReadinessError = (cause: SemanticIndexError): RecallError => {
+  const reason =
+    cause.reason === "IndexMissing"
+      ? "SemanticIndexMissing"
+      : cause.reason === "IndexStale"
+        ? "SemanticIndexStale"
+        : cause.reason === "IndexIncomplete"
+          ? "SemanticIndexIncomplete"
+          : cause.reason === "InvalidIndex"
+            ? "SemanticIndexInvalid"
+            : cause.reason === "IncompatibleIndex"
+              ? "SemanticIndexIncompatible"
+              : "SemanticIndexNotReady";
+  return new RecallError({
+    reason,
+    message: cause.message,
+    cause,
+  });
+};
+
 export const recall = Effect.fnUntraced(function* (
   request: RecallRequest,
 ): Effect.fn.Return<
@@ -40,14 +61,7 @@ export const recall = Effect.fnUntraced(function* (
 > {
   const question = yield* validateRecallQuestion(request.question);
   yield* requireCurrentSemanticIndex(request.vaultPath).pipe(
-    Effect.mapError(
-      (cause) =>
-        new RecallError({
-          reason: "SemanticIndexNotReady",
-          message: cause.message,
-          cause,
-        }),
-    ),
+    Effect.mapError(toRecallReadinessError),
   );
   const model = yield* EmbeddingModel;
   const queryVectors = yield* model.embed([formatQueryEmbeddingInput(question)]).pipe(

@@ -7,7 +7,7 @@ import { commandRoot } from "./root.ts";
 
 type RecallError = import("@urban/agentic-memory-core/recall/Recall").RecallError;
 
-const toRecallFailure = (cause: RecallError) => {
+const toRecallFailure = (vaultPath: string, cause: RecallError) => {
   switch (cause.reason) {
     case "InvalidQuestion":
       return toFailure({
@@ -17,22 +17,47 @@ const toRecallFailure = (cause: RecallError) => {
     case "ReadVaultFailed":
       return toFailure({
         code: "ReadVaultFailed",
-        message: cause.message,
+        message: `Failed to read the Agentic Memory vault; run agentic-memory status --vault ${vaultPath}.`,
+      });
+    case "SemanticIndexMissing":
+      return toFailure({
+        code: "SemanticIndexMissing",
+        message: `Semantic index is missing; run agentic-memory index --vault ${vaultPath}.`,
+      });
+    case "SemanticIndexStale":
+      return toFailure({
+        code: "SemanticIndexStale",
+        message: `Semantic index is stale; run agentic-memory index --vault ${vaultPath}.`,
+      });
+    case "SemanticIndexIncomplete":
+      return toFailure({
+        code: "SemanticIndexIncomplete",
+        message: `Semantic index is incomplete; run agentic-memory index --vault ${vaultPath}.`,
+      });
+    case "SemanticIndexInvalid":
+      return toFailure({
+        code: "SemanticIndexInvalid",
+        message: `Semantic index is invalid; run agentic-memory index --vault ${vaultPath} --delete, then run agentic-memory index --vault ${vaultPath}.`,
+      });
+    case "SemanticIndexIncompatible":
+      return toFailure({
+        code: "SemanticIndexIncompatible",
+        message: `Semantic index is incompatible; run agentic-memory index --vault ${vaultPath} --delete, then run agentic-memory index --vault ${vaultPath}.`,
       });
     case "SemanticIndexNotReady":
       return toFailure({
         code: "SemanticIndexNotReady",
-        message: cause.message,
+        message: `Recall is not ready; run agentic-memory status --vault ${vaultPath}.`,
       });
     case "QueryEmbeddingFailed":
       return toFailure({
         code: "QueryEmbeddingFailed",
-        message: cause.message,
+        message: `Failed to prepare the recall query; run agentic-memory status --vault ${vaultPath}, then try again.`,
       });
     case "SemanticSearchFailed":
       return toFailure({
         code: "SemanticSearchFailed",
-        message: cause.message,
+        message: `Failed to search Agentic Memory; run agentic-memory status --vault ${vaultPath}, then try again.`,
       });
   }
 };
@@ -51,7 +76,7 @@ export const commandRecall = Command.make(
     const result = yield* recall({
       question,
       vaultPath: resolvedVaultPath,
-    }).pipe(Effect.mapError(toRecallFailure));
+    }).pipe(Effect.mapError((cause) => toRecallFailure(resolvedVaultPath, cause)));
     const jsonText = yield* encodeRecallSuccessJson(result).pipe(
       Effect.mapError((cause) =>
         toFailure({
