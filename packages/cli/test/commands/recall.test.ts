@@ -105,6 +105,25 @@ describe("agentic-memory recall command", () => {
     ),
   );
 
+  it.effect("rejects the removed source-inclusion flag", () =>
+    withCliRuntime(
+      runCapturedEffect([
+        "recall",
+        recallQuestion,
+        "--vault",
+        recallFixtureVaultPath,
+        "--include-sources",
+        "--json",
+      ]),
+    ).pipe(
+      Effect.map((output) => {
+        assert.strictEqual(output.exitCode, 1);
+        assert.include(output.stdout, "agentic-memory recall [flags] <question>");
+        assert.include(output.stderr, "Unrecognized flag: --include-sources");
+      }),
+    ),
+  );
+
   it.effect("reports a missing recall question with existing positional-argument wording", () =>
     withCliRuntime(runCapturedEffect(["recall", "--vault", recallFixtureVaultPath, "--json"])).pipe(
       Effect.map((output) => {

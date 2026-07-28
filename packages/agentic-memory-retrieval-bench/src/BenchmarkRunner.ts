@@ -125,7 +125,6 @@ const invokeRecallCli = Effect.fnUntraced(function* (input: {
     input.benchmarkCase.question,
     "--vault",
     input.vaultPath,
-    ...(input.benchmarkCase.includeSources === true ? ["--include-sources"] : []),
     "--json",
   ] satisfies ReadonlyArray<string>;
   const command = ChildProcess.make("agentic-memory", [...cliArgs], {

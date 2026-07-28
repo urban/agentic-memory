@@ -81,7 +81,6 @@ describe("recall semantic index readiness", () => {
       recall({
         vaultPath: "/vault/that/should/not/be-inspected",
         question: " \n\t ",
-        includeSources: false,
       }).pipe(
         Effect.result,
         Effect.map((result) => {
@@ -118,7 +117,6 @@ describe("recall semantic index readiness", () => {
           const result = yield* recall({
             vaultPath,
             question: "What latency budget applies to Alpha retry scheduling?",
-            includeSources: false,
           }).pipe(Effect.result);
 
           assert.strictEqual(result._tag, "Failure");
@@ -165,7 +163,6 @@ describe("recall semantic index readiness", () => {
           const result = yield* recall({
             vaultPath,
             question: "What latency budget applies to Alpha retry scheduling?",
-            includeSources: false,
           }).pipe(Effect.result);
 
           assert.strictEqual(result._tag, "Failure");
@@ -217,7 +214,6 @@ describe("recall semantic index readiness", () => {
           const result = yield* recall({
             vaultPath,
             question: "What latency budget applies to Alpha retry scheduling?",
-            includeSources: false,
           }).pipe(Effect.result);
 
           assert.strictEqual(result._tag, "Failure");

@@ -100,7 +100,7 @@ describe("semantic recall", () => {
           control.inputs = [];
 
           const question = "What is the recall timeout answer?";
-          const response = yield* recall({ vaultPath, question, includeSources: false });
+          const response = yield* recall({ vaultPath, question });
 
           assert.strictEqual(response.status, "answered");
           assert.strictEqual(response.answer, "The approved timeout is 640ms.");
@@ -133,9 +133,7 @@ describe("semantic recall", () => {
           control.rejectEmbeddings = true;
 
           const question = "What is the indexed answer?";
-          const result = yield* recall({ vaultPath, question, includeSources: false }).pipe(
-            Effect.result,
-          );
+          const result = yield* recall({ vaultPath, question }).pipe(Effect.result);
 
           assert.strictEqual(result._tag, "Failure");
           if (result._tag === "Failure") {
@@ -179,7 +177,6 @@ describe("semantic recall", () => {
             const recallFiber = yield* recall({
               vaultPath,
               question,
-              includeSources: false,
             }).pipe(Effect.result, Effect.forkChild({ startImmediately: true }));
             yield* Deferred.await(queryEmbeddingStarted);
             yield* fs.remove(path.join(vaultPath, ".agentic-memory", "index"), {
@@ -228,7 +225,7 @@ describe("semantic recall", () => {
           control.inputs = [];
 
           const question = "Which indexed memory is the answer?";
-          const response = yield* recall({ vaultPath, question, includeSources: false });
+          const response = yield* recall({ vaultPath, question });
 
           assert.strictEqual(response.status, "answered");
           assert.strictEqual(
@@ -259,7 +256,7 @@ describe("semantic recall", () => {
           yield* synchronizeSemanticIndex(vaultPath);
 
           const question = "What eligible memory answers this question?";
-          const response = yield* recall({ vaultPath, question, includeSources: false });
+          const response = yield* recall({ vaultPath, question });
 
           assert.deepStrictEqual(response, {
             status: "not_found",

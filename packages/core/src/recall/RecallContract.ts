@@ -7,7 +7,6 @@ const RecallWarnings = Schema.Array(Schema.String).annotate({
 export const RecallRequest = Schema.Struct({
   vaultPath: Schema.String,
   question: Schema.String,
-  includeSources: Schema.Boolean,
 }).annotate({ identifier: "RecallRequest" });
 export type RecallRequest = typeof RecallRequest.Type;
 

@@ -42,7 +42,7 @@ Cases cover:
 - project-specific facts and competing-project distractors
 - user preferences and combined questions
 - unknown and unrelated questions
-- default recall and explicit `--include-sources` recall
+- source-only questions that must abstain under the source-free contract
 - current facts when conflicting historical facts exist
 - rationale and work-resumption questions
 - consistent answers when facts appear more than once

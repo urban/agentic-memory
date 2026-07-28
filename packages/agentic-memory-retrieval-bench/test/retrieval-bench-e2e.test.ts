@@ -18,31 +18,29 @@ type RecallResponse = import("@urban/agentic-memory-core/recall/Recall").RecallR
 
 const fakeRecallResponse = (question: string): RecallResponse => {
   const normalized = question.toLocaleLowerCase();
-  const answer =
-    normalized.includes("gamma project") || normalized.includes("coffee grinder")
-      ? "I don't know based on the available memory."
-      : normalized.includes("verification evidence")
-        ? "The trial recorded a 180ms observed p95 verification threshold."
-        : normalized.includes("beta platform")
-          ? "Use the 5 second batch retry window."
-          : normalized.includes("why was")
-            ? "The budget was chosen to protect user-facing flows."
-            : normalized.includes("before resuming")
-              ? "Preserve responsiveness over throughput."
-              : normalized.includes("planning context")
-                ? "Treat scheduler work as interaction-design constraints."
-                : normalized.includes("frame scheduler")
-                  ? "Use interaction-design constraints, not background-job tuning."
-                  : normalized.includes("present") && normalized.includes("alpha")
-                    ? "Use the 200ms p95 budget and present stack-ranked capital-letter options."
-                    : normalized.includes("present prioritization")
-                      ? "Present stack-ranked capital-letter options."
-                      : "Use the 200ms p95 latency budget.";
+  const shouldAbstain =
+    normalized.includes("gamma project") ||
+    normalized.includes("coffee grinder") ||
+    normalized.includes("verification evidence");
+  const answer = shouldAbstain
+    ? "I don't know based on the available memory."
+    : normalized.includes("beta platform")
+      ? "Use the 5 second batch retry window."
+      : normalized.includes("why was")
+        ? "The budget was chosen to protect user-facing flows."
+        : normalized.includes("before resuming")
+          ? "Preserve responsiveness over throughput."
+          : normalized.includes("planning context")
+            ? "Treat scheduler work as interaction-design constraints."
+            : normalized.includes("frame scheduler")
+              ? "Use interaction-design constraints, not background-job tuning."
+              : normalized.includes("present") && normalized.includes("alpha")
+                ? "Use the 200ms p95 budget and present stack-ranked capital-letter options."
+                : normalized.includes("present prioritization")
+                  ? "Present stack-ranked capital-letter options."
+                  : "Use the 200ms p95 latency budget.";
   return {
-    status:
-      normalized.includes("gamma project") || normalized.includes("coffee grinder")
-        ? "not_found"
-        : "answered",
+    status: shouldAbstain ? "not_found" : "answered",
     question,
     answer,
     warnings: [],
@@ -179,7 +177,6 @@ describe("public recall benchmark", () => {
               benchmarkCase.question,
               "--vault",
               vaultPath,
-              ...(benchmarkCase.includeSources === true ? ["--include-sources"] : []),
               "--json",
             ];
             assert.deepEqual(report.command, expectedCommand);

@@ -10,7 +10,6 @@ export type BenchmarkExpectation = typeof BenchmarkExpectation.Type;
 export const BenchmarkCase = Schema.Struct({
   id: Schema.String,
   question: Schema.String,
-  includeSources: Schema.optional(Schema.Boolean),
   expected: BenchmarkExpectation,
 }).annotate({ identifier: "BenchmarkCase" });
 export type BenchmarkCase = typeof BenchmarkCase.Type;
