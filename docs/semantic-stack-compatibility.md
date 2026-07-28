@@ -1,6 +1,6 @@
 # Semantic stack compatibility proof
 
-This note records the Phase 0 feasibility gate for the local semantic-index stack. The probe is advisory evidence for the initial supported target, not a normal test or CI dependency.
+This note records the Phase 0 feasibility gate and the sustained production lifecycle proof for the local semantic-index stack. The probe is advisory evidence for the initial supported target, not a normal test or CI dependency.
 
 ## Pinned stack
 
@@ -33,30 +33,40 @@ The GGUF repository is public and ungated, but that availability does not replac
 
 ## Verified behavior
 
-The opt-in probe proves:
+`EmbeddingModelLive` now owns one lazy embedding session per application layer. Constructing the CLI runtime, explicit model inspection and installation, status inspection, and a current no-op index do not acquire native inference resources. The first embedding request validates the artifact and acquires one node-llama-cpp runtime, one loaded model, and one embedding context. Calls within that layer are serialized through the same context. Closing the CLI runtime finalizes the context, model, and runtime once in that order.
 
-- Bun can load the pinned Metal/arm64 node-llama-cpp binary and pinned native libSQL binary.
-- `resolveModelFile` with `download: false` fails for an empty cache and resolves the exact cached artifact without network fallback.
-- The artifact checksum and GGUF magic match the model contract.
-- node-llama-cpp loads the model, creates one 768-value finite embedding, and disposes the context, model, and runtime.
-- libSQL creates a temporary `F32_BLOB(3)` table, inserts vectors through `vector32(?)`, returns the expected exact `vector_distance_cos` top-K order, persists an update, deletes a row, closes the client, and permits database removal.
+The opt-in probe exercises the actual CLI entry point and production `EmbeddingModelLive`, semantic-index, Recall, and `ManagedRuntime` composition. It proves:
 
-No package-install, Bun native-runtime, vector-type, model-format, or license blocker was found on the verified target.
+- Bun loads the pinned Metal/arm64 node-llama-cpp binary and pinned native libSQL binary.
+- `init` validates the exact cached artifact without acquiring a native inference session.
+- One changed-index process indexes 34 managed documents and 34 embedding inputs with one runtime, one model, and one context.
+- The index process reports lifecycle events in the order `runtime_acquired → model_acquired → context_acquired → context_disposed → model_disposed → runtime_disposed`.
+- The resulting index is current and Recall-ready, and normal completion leaves no `index.lock`.
+- All 34 stored vectors can be extracted from libSQL and are finite, 768-dimensional values.
+- A separate real Recall process embeds a query, executes exact-cosine search, returns an answer, and finalizes its one native session in the same order.
+
+No package-install, Bun native-runtime, vector-type, model-format, lifecycle-reuse, or unguarded Metal blocker was found on the verified target.
 
 ## Running the opt-in probe
 
-The probe downloads the 333 MB model only when it is absent from the XDG-compatible cache. It is intentionally excluded from `bun run check`.
+The probe downloads the 333 MB model only when it is absent from the XDG-compatible cache. It is intentionally excluded from `bun run check`. Run it with `GGML_METAL_NO_RESIDENCY` absent; the probe rejects a guarded environment rather than silently changing Metal behavior.
 
 ```sh
+unset GGML_METAL_NO_RESIDENCY
 AGENTIC_MEMORY_SEMANTIC_PROBE=1 bun run --cwd packages/core probe:semantic-stack
 ```
 
-Set `XDG_CACHE_HOME` to test another cache root. Without the opt-in environment variable, the command exits before network access or native model loading.
+Set `XDG_CACHE_HOME` to test another cache root. Without the opt-in environment variable, the command exits before network access or native model loading. During the explicit probe only, `EmbeddingModelLive` writes acquisition and finalization evidence to stderr; normal commands do not emit these diagnostics.
 
-## Observations
+## Sustained lifecycle observations
 
-Verified on 2026-07-21 with Bun 1.3.14, Node 26.5.0, macOS Darwin 25.3.0, and Apple arm64. These are advisory single-run observations, not performance gates. Model load includes creation of the embedding context; peak RSS is the process high-water mark reported by Bun.
+Verified on 2026-07-28 with Bun 1.3.14, node-llama-cpp 3.19.1, llama.cpp prebuilt release `b10068`, macOS Darwin 25.5.0, and Apple arm64 Metal. `GGML_METAL_NO_RESIDENCY` was unset. These are advisory single-run end-to-end observations, not performance gates.
 
-- Cold process model and context load: `10952.4 ms`
-- One-vector embedding: `263.9 ms`
-- Peak RSS: `1023.8 MiB`
+- Initialization with an already cached and validated model: `925.6 ms`; no runtime, model, or context acquired.
+- Production indexing of 34 managed documents and 34 serial embedding inputs: `13631.1 ms`; one runtime, one model, and one context acquired and finalized once.
+- Post-index status inspection: `692.8 ms`; `index.status` was `current`, `recallReady` was `true`, and no lock remained.
+- Production Recall with one query embedding and exact search: `2323.2 ms`; exit code zero and one orderly native-session lifecycle.
+- Stored-vector validation: all 34 generated vectors contained exactly 768 finite values.
+- Unguarded Metal result: passed with process exit code zero for initialization, indexing, status, and Recall; no `GGML_METAL_NO_RESIDENCY` guardrail is required by this evidence.
+
+The earlier 2026-07-21 Phase 0 hand-built smoke observation measured a `10952.4 ms` cold model/context load, a `263.9 ms` one-vector embedding, and `1023.8 MiB` peak RSS. The sustained proof supersedes that hand-built path as the compatibility gate because it measures production composition; the earlier figures remain historical context rather than release thresholds.

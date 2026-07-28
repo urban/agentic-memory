@@ -56,6 +56,12 @@ export interface EmbeddingRuntimeModel {
 export interface EmbeddingRuntime {
   readonly loadModel: (options: { readonly modelPath: string }) => Promise<EmbeddingRuntimeModel>;
   readonly dispose: () => Promise<void>;
+  readonly buildType?: string;
+  readonly gpu?: string | false;
+  readonly llamaCppRelease?: {
+    readonly repo: string;
+    readonly release: string;
+  };
 }
 
 export interface EmbeddingModelLiveOptions {
@@ -146,6 +152,15 @@ const make = (options: Required<EmbeddingModelLiveOptions>) =>
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const output = yield* Console.Console;
+    const lifecycleProbeEnabled = yield* Config.string("AGENTIC_MEMORY_SEMANTIC_PROBE").pipe(
+      Config.option,
+      Effect.orElseSucceed(() => Option.none<string>()),
+      Effect.map((value) => Option.contains(value, "1")),
+    );
+    const reportLifecycle = (event: string): Effect.Effect<void> =>
+      lifecycleProbeEnabled
+        ? Effect.sync(() => output.error(`[agentic-memory:semantic-probe] ${event}`))
+        : Effect.void;
     const modelDirectory = yield* resolveCacheDirectory(options.homeDirectory);
     const artifactPath = path.join(modelDirectory, EMBEDDING_MODEL_FILE_NAME);
 
@@ -289,14 +304,35 @@ const make = (options: Required<EmbeddingModelLiveOptions>) =>
       }
 
       const llama = yield* Effect.acquireRelease(
-        modelOperation("Failed to initialize the embedding runtime", options.initializeRuntime),
-        (resource) => Effect.promise(() => resource.dispose()),
+        modelOperation(
+          "Failed to initialize the embedding runtime",
+          options.initializeRuntime,
+        ).pipe(
+          Effect.tap((runtime) =>
+            reportLifecycle(
+              [
+                "runtime_acquired",
+                `buildType=${runtime.buildType ?? "unreported"}`,
+                `gpu=${runtime.gpu ?? "unreported"}`,
+                `llamaCppRepo=${runtime.llamaCppRelease?.repo ?? "unreported"}`,
+                `llamaCppRelease=${runtime.llamaCppRelease?.release ?? "unreported"}`,
+              ].join(" "),
+            ),
+          ),
+        ),
+        (resource) =>
+          Effect.promise(() => resource.dispose()).pipe(
+            Effect.tap(() => reportLifecycle("runtime_disposed")),
+          ),
       ).pipe(Scope.provide(scope));
       const model = yield* Effect.acquireRelease(
         modelOperation("Failed to load the embedding model", () =>
           llama.loadModel({ modelPath: artifactPath }),
-        ),
-        (resource) => Effect.promise(() => resource.dispose()),
+        ).pipe(Effect.tap(() => reportLifecycle("model_acquired"))),
+        (resource) =>
+          Effect.promise(() => resource.dispose()).pipe(
+            Effect.tap(() => reportLifecycle("model_disposed")),
+          ),
       ).pipe(Scope.provide(scope));
       if (model.embeddingVectorSize !== EMBEDDING_MODEL_DIMENSIONS) {
         return yield* new EmbeddingRuntimeError({
@@ -306,8 +342,11 @@ const make = (options: Required<EmbeddingModelLiveOptions>) =>
       const context = yield* Effect.acquireRelease(
         modelOperation("Failed to create the embedding context", () =>
           model.createEmbeddingContext({ contextSize: 2048 }),
-        ),
-        (resource) => Effect.promise(() => resource.dispose()),
+        ).pipe(Effect.tap(() => reportLifecycle("context_acquired"))),
+        (resource) =>
+          Effect.promise(() => resource.dispose()).pipe(
+            Effect.tap(() => reportLifecycle("context_disposed")),
+          ),
       ).pipe(Scope.provide(scope));
       return { context, scope };
     });

@@ -1,22 +1,30 @@
 #!/usr/bin/env bun
 
-import { createHash } from "node:crypto";
-import { homedir } from "node:os";
+import { release } from "node:os";
+import { fileURLToPath } from "node:url";
 import { BunRuntime } from "@effect/platform-bun";
 import * as BunServices from "@effect/platform-bun/BunServices";
 import { createClient } from "@libsql/client";
-import { Config, Console, Effect, FileSystem, ManagedRuntime, Path, Schema, Stream } from "effect";
-import { getLlama, resolveModelFile } from "node-llama-cpp";
+import {
+  Config,
+  Console,
+  Effect,
+  FileSystem,
+  ManagedRuntime,
+  Option,
+  Path,
+  Schema,
+  Stream,
+} from "effect";
+import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+import { decodeRecallSuccessJson } from "../src/recall/Recall.ts";
 import {
   EMBEDDING_MODEL_DIMENSIONS,
-  EMBEDDING_MODEL_FILE_NAME,
+  EMBEDDING_MODEL_ID,
   EMBEDDING_MODEL_SHA256,
   EMBEDDING_MODEL_URI,
 } from "../src/semantic/EmbeddingModel.ts";
-import {
-  formatDocumentEmbeddingInput,
-  formatQueryEmbeddingInput,
-} from "../src/semantic/MarkdownChunking.ts";
+import { SemanticIndexReadiness, SemanticIndexResult } from "../src/semantic/SemanticIndex.ts";
 
 class ProbePrerequisiteError extends Schema.TaggedErrorClass<ProbePrerequisiteError>()(
   "ProbePrerequisiteError",
@@ -28,364 +36,369 @@ class ProbeInvariantError extends Schema.TaggedErrorClass<ProbeInvariantError>()
   { message: Schema.String },
 ) {}
 
-class ModelProbeError extends Schema.TaggedErrorClass<ModelProbeError>()("ModelProbeError", {
-  message: Schema.String,
-  cause: Schema.Defect(),
-}) {}
+class ProbeOperationError extends Schema.TaggedErrorClass<ProbeOperationError>()(
+  "ProbeOperationError",
+  {
+    message: Schema.String,
+    cause: Schema.Defect(),
+  },
+) {}
 
-class VectorProbeError extends Schema.TaggedErrorClass<VectorProbeError>()("VectorProbeError", {
-  message: Schema.String,
-  cause: Schema.Defect(),
-}) {}
+const IndexResultJson = Schema.fromJsonString(SemanticIndexResult).annotate({
+  identifier: "SemanticStackProbeIndexResultJson",
+});
+const VaultStatusJson = Schema.fromJsonString(
+  Schema.TaggedStruct("vault", {
+    version: Schema.Literal(1),
+    directory: Schema.String,
+    readiness: SemanticIndexReadiness,
+  }),
+).annotate({ identifier: "SemanticStackProbeVaultStatusJson" });
+const IndexCountRow = Schema.Struct({
+  document_count: Schema.Int,
+  chunk_count: Schema.Int,
+}).annotate({ identifier: "SemanticStackProbeIndexCountRow" });
+const VectorRow = Schema.Struct({
+  embedding: Schema.String,
+}).annotate({ identifier: "SemanticStackProbeVectorRow" });
+const VectorJson = Schema.fromJsonString(Schema.Array(Schema.Finite)).annotate({
+  identifier: "SemanticStackProbeVectorJson",
+});
+
+const decodeIndexResult = Schema.decodeUnknownEffect(IndexResultJson);
+const decodeVaultStatus = Schema.decodeUnknownEffect(VaultStatusJson);
+const decodeIndexCountRow = Schema.decodeUnknownEffect(IndexCountRow);
+const decodeVectorRow = Schema.decodeUnknownEffect(VectorRow);
+const decodeVector = Schema.decodeUnknownEffect(VectorJson);
+
+const lifecyclePrefix = "[agentic-memory:semantic-probe] ";
+const expectedLifecycle = [
+  "runtime_acquired",
+  "model_acquired",
+  "context_acquired",
+  "context_disposed",
+  "model_disposed",
+  "runtime_disposed",
+];
 
 const requireProbe = (condition: boolean, message: string) =>
   condition ? Effect.void : Effect.fail(new ProbeInvariantError({ message }));
 
-const modelOperation = <A>(message: string, operation: () => Promise<A>) =>
-  Effect.tryPromise({
-    try: operation,
-    catch: (cause) => new ModelProbeError({ message, cause }),
-  });
+const operation =
+  (message: string) =>
+  <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, ProbeOperationError, R> =>
+    effect.pipe(Effect.mapError((cause) => new ProbeOperationError({ message, cause })));
 
-const vectorOperation = <A>(message: string, operation: () => Promise<A>) =>
-  Effect.tryPromise({
-    try: operation,
-    catch: (cause) => new VectorProbeError({ message, cause }),
-  });
+const lifecycleEvents = (stderr: string): ReadonlyArray<string> =>
+  stderr
+    .split(/\r?\n/u)
+    .filter((line) => line.startsWith(lifecyclePrefix))
+    .map((line) => line.slice(lifecyclePrefix.length).split(" ")[0] ?? "");
 
-const inspectArtifact = Effect.fnUntraced(function* (modelPath: string) {
-  const fs = yield* FileSystem.FileSystem;
-  const digest = createHash("sha256");
-  const magicBytes = new Uint8Array(4);
-  let magicLength = 0;
-
-  yield* fs.stream(modelPath).pipe(
-    Stream.runForEach((chunk) =>
-      Effect.sync(() => {
-        digest.update(chunk);
-        const remainingMagicBytes = 4 - magicLength;
-        const copiedBytes = Math.min(remainingMagicBytes, chunk.length);
-        magicBytes.set(chunk.subarray(0, copiedBytes), magicLength);
-        magicLength += copiedBytes;
-      }),
-    ),
-    Effect.mapError(
-      (cause) => new ModelProbeError({ message: "Failed to inspect the model artifact", cause }),
-    ),
+const validateLifecycle = Effect.fnUntraced(function* (commandName: string, stderr: string) {
+  const events = lifecycleEvents(stderr);
+  yield* requireProbe(
+    events.length === expectedLifecycle.length &&
+      events.every((event, index) => event === expectedLifecycle[index]),
+    `${commandName} lifecycle was ${events.join(", ")}; expected ${expectedLifecycle.join(", ")}`,
   );
-
-  return {
-    magic: String.fromCharCode(...magicBytes),
-    sha256: digest.digest("hex"),
-  };
+  const runtimeLine = stderr
+    .split(/\r?\n/u)
+    .find((line) => line.startsWith(`${lifecyclePrefix}runtime_acquired`));
+  yield* requireProbe(
+    runtimeLine !== undefined &&
+      runtimeLine.includes("buildType=prebuilt") &&
+      runtimeLine.includes("gpu=metal") &&
+      runtimeLine.includes("llamaCppRepo=ggml-org/llama.cpp") &&
+      !runtimeLine.includes("unreported"),
+    `${commandName} did not report the expected prebuilt Metal llama.cpp runtime metadata`,
+  );
+  return runtimeLine;
 });
 
-const probeModel = Effect.fnUntraced(function* (modelDirectory: string) {
-  const fs = yield* FileSystem.FileSystem;
-  const missingDirectory = yield* fs.makeTempDirectoryScoped({
-    prefix: "agentic-memory-model-missing-",
+const noteContent = (index: number): string => {
+  const sequence = String(index).padStart(2, "0");
+  return `---
+type: note
+status: active
+maturity: evergreen
+created: 2026-07-28
+updated: 2026-07-28
+summary: "Sustained embedding lifecycle proof document ${sequence}."
+aliases: []
+tags: []
+sources: []
+---
+
+# Sustained Lifecycle Proof ${sequence}
+
+Probe document ${sequence} confirms that durable Agentic Memory notes are embedded through one reusable native session during a multi-document index run.
+`;
+};
+
+const cliMainPath = fileURLToPath(new URL("../../cli/src/main.ts", import.meta.url));
+const repositoryRoot = fileURLToPath(new URL("../../../", import.meta.url));
+
+const runCli = Effect.fnUntraced(function* (args: ReadonlyArray<string>) {
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  const command = ChildProcess.make("bun", [cliMainPath, ...args], {
+    cwd: repositoryRoot,
+    env: {
+      AGENTIC_MEMORY_SEMANTIC_PROBE: "1",
+      GGML_METAL_NO_RESIDENCY: undefined,
+    },
+    extendEnv: true,
   });
-  const missingResolution = yield* Effect.result(
-    modelOperation("Local-only missing-model resolution failed unexpectedly", () =>
-      resolveModelFile(EMBEDDING_MODEL_URI, {
-        directory: missingDirectory,
-        download: false,
-        cli: false,
-      }),
-    ),
-  );
-  yield* requireProbe(
-    missingResolution._tag === "Failure",
-    "Local-only resolution downloaded or resolved an absent model",
-  );
-
-  yield* fs
-    .makeDirectory(modelDirectory, { recursive: true })
-    .pipe(
-      Effect.mapError(
-        (cause) => new ModelProbeError({ message: "Failed to create the model cache", cause }),
-      ),
-    );
-  const downloadedPath = yield* modelOperation("Failed to resolve or download the model", () =>
-    resolveModelFile(EMBEDDING_MODEL_URI, {
-      directory: modelDirectory,
-      fileName: EMBEDDING_MODEL_FILE_NAME,
-      cli: true,
-    }),
-  );
-  const localPath = yield* modelOperation("Failed to resolve the cached model locally", () =>
-    resolveModelFile(EMBEDDING_MODEL_URI, {
-      directory: modelDirectory,
-      fileName: EMBEDDING_MODEL_FILE_NAME,
-      download: false,
-      cli: false,
-    }),
-  );
-  yield* requireProbe(
-    localPath === downloadedPath,
-    "Local-only resolution returned another artifact",
-  );
-
-  const artifact = yield* inspectArtifact(localPath);
-  yield* requireProbe(artifact.magic === "GGUF", `Unexpected GGUF magic: ${artifact.magic}`);
-  yield* requireProbe(
-    artifact.sha256 === EMBEDDING_MODEL_SHA256,
-    `Unexpected artifact SHA-256: ${artifact.sha256}`,
-  );
-
-  const loadStartedAt = performance.now();
-  const embeddingResult = yield* Effect.scoped(
+  const startedAt = performance.now();
+  const result = yield* Effect.scoped(
     Effect.gen(function* () {
-      const llama = yield* Effect.acquireRelease(
-        modelOperation("Failed to initialize node-llama-cpp", () => getLlama()),
-        (resource) => Effect.promise(() => resource.dispose()),
+      const handle = yield* spawner.spawn(command);
+      const [stdout, stderr, exitCode] = yield* Effect.all(
+        [
+          handle.stdout.pipe(Stream.decodeText(), Stream.mkString),
+          handle.stderr.pipe(Stream.decodeText(), Stream.mkString),
+          handle.exitCode,
+        ],
+        { concurrency: "unbounded" },
       );
-      const model = yield* Effect.acquireRelease(
-        modelOperation("Failed to load EmbeddingGemma", () =>
-          llama.loadModel({ modelPath: localPath }),
-        ),
-        (resource) => Effect.promise(() => resource.dispose()),
-      );
-      const context = yield* Effect.acquireRelease(
-        modelOperation("Failed to create the embedding context", () =>
-          model.createEmbeddingContext({ contextSize: 2048 }),
-        ),
-        (resource) => Effect.promise(() => resource.dispose()),
-      );
-      const modelLoadMs = performance.now() - loadStartedAt;
-      const embeddingStartedAt = performance.now();
-      const queryEmbedding = yield* modelOperation("Failed to create the query embedding", () =>
-        context.getEmbeddingFor(
-          formatQueryEmbeddingInput("How does Agentic Memory preserve durable agent context?"),
-        ),
-      );
-      const relevantEmbedding = yield* modelOperation(
-        "Failed to create the relevant document embedding",
-        () =>
-          context.getEmbeddingFor(
-            formatDocumentEmbeddingInput(
-              "Agentic Memory",
-              ["Durable context"],
-              "Agentic Memory preserves durable local context for AI agents across sessions.",
-            ),
-          ),
-      );
-      const dissimilarEmbedding = yield* modelOperation(
-        "Failed to create the dissimilar document embedding",
-        () =>
-          context.getEmbeddingFor(
-            formatDocumentEmbeddingInput(
-              "Tomato gardening",
-              ["Summer care"],
-              "Tomato plants need sunlight, rich soil, and regular watering during summer.",
-            ),
-          ),
-      );
-      return {
-        dimensions: model.embeddingVectorSize,
-        queryVector: queryEmbedding.vector,
-        relevantVector: relevantEmbedding.vector,
-        dissimilarVector: dissimilarEmbedding.vector,
-        modelLoadMs,
-        embeddingMs: performance.now() - embeddingStartedAt,
-      };
+      return { stdout, stderr, exitCode };
     }),
-  );
-
-  yield* requireProbe(
-    embeddingResult.dimensions === EMBEDDING_MODEL_DIMENSIONS,
-    `Unexpected model dimensions: ${embeddingResult.dimensions}`,
-  );
-  yield* requireProbe(
-    [
-      embeddingResult.queryVector,
-      embeddingResult.relevantVector,
-      embeddingResult.dissimilarVector,
-    ].every((vector) => vector.length === EMBEDDING_MODEL_DIMENSIONS),
-    "A semantic smoke embedding has an unexpected dimension",
-  );
-  yield* requireProbe(
-    [
-      embeddingResult.queryVector,
-      embeddingResult.relevantVector,
-      embeddingResult.dissimilarVector,
-    ].every((vector) => vector.every(Number.isFinite)),
-    "A semantic smoke embedding contains a non-finite value",
-  );
-
+  ).pipe(operation(`Failed to execute agentic-memory ${args[0] ?? "command"}`));
   return {
-    artifactPath: localPath,
-    sha256: artifact.sha256,
-    dimensions: embeddingResult.dimensions,
-    queryVector: embeddingResult.queryVector,
-    relevantVector: embeddingResult.relevantVector,
-    dissimilarVector: embeddingResult.dissimilarVector,
-    modelLoadMs: embeddingResult.modelLoadMs,
-    embeddingMs: embeddingResult.embeddingMs,
+    ...result,
+    durationMs: performance.now() - startedAt,
   };
 });
 
-const probeVectorStorage = Effect.fnUntraced(function* (vectors: {
-  readonly query: ReadonlyArray<number>;
-  readonly relevant: ReadonlyArray<number>;
-  readonly dissimilar: ReadonlyArray<number>;
-}) {
-  const fs = yield* FileSystem.FileSystem;
+const requireCommandSuccess = Effect.fnUntraced(function* (
+  commandName: string,
+  result: {
+    readonly stdout: string;
+    readonly stderr: string;
+    readonly exitCode: ChildProcessSpawner.ExitCode;
+    readonly durationMs: number;
+  },
+) {
+  yield* requireProbe(
+    result.exitCode === ChildProcessSpawner.ExitCode(0),
+    `${commandName} exited ${result.exitCode}: ${result.stderr.trim()}`,
+  );
+  return result;
+});
+
+const inspectStoredVectors = Effect.fnUntraced(function* (databasePath: string) {
   const path = yield* Path.Path;
-  const tempDirectory = yield* fs.makeTempDirectoryScoped({
-    prefix: "agentic-memory-libsql-",
+  const databaseUrl = yield* path
+    .toFileUrl(databasePath)
+    .pipe(operation("Failed to encode the semantic index database path"));
+  const client = yield* Effect.try({
+    try: () => createClient({ url: databaseUrl.href, intMode: "number" }),
+    catch: (cause) =>
+      new ProbeOperationError({ message: "Failed to open the semantic index database", cause }),
   });
-  const databasePath = path.join(tempDirectory, "vectors.db");
-  const client = createClient({ url: `file:${databasePath}` });
 
-  const results = yield* Effect.gen(function* () {
-    yield* vectorOperation("Failed to create the native vector table", () =>
-      client.executeMultiple(`
-        CREATE TABLE vectors (id TEXT PRIMARY KEY, embedding F32_BLOB(3) NOT NULL);
-        CREATE TABLE semantic_vectors (
-          id TEXT PRIMARY KEY,
-          embedding F32_BLOB(${EMBEDDING_MODEL_DIMENSIONS}) NOT NULL
-        );
-      `),
-    );
-    yield* vectorOperation("Failed to insert native vectors", () =>
-      client.batch(
-        [
-          ["INSERT INTO vectors VALUES (?, vector32(?))", ["exact", "[1,0,0]"]],
-          ["INSERT INTO vectors VALUES (?, vector32(?))", ["near", "[0.8,0.2,0]"]],
-          ["INSERT INTO vectors VALUES (?, vector32(?))", ["far", "[0,1,0]"]],
-        ],
-        "write",
-      ),
-    );
-    const ranked = yield* vectorOperation("Failed to execute exact cosine top-K", () =>
-      client.execute({
-        sql: "SELECT id FROM vectors ORDER BY vector_distance_cos(embedding, vector32(?)), id LIMIT 2",
-        args: ["[1,0,0]"],
-      }),
-    );
-    yield* vectorOperation("Failed to store real-model semantic vectors", () =>
-      client.batch(
-        [
-          {
-            sql: "INSERT INTO semantic_vectors VALUES (?, vector32(?))",
-            args: ["relevant", `[${vectors.relevant.join(",")}]`],
-          },
-          {
-            sql: "INSERT INTO semantic_vectors VALUES (?, vector32(?))",
-            args: ["dissimilar", `[${vectors.dissimilar.join(",")}]`],
-          },
-        ],
-        "write",
-      ),
-    );
-    const semanticRanked = yield* vectorOperation(
-      "Failed to execute real-model semantic nearest-neighbor search",
-      () =>
-        client.execute({
-          sql: `SELECT id FROM semantic_vectors
-            ORDER BY vector_distance_cos(embedding, vector32(?)), id`,
-          args: [`[${vectors.query.join(",")}]`],
-        }),
-    );
-    yield* vectorOperation("Failed to update a native vector", () =>
-      client.execute({
-        sql: "UPDATE vectors SET embedding = vector32(?) WHERE id = ?",
-        args: ["[0,1,0]", "near"],
-      }),
-    );
-    const updated = yield* vectorOperation("Failed to verify the native vector update", () =>
-      client.execute({
-        sql: "SELECT vector_distance_cos(embedding, vector32(?)) AS distance FROM vectors WHERE id = ?",
-        args: ["[1,0,0]", "near"],
-      }),
-    );
-    yield* vectorOperation("Failed to delete a native vector", () =>
-      client.execute({ sql: "DELETE FROM vectors WHERE id = ?", args: ["far"] }),
-    );
-    const remaining = yield* vectorOperation("Failed to verify native vector deletion", () =>
-      client.execute("SELECT count(*) AS count FROM vectors"),
+  return yield* Effect.gen(function* () {
+    const countsResult = yield* Effect.tryPromise({
+      try: () =>
+        client.execute(`SELECT
+          (SELECT COUNT(*) FROM documents) AS document_count,
+          (SELECT COUNT(*) FROM chunks) AS chunk_count`),
+      catch: (cause) =>
+        new ProbeOperationError({ message: "Failed to inspect semantic index counts", cause }),
+    });
+    const countRow = countsResult.rows[0];
+    if (countRow === undefined) {
+      return yield* new ProbeInvariantError({ message: "Semantic index counts were omitted" });
+    }
+    const counts = yield* decodeIndexCountRow(countRow).pipe(
+      operation("Semantic index counts were invalid"),
     );
 
+    const vectorResult = yield* Effect.tryPromise({
+      try: () => client.execute("SELECT vector_extract(embedding) AS embedding FROM chunks"),
+      catch: (cause) =>
+        new ProbeOperationError({ message: "Failed to extract stored semantic vectors", cause }),
+    });
+    const vectors = yield* Effect.forEach(vectorResult.rows, (row) =>
+      decodeVectorRow(row).pipe(
+        Effect.flatMap((decoded) => decodeVector(decoded.embedding)),
+        operation("A stored semantic vector was invalid"),
+      ),
+    );
+    yield* requireProbe(
+      vectors.length === counts.chunk_count,
+      `Extracted ${vectors.length} vectors for ${counts.chunk_count} chunks`,
+    );
+    yield* requireProbe(
+      vectors.every(
+        (vector) => vector.length === EMBEDDING_MODEL_DIMENSIONS && vector.every(Number.isFinite),
+      ),
+      "A stored semantic vector was not 768-dimensional and finite",
+    );
     return {
-      ranked: ranked.rows.map((row) => row.id),
-      semanticRanked: semanticRanked.rows.map((row) => row.id),
-      updatedDistance: updated.rows[0]?.distance,
-      remainingCount: remaining.rows[0]?.count,
+      documentCount: counts.document_count,
+      chunkCount: counts.chunk_count,
+      validatedVectorCount: vectors.length,
     };
   }).pipe(Effect.ensuring(Effect.sync(() => client.close())));
-
-  yield* requireProbe(
-    results.ranked[0] === "exact" && results.ranked[1] === "near",
-    `Unexpected exact cosine top-K order: ${results.ranked.join(", ")}`,
-  );
-  yield* requireProbe(
-    results.semanticRanked[0] === "relevant" && results.semanticRanked[1] === "dissimilar",
-    `Unexpected real-model semantic order: ${results.semanticRanked.join(", ")}`,
-  );
-  yield* requireProbe(results.updatedDistance === 1, "Vector update was not persisted");
-  yield* requireProbe(results.remainingCount === 2, "Vector deletion was not persisted");
-  yield* requireProbe(client.closed, "libSQL client did not close");
-  yield* fs
-    .remove(databasePath)
-    .pipe(
-      Effect.mapError(
-        (cause) => new VectorProbeError({ message: "Failed to remove the probe database", cause }),
-      ),
-    );
-  const databaseStillExists = yield* fs.exists(databasePath);
-  yield* requireProbe(!databaseStillExists, "Probe database cleanup did not complete");
-
-  return {
-    topK: results.ranked.join(","),
-    semanticTopK: results.semanticRanked.join(","),
-    clientClosed: client.closed,
-    databaseRemoved: true,
-  };
 });
 
 const program = Effect.scoped(
   Effect.gen(function* () {
-    const optIn = yield* Config.string("AGENTIC_MEMORY_SEMANTIC_PROBE").pipe(
-      Config.withDefault(""),
-    );
-    if (optIn !== "1") {
+    const optIn = yield* Config.string("AGENTIC_MEMORY_SEMANTIC_PROBE").pipe(Config.option);
+    if (!Option.contains(optIn, "1")) {
       return yield* new ProbePrerequisiteError({
         message:
-          "Set AGENTIC_MEMORY_SEMANTIC_PROBE=1 to run the network/model/native integration probe.",
+          "Set AGENTIC_MEMORY_SEMANTIC_PROBE=1 to run the model/native production-composition probe.",
       });
     }
 
+    const residencyGuard = yield* Config.string("GGML_METAL_NO_RESIDENCY").pipe(Config.option);
+    if (Option.isSome(residencyGuard)) {
+      return yield* new ProbePrerequisiteError({
+        message: "Unset GGML_METAL_NO_RESIDENCY before running the sustained lifecycle proof.",
+      });
+    }
+    if (process.platform !== "darwin" || process.arch !== "arm64") {
+      return yield* new ProbePrerequisiteError({
+        message: `The sustained lifecycle proof requires darwin-arm64; received ${process.platform}-${process.arch}.`,
+      });
+    }
+
+    const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const cacheRoot = yield* Config.string("XDG_CACHE_HOME").pipe(
-      Config.withDefault(path.join(homedir(), ".cache")),
-    );
-    const modelDirectory = path.join(cacheRoot, "agentic-memory", "models");
-    const model = yield* probeModel(modelDirectory);
-    const vectors = yield* probeVectorStorage({
-      query: model.queryVector,
-      relevant: model.relevantVector,
-      dissimilar: model.dissimilarVector,
+    const tempRoot = yield* fs.makeTempDirectoryScoped({
+      prefix: "agentic-memory-sustained-lifecycle-",
     });
+    const vaultPath = path.join(tempRoot, "vault");
+
+    const init = yield* runCli(["init", vaultPath, "--yes", "--json"]).pipe(
+      Effect.flatMap((result) => requireCommandSuccess("init", result)),
+    );
+    yield* Effect.forEach(
+      Array.from({ length: 32 }, (_, index) => index + 1),
+      (index) =>
+        fs
+          .writeFileString(
+            path.join(vaultPath, "notes", `lifecycle-proof-${index}.md`),
+            noteContent(index),
+          )
+          .pipe(operation(`Failed to write sustained lifecycle note ${index}`)),
+    );
+
+    const index = yield* runCli(["index", "--vault", vaultPath, "--json"]).pipe(
+      Effect.flatMap((result) => requireCommandSuccess("index", result)),
+    );
+    const indexResult = yield* decodeIndexResult(index.stdout.trim()).pipe(
+      operation("Index command output was invalid"),
+    );
+    yield* requireProbe(
+      indexResult.status === "indexed",
+      `Unexpected index status: ${indexResult.status}`,
+    );
+    yield* requireProbe(
+      indexResult.files.new >= 30,
+      `Index processed only ${indexResult.files.new} new managed documents`,
+    );
+    yield* requireProbe(
+      indexResult.chunks.embedded >= 32,
+      `Index generated only ${indexResult.chunks.embedded} embedding inputs`,
+    );
+    const indexRuntime = yield* validateLifecycle("index", index.stderr);
+
+    const status = yield* runCli(["status", "--vault", vaultPath, "--json"]).pipe(
+      Effect.flatMap((result) => requireCommandSuccess("status", result)),
+    );
+    const statusResult = yield* decodeVaultStatus(status.stdout.trim()).pipe(
+      operation("Status command output was invalid"),
+    );
+    yield* requireProbe(
+      statusResult.readiness.index.status === "current" && statusResult.readiness.recallReady,
+      `Post-index readiness was ${statusResult.readiness.index.status}/${statusResult.readiness.recallReady}`,
+    );
+    const lockPath = path.join(vaultPath, ".agentic-memory", "index.lock");
+    yield* requireProbe(
+      !(yield* fs.exists(lockPath)),
+      `Index lock remained after success: ${lockPath}`,
+    );
+
+    const databasePath = path.join(vaultPath, ".agentic-memory", "index", "recall.db");
+    const stored = yield* inspectStoredVectors(databasePath);
+    yield* requireProbe(
+      stored.documentCount >= 30 && stored.chunkCount >= 32,
+      `Stored proof was too small: ${stored.documentCount} documents and ${stored.chunkCount} chunks`,
+    );
+
+    const recall = yield* runCli([
+      "recall",
+      "How does the sustained lifecycle probe embed durable notes?",
+      "--vault",
+      vaultPath,
+      "--json",
+    ]).pipe(Effect.flatMap((result) => requireCommandSuccess("recall", result)));
+    const recallResult = yield* decodeRecallSuccessJson(recall.stdout.trim()).pipe(
+      operation("Recall command output was invalid"),
+    );
+    yield* requireProbe(
+      recallResult.status === "answered" && recallResult.answer.length > 0,
+      `Recall returned ${recallResult.status} without an answer`,
+    );
+    const recallRuntime = yield* validateLifecycle("recall", recall.stderr);
+    yield* requireProbe(
+      !(yield* fs.exists(lockPath)),
+      `Index lock appeared after Recall: ${lockPath}`,
+    );
+
+    const bunVersion = process.versions.bun ?? "unreported";
+    yield* requireProbe(bunVersion !== "unreported", "Bun version was unavailable");
     const peakRssMiB = process.resourceUsage().maxRSS / (1024 * 1024);
 
     yield* Console.log(
       [
-        "Semantic stack probe: PASS",
-        "runtime=node-llama-cpp@3.19.1",
-        "client=@libsql/client@0.17.4",
-        "native=libsql@0.5.29",
+        "Semantic stack sustained lifecycle probe: PASS",
+        `bun=${bunVersion}`,
+        "nodeLlamaCpp=3.19.1",
+        `llamaCpp=${indexRuntime}`,
+        `os=${process.platform} ${release()}`,
+        `architecture=${process.arch}`,
+        "GGML_METAL_NO_RESIDENCY=unset",
+        `modelId=${EMBEDDING_MODEL_ID}`,
         `modelUri=${EMBEDDING_MODEL_URI}`,
-        `artifactPath=${model.artifactPath}`,
-        `sha256=${model.sha256}`,
-        `dimensions=${model.dimensions}`,
-        `modelLoadMs=${model.modelLoadMs.toFixed(1)}`,
-        `semanticVectorsMs=${model.embeddingMs.toFixed(1)}`,
-        `peakRssMiB=${peakRssMiB.toFixed(1)}`,
-        `topK=${vectors.topK}`,
-        `semanticTopK=${vectors.semanticTopK}`,
-        `clientClosed=${vectors.clientClosed}`,
-        `databaseRemoved=${vectors.databaseRemoved}`,
+        `modelSha256=${EMBEDDING_MODEL_SHA256}`,
+        `dimensions=${EMBEDDING_MODEL_DIMENSIONS}`,
+        `managedDocuments=${stored.documentCount}`,
+        `embeddingInputs=${indexResult.chunks.embedded}`,
+        `validatedStoredVectors=${stored.validatedVectorCount}`,
+        `indexStatus=${statusResult.readiness.index.status}`,
+        `recallReady=${statusResult.readiness.recallReady}`,
+        "indexLockPresent=false",
+        `indexLifecycle=${expectedLifecycle.join("->")}`,
+        `recallRuntime=${recallRuntime}`,
+        `initExitCode=${init.exitCode}`,
+        `indexExitCode=${index.exitCode}`,
+        `statusExitCode=${status.exitCode}`,
+        `recallExitCode=${recall.exitCode}`,
+        `initMs=${init.durationMs.toFixed(1)}`,
+        `indexMs=${index.durationMs.toFixed(1)}`,
+        `statusMs=${status.durationMs.toFixed(1)}`,
+        `recallMs=${recall.durationMs.toFixed(1)}`,
+        `probePeakRssMiB=${peakRssMiB.toFixed(1)}`,
+        "--- init stdout ---",
+        init.stdout.trim(),
+        "--- init stderr ---",
+        init.stderr.trim(),
+        "--- index stdout ---",
+        index.stdout.trim(),
+        "--- index stderr ---",
+        index.stderr.trim(),
+        "--- status stdout ---",
+        status.stdout.trim(),
+        "--- status stderr ---",
+        status.stderr.trim(),
+        "--- recall stdout ---",
+        recall.stdout.trim(),
+        "--- recall stderr ---",
+        recall.stderr.trim(),
       ].join("\n"),
     );
   }),
