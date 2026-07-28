@@ -1,18 +1,21 @@
 import * as BunServices from "@effect/platform-bun/BunServices";
 import { assert, describe, it } from "@effect/vitest";
 import { bundledVaultTemplatePath } from "@urban/agentic-memory-vault-template/VaultTemplatePackage";
-import { Effect, FileSystem, Layer, ManagedRuntime, Path } from "effect";
+import { Deferred, Effect, Fiber, FileSystem, Layer, ManagedRuntime, Path } from "effect";
 import { recall } from "../src/recall/Recall.ts";
 import {
   EMBEDDING_MODEL_DIMENSIONS,
   EMBEDDING_MODEL_ID,
   EmbeddingModel,
+  EmbeddingRuntimeError,
   makeEmbeddingModel,
 } from "../src/semantic/EmbeddingModel.ts";
 import { synchronizeSemanticIndex } from "../src/semantic/SemanticIndex.ts";
 
 interface EmbeddingControl {
   inputs: Array<string>;
+  beforeEmbeddingResult?: Effect.Effect<void>;
+  rejectEmbeddings?: boolean;
 }
 
 const vector = (first: number, second: number, third: number): ReadonlyArray<number> =>
@@ -35,11 +38,18 @@ const makeControlledEmbeddingLayer = (control: EmbeddingControl): Layer.Layer<Em
     makeEmbeddingModel({
       inspect: Effect.succeed({ status: "available", id: EMBEDDING_MODEL_ID }),
       install: Effect.succeed({ status: "already_available", id: EMBEDDING_MODEL_ID }),
-      embed: (inputs) =>
-        Effect.sync(() => {
-          control.inputs.push(...inputs);
-          return inputs.map(embeddingFor);
-        }),
+      embed: (inputs) => {
+        const result =
+          control.rejectEmbeddings === true
+            ? Effect.fail(
+                new EmbeddingRuntimeError({ message: "Rejected query embedding for test" }),
+              )
+            : Effect.succeed(inputs.map(embeddingFor));
+        return Effect.sync(() => control.inputs.push(...inputs)).pipe(
+          Effect.andThen(control.beforeEmbeddingResult ?? Effect.void),
+          Effect.andThen(result),
+        );
+      },
     }),
   );
 
@@ -101,6 +111,96 @@ describe("semantic recall", () => {
       ),
     );
   });
+
+  it.effect("keeps query embedding failures distinct from semantic search failures", () => {
+    const control: EmbeddingControl = { inputs: [] };
+    return withRecallRuntime(
+      control,
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const vaultPath = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-semantic-recall-query-failure-",
+          });
+          yield* initializeMinimalVault(vaultPath);
+          yield* fs.writeFileString(
+            path.join(vaultPath, "notes", "answer.md"),
+            "# Answer\n\nThe indexed answer remains searchable.\n",
+          );
+          yield* synchronizeSemanticIndex(vaultPath);
+          control.inputs = [];
+          control.rejectEmbeddings = true;
+
+          const question = "What is the indexed answer?";
+          const result = yield* recall({ vaultPath, question, includeSources: false }).pipe(
+            Effect.result,
+          );
+
+          assert.strictEqual(result._tag, "Failure");
+          if (result._tag === "Failure") {
+            assert.strictEqual(result.failure.reason, "QueryEmbeddingFailed");
+            assert.strictEqual(result.failure.message, "Failed to embed the recall question");
+          }
+          assert.deepStrictEqual(control.inputs, [
+            "task: search result | query: What is the indexed answer?",
+          ]);
+        }),
+      ),
+    );
+  });
+
+  it.effect("reports a search failure after readiness and query embedding succeed", () =>
+    Effect.gen(function* () {
+      const queryEmbeddingStarted = yield* Deferred.make<void>();
+      const continueQueryEmbedding = yield* Deferred.make<void>();
+      const control: EmbeddingControl = { inputs: [] };
+      return yield* withRecallRuntime(
+        control,
+        Effect.scoped(
+          Effect.gen(function* () {
+            const fs = yield* FileSystem.FileSystem;
+            const path = yield* Path.Path;
+            const vaultPath = yield* fs.makeTempDirectoryScoped({
+              prefix: "agentic-memory-semantic-recall-search-failure-",
+            });
+            yield* initializeMinimalVault(vaultPath);
+            yield* fs.writeFileString(
+              path.join(vaultPath, "notes", "answer.md"),
+              "# Answer\n\nThe indexed answer remains searchable.\n",
+            );
+            yield* synchronizeSemanticIndex(vaultPath);
+            control.inputs = [];
+            control.beforeEmbeddingResult = Deferred.succeed(queryEmbeddingStarted, undefined).pipe(
+              Effect.andThen(Deferred.await(continueQueryEmbedding)),
+            );
+
+            const question = "What is the indexed answer?";
+            const recallFiber = yield* recall({
+              vaultPath,
+              question,
+              includeSources: false,
+            }).pipe(Effect.result, Effect.forkChild({ startImmediately: true }));
+            yield* Deferred.await(queryEmbeddingStarted);
+            yield* fs.remove(path.join(vaultPath, ".agentic-memory", "index"), {
+              recursive: true,
+            });
+            yield* Deferred.succeed(continueQueryEmbedding, undefined);
+            const result = yield* Fiber.join(recallFiber);
+
+            assert.strictEqual(result._tag, "Failure");
+            if (result._tag === "Failure") {
+              assert.strictEqual(result.failure.reason, "SemanticSearchFailed");
+              assert.strictEqual(result.failure.message, "Failed to search Agentic Memory");
+            }
+            assert.deepStrictEqual(control.inputs, [
+              "task: search result | query: What is the indexed answer?",
+            ]);
+          }),
+        ),
+      );
+    }),
+  );
 
   it.effect("excludes sources before selecting the top ten eligible chunks", () => {
     const control: EmbeddingControl = { inputs: [] };

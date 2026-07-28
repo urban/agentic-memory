@@ -7,6 +7,7 @@ import {
   EMBEDDING_MODEL_DIMENSIONS,
   EMBEDDING_MODEL_ID,
   EmbeddingModel,
+  MAX_EMBEDDING_BATCH_SIZE,
 } from "./EmbeddingModel.ts";
 import {
   chunkManagedMemoryDocument,
@@ -571,9 +572,13 @@ const embedDocument = Effect.fnUntraced(function* (
   const chunks = chunkManagedMemoryDocument(parsed);
   const model = yield* EmbeddingModel;
   const batches: Array<ReadonlyArray<ReadonlyArray<number>>> = [];
-  for (let offset = 0; offset < chunks.length; offset += 64) {
+  for (let offset = 0; offset < chunks.length; offset += MAX_EMBEDDING_BATCH_SIZE) {
     const vectors = yield* model
-      .embed(chunks.slice(offset, offset + 64).map(({ embeddingInput }) => embeddingInput))
+      .embed(
+        chunks
+          .slice(offset, offset + MAX_EMBEDDING_BATCH_SIZE)
+          .map(({ embeddingInput }) => embeddingInput),
+      )
       .pipe(
         Effect.mapError(
           (cause) =>
