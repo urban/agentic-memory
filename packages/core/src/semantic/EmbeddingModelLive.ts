@@ -1,6 +1,19 @@
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
-import { Config, Console, Effect, FileSystem, Layer, Option, Path, Stream } from "effect";
+import {
+  Config,
+  Console,
+  Effect,
+  Exit,
+  FileSystem,
+  Layer,
+  Option,
+  Path,
+  Ref,
+  Scope,
+  Semaphore,
+  Stream,
+} from "effect";
 import { getLlama, resolveModelFile } from "node-llama-cpp";
 import {
   EMBEDDING_MODEL_DIMENSIONS,
@@ -55,6 +68,31 @@ export interface EmbeddingModelLiveOptions {
   readonly artifactSha256?: string;
 }
 
+type SessionAcquisitionError =
+  | InvalidEmbeddingArtifactError
+  | EmbeddingModelDownloadError
+  | EmbeddingModelMissingError
+  | EmbeddingRuntimeError;
+
+type SessionFailureCause = import("effect").Cause.Cause<SessionAcquisitionError>;
+type SessionScope = import("effect").Scope.Closeable;
+
+interface EmbeddingSession {
+  readonly context: EmbeddingRuntimeContext;
+  readonly scope: SessionScope;
+}
+
+type SessionState =
+  | { readonly _tag: "Dormant" }
+  | { readonly _tag: "Acquiring"; readonly scope: SessionScope }
+  | { readonly _tag: "Ready"; readonly session: EmbeddingSession }
+  | {
+      readonly _tag: "Closed";
+      readonly reason:
+        | { readonly _tag: "AcquisitionFailed"; readonly cause: SessionFailureCause }
+        | { readonly _tag: "LayerFinalized" };
+    };
+
 const resolveCacheDirectory = Effect.fnUntraced(function* (homeDirectory: string) {
   const path = yield* Path.Path;
   const configured = yield* Config.string("XDG_CACHE_HOME").pipe(
@@ -73,7 +111,7 @@ const modelOperation = <A>(message: string, operation: () => Promise<A>) =>
   Effect.tryPromise({
     try: operation,
     catch: (cause) => new EmbeddingRuntimeError({ message, cause }),
-  });
+  }).pipe(Effect.uninterruptible);
 
 const nativeModelFileResolver: EmbeddingModelLiveOptions["resolveModelFile"] = (uri, options) =>
   Effect.callback<string, EmbeddingModelDownloadError>((resume, signal) => {
@@ -242,10 +280,7 @@ const make = (options: Required<EmbeddingModelLiveOptions>) =>
       );
     });
 
-    const embed = Effect.fnUntraced(function* (texts: ReadonlyArray<string>) {
-      if (texts.length === 0) {
-        return [];
-      }
+    const acquireSession = Effect.fnUntraced(function* (scope: SessionScope) {
       const inspection = yield* inspect();
       if (inspection.status === "missing") {
         return yield* new EmbeddingModelMissingError({
@@ -253,35 +288,115 @@ const make = (options: Required<EmbeddingModelLiveOptions>) =>
         });
       }
 
-      return yield* Effect.scoped(
-        Effect.gen(function* () {
-          const llama = yield* Effect.acquireRelease(
-            modelOperation("Failed to initialize the embedding runtime", options.initializeRuntime),
-            (resource) => Effect.promise(() => resource.dispose()),
-          );
-          const model = yield* Effect.acquireRelease(
-            modelOperation("Failed to load the embedding model", () =>
-              llama.loadModel({ modelPath: artifactPath }),
-            ),
-            (resource) => Effect.promise(() => resource.dispose()),
-          );
-          if (model.embeddingVectorSize !== EMBEDDING_MODEL_DIMENSIONS) {
+      const llama = yield* Effect.acquireRelease(
+        modelOperation("Failed to initialize the embedding runtime", options.initializeRuntime),
+        (resource) => Effect.promise(() => resource.dispose()),
+      ).pipe(Scope.provide(scope));
+      const model = yield* Effect.acquireRelease(
+        modelOperation("Failed to load the embedding model", () =>
+          llama.loadModel({ modelPath: artifactPath }),
+        ),
+        (resource) => Effect.promise(() => resource.dispose()),
+      ).pipe(Scope.provide(scope));
+      if (model.embeddingVectorSize !== EMBEDDING_MODEL_DIMENSIONS) {
+        return yield* new EmbeddingRuntimeError({
+          message: `Embedding model dimension ${model.embeddingVectorSize} does not match ${EMBEDDING_MODEL_DIMENSIONS}`,
+        });
+      }
+      const context = yield* Effect.acquireRelease(
+        modelOperation("Failed to create the embedding context", () =>
+          model.createEmbeddingContext({ contextSize: 2048 }),
+        ),
+        (resource) => Effect.promise(() => resource.dispose()),
+      ).pipe(Scope.provide(scope));
+      return { context, scope };
+    });
+
+    const sessionState = yield* Ref.make<SessionState>({ _tag: "Dormant" });
+    const sessionPermit = yield* Semaphore.make(1);
+
+    const getSession = Effect.uninterruptibleMask((restore) =>
+      Effect.gen(function* () {
+        const state = yield* Ref.get(sessionState);
+        switch (state._tag) {
+          case "Ready":
+            return state.session;
+          case "Closed":
+            return state.reason._tag === "AcquisitionFailed"
+              ? yield* Effect.failCause(state.reason.cause)
+              : yield* new EmbeddingRuntimeError({
+                  message: "Embedding session is closed",
+                });
+          case "Acquiring":
             return yield* new EmbeddingRuntimeError({
-              message: `Embedding model dimension ${model.embeddingVectorSize} does not match ${EMBEDDING_MODEL_DIMENSIONS}`,
+              message: "Embedding session acquisition is already in progress",
             });
+          case "Dormant": {
+            const scope = yield* Scope.make("sequential");
+            yield* Ref.set(sessionState, { _tag: "Acquiring", scope });
+            const acquisition = yield* restore(acquireSession(scope)).pipe(Effect.exit);
+            if (Exit.isSuccess(acquisition)) {
+              yield* Ref.set(sessionState, { _tag: "Ready", session: acquisition.value });
+              return acquisition.value;
+            }
+            yield* Scope.close(scope, acquisition);
+            yield* Ref.set(sessionState, {
+              _tag: "Closed",
+              reason: { _tag: "AcquisitionFailed", cause: acquisition.cause },
+            });
+            return yield* Effect.failCause(acquisition.cause);
           }
-          const context = yield* Effect.acquireRelease(
-            modelOperation("Failed to create the embedding context", () =>
-              model.createEmbeddingContext({ contextSize: 2048 }),
-            ),
-            (resource) => Effect.promise(() => resource.dispose()),
-          );
-          const embeddings = yield* Effect.forEach(texts, (text) =>
-            modelOperation("Failed to generate an embedding", () => context.getEmbeddingFor(text)),
-          );
-          return embeddings.map((embedding) => embedding.vector);
+        }
+      }),
+    );
+
+    yield* Effect.addFinalizer((exit) =>
+      sessionPermit.withPermit(
+        Effect.gen(function* () {
+          const state = yield* Ref.get(sessionState);
+          switch (state._tag) {
+            case "Dormant":
+              yield* Ref.set(sessionState, {
+                _tag: "Closed",
+                reason: { _tag: "LayerFinalized" },
+              });
+              return;
+            case "Acquiring":
+              yield* Scope.close(state.scope, exit);
+              yield* Ref.set(sessionState, {
+                _tag: "Closed",
+                reason: { _tag: "LayerFinalized" },
+              });
+              return;
+            case "Ready":
+              yield* Scope.close(state.session.scope, exit);
+              yield* Ref.set(sessionState, {
+                _tag: "Closed",
+                reason: { _tag: "LayerFinalized" },
+              });
+              return;
+            case "Closed":
+              return;
+          }
         }),
+      ),
+    );
+
+    const embed = Effect.fnUntraced(function* (texts: ReadonlyArray<string>) {
+      if (texts.length === 0) {
+        return [];
+      }
+      const embeddings = yield* Effect.forEach(texts, (text) =>
+        sessionPermit.withPermit(
+          Effect.gen(function* () {
+            const session = yield* getSession;
+            return yield* modelOperation("Failed to generate an embedding", () =>
+              session.context.getEmbeddingFor(text),
+            );
+          }),
+        ),
       );
+      return embeddings.map((embedding) => embedding.vector);
     });
 
     return makeEmbeddingModel({ inspect: inspect(), install: install(), embed });
