@@ -125,6 +125,25 @@ const provideLiveModel = <A, E, R>(
   );
 };
 
+const provideLiveModelWithFileSystem = <A, E, R>(
+  effect: Effect.Effect<A, E, R | EmbeddingModel | Path.Path>,
+  options: EmbeddingModelLiveOptions,
+  env: Readonly<Record<string, string>>,
+  fileSystem: FileSystemService,
+) => {
+  const runtime = ManagedRuntime.make(
+    makeEmbeddingModelLive(options).pipe(
+      Layer.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env }))),
+      Layer.provide(Layer.succeed(FileSystem.FileSystem, fileSystem)),
+      Layer.provideMerge(BunServices.layer),
+    ),
+  );
+  return runtime.contextEffect.pipe(
+    Effect.flatMap((context) => Effect.provideContext(effect, context)),
+    Effect.ensuring(runtime.disposeEffect),
+  );
+};
+
 describe("embedding model provisioning", () => {
   it.effect("rejects empty text through the fake and shared adapter boundary", () => {
     const adapterBoundaryModel = makeEmbeddingModel({
@@ -511,6 +530,117 @@ describe("embedding model provisioning", () => {
 
           assert.deepEqual(acquired, []);
           assert.deepEqual(disposed, []);
+        }),
+      ),
+    ),
+  );
+
+  it.effect("reuses validation when acquiring a session for an unchanged artifact", () =>
+    withBunServices(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const cacheRoot = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-live-validation-reuse-",
+          });
+          const artifactPath = canonicalArtifact(path, cacheRoot);
+          yield* fs.makeDirectory(modelDirectory(path, cacheRoot), { recursive: true });
+          yield* fs.writeFile(artifactPath, validArtifact);
+          let artifactStreamCount = 0;
+          const countingFileSystem: FileSystemService = {
+            ...fs,
+            stream: (candidatePath, streamOptions) => {
+              if (candidatePath === artifactPath) {
+                artifactStreamCount += 1;
+              }
+              return streamOptions === undefined
+                ? fs.stream(candidatePath)
+                : fs.stream(candidatePath, streamOptions);
+            },
+          };
+          const initializeRuntime = (): Promise<EmbeddingRuntime> =>
+            Promise.resolve({
+              loadModel: () =>
+                Promise.resolve({
+                  embeddingVectorSize: EMBEDDING_MODEL_DIMENSIONS,
+                  createEmbeddingContext: () =>
+                    Promise.resolve({
+                      getEmbeddingFor: () =>
+                        Promise.resolve({
+                          vector: Array.from({ length: EMBEDDING_MODEL_DIMENSIONS }, () => 1),
+                        }),
+                      dispose: () => Promise.resolve(),
+                    }),
+                  dispose: () => Promise.resolve(),
+                }),
+              dispose: () => Promise.resolve(),
+            });
+
+          yield* provideLiveModelWithFileSystem(
+            Effect.gen(function* () {
+              const model = yield* EmbeddingModel;
+              assert.strictEqual((yield* model.inspect).status, "available");
+              yield* model.embed(["question"]);
+            }),
+            {
+              resolveModelFile: makeArtifactResolver(fs, path, validArtifact),
+              initializeRuntime,
+              artifactSha256: validArtifactSha256,
+            },
+            { XDG_CACHE_HOME: cacheRoot },
+            countingFileSystem,
+          );
+
+          assert.strictEqual(artifactStreamCount, 1);
+        }),
+      ),
+    ),
+  );
+
+  it.effect("revalidates an artifact changed before session acquisition", () =>
+    withBunServices(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const cacheRoot = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-live-validation-change-",
+          });
+          const artifactPath = canonicalArtifact(path, cacheRoot);
+          yield* fs.makeDirectory(modelDirectory(path, cacheRoot), { recursive: true });
+          yield* fs.writeFile(artifactPath, validArtifact);
+          let artifactStreamCount = 0;
+          const countingFileSystem: FileSystemService = {
+            ...fs,
+            stream: (candidatePath, streamOptions) => {
+              if (candidatePath === artifactPath) {
+                artifactStreamCount += 1;
+              }
+              return streamOptions === undefined
+                ? fs.stream(candidatePath)
+                : fs.stream(candidatePath, streamOptions);
+            },
+          };
+
+          const failure = yield* provideLiveModelWithFileSystem(
+            Effect.gen(function* () {
+              const model = yield* EmbeddingModel;
+              assert.strictEqual((yield* model.inspect).status, "available");
+              yield* fs.writeFileString(artifactPath, "GGUF changed after validation");
+              return yield* model.embed(["question"]);
+            }),
+            {
+              resolveModelFile: makeArtifactResolver(fs, path, validArtifact),
+              initializeRuntime: () => Promise.reject("runtime must not be acquired"),
+              artifactSha256: validArtifactSha256,
+            },
+            { XDG_CACHE_HOME: cacheRoot },
+            countingFileSystem,
+          ).pipe(Effect.flip);
+
+          assert.instanceOf(failure, InvalidEmbeddingArtifactError);
+          assert.strictEqual(artifactStreamCount, 2);
         }),
       ),
     ),

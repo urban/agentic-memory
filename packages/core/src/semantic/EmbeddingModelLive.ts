@@ -82,10 +82,18 @@ type SessionAcquisitionError =
 
 type SessionFailureCause = import("effect").Cause.Cause<SessionAcquisitionError>;
 type SessionScope = import("effect").Scope.Closeable;
+type FileSize = import("effect").FileSystem.Size;
 
 interface EmbeddingSession {
   readonly context: EmbeddingRuntimeContext;
   readonly scope: SessionScope;
+}
+
+interface ValidatedArtifactIdentity {
+  readonly device: number;
+  readonly inode: number | undefined;
+  readonly modifiedAt: number | undefined;
+  readonly size: FileSize;
 }
 
 type SessionState =
@@ -163,6 +171,34 @@ const make = (options: Required<EmbeddingModelLiveOptions>) =>
         : Effect.void;
     const modelDirectory = yield* resolveCacheDirectory(options.homeDirectory);
     const artifactPath = path.join(modelDirectory, EMBEDDING_MODEL_FILE_NAME);
+    const validatedArtifact = yield* Ref.make<ValidatedArtifactIdentity | undefined>(undefined);
+
+    const artifactIdentity = Effect.fnUntraced(function* () {
+      const info = yield* fs.stat(artifactPath).pipe(
+        Effect.mapError(
+          (cause) =>
+            new InvalidEmbeddingArtifactError({
+              message: "Failed to inspect the embedding model artifact",
+              cause,
+            }),
+        ),
+      );
+      return {
+        device: info.dev,
+        inode: Option.getOrUndefined(info.ino),
+        modifiedAt: Option.getOrUndefined(info.mtime)?.getTime(),
+        size: info.size,
+      } satisfies ValidatedArtifactIdentity;
+    });
+
+    const artifactIdentityMatches = (
+      left: ValidatedArtifactIdentity,
+      right: ValidatedArtifactIdentity,
+    ): boolean =>
+      left.device === right.device &&
+      left.inode === right.inode &&
+      left.modifiedAt === right.modifiedAt &&
+      left.size === right.size;
 
     const validateArtifact = Effect.fnUntraced(function* (candidatePath: string) {
       const digest = createHash("sha256");
@@ -201,7 +237,20 @@ const make = (options: Required<EmbeddingModelLiveOptions>) =>
       }
     });
 
+    const validateCanonicalArtifact = Effect.fnUntraced(function* () {
+      const identityBeforeValidation = yield* artifactIdentity();
+      yield* validateArtifact(artifactPath);
+      const identityAfterValidation = yield* artifactIdentity();
+      if (!artifactIdentityMatches(identityBeforeValidation, identityAfterValidation)) {
+        return yield* new InvalidEmbeddingArtifactError({
+          message: "Embedding model artifact changed during validation",
+        });
+      }
+      yield* Ref.set(validatedArtifact, identityAfterValidation);
+    });
+
     const inspect = Effect.fnUntraced(function* () {
+      yield* Ref.set(validatedArtifact, undefined);
       const exists = yield* fs.exists(artifactPath).pipe(
         Effect.mapError(
           (cause) =>
@@ -218,7 +267,7 @@ const make = (options: Required<EmbeddingModelLiveOptions>) =>
         };
         return missing;
       }
-      yield* validateArtifact(artifactPath);
+      yield* validateCanonicalArtifact();
       const available: import("./EmbeddingModel.ts").EmbeddingModelInspection = {
         status: "available",
         id: EMBEDDING_MODEL_ID,
@@ -286,6 +335,7 @@ const make = (options: Required<EmbeddingModelLiveOptions>) =>
                 }),
             ),
           );
+          yield* Ref.set(validatedArtifact, yield* artifactIdentity());
           const downloaded: import("./EmbeddingModel.ts").EmbeddingModelInstallResult = {
             status: "downloaded",
             id: EMBEDDING_MODEL_ID,
@@ -296,11 +346,23 @@ const make = (options: Required<EmbeddingModelLiveOptions>) =>
     });
 
     const acquireSession = Effect.fnUntraced(function* (scope: SessionScope) {
-      const inspection = yield* inspect();
-      if (inspection.status === "missing") {
-        return yield* new EmbeddingModelMissingError({
-          message: `Embedding model ${EMBEDDING_MODEL_ID} is not installed`,
-        });
+      const cachedIdentity = yield* Ref.get(validatedArtifact);
+      const currentIdentity =
+        cachedIdentity === undefined
+          ? Option.none<ValidatedArtifactIdentity>()
+          : yield* artifactIdentity().pipe(Effect.option);
+      if (
+        cachedIdentity === undefined ||
+        !Option.exists(currentIdentity, (identity) =>
+          artifactIdentityMatches(cachedIdentity, identity),
+        )
+      ) {
+        const inspection = yield* inspect();
+        if (inspection.status === "missing") {
+          return yield* new EmbeddingModelMissingError({
+            message: `Embedding model ${EMBEDDING_MODEL_ID} is not installed`,
+          });
+        }
       }
 
       const llama = yield* Effect.acquireRelease(
