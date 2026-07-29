@@ -17,6 +17,10 @@ bun --filter='./packages/agentic-memory-retrieval-bench' run bench
 bun --filter='./packages/agentic-memory-retrieval-bench' run bench -- --json
 ```
 
+Without `--vault`, the command initializes a disposable vault, overlays the synthetic fixture,
+builds its semantic index, and removes the generated vault after the run. Pass `--vault <path>`
+to benchmark an already initialized and indexed vault instead.
+
 Run all package checks:
 
 ```sh

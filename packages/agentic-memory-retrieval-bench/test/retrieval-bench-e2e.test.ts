@@ -15,6 +15,7 @@ import { evaluateHardGates } from "../src/HardGates.ts";
 const BenchRuntime = ManagedRuntime.make(BunServices.layer);
 
 type RecallResponse = import("@urban/agentic-memory-core/recall/Recall").RecallResponse;
+const fakeSpawnedCommands: Array<ReadonlyArray<string>> = [];
 
 const fakeRecallResponse = (question: string): RecallResponse => {
   const normalized = question.toLocaleLowerCase();
@@ -51,11 +52,17 @@ const fakeRecallSpawner = ChildProcessSpawner.make((command) => {
   if (!ChildProcess.isStandardCommand(command)) {
     return Effect.die("The benchmark fake accepts only standard commands");
   }
+  fakeSpawnedCommands.push(command.args);
+  const isPreparationCommand = command.args[0] === "init" || command.args[0] === "index";
   const vaultFlagIndex = command.args.indexOf("--vault");
   const vaultPath = vaultFlagIndex < 0 ? undefined : command.args[vaultFlagIndex + 1];
   const missingVault = vaultPath === "/definitely-missing-agentic-memory-vault";
   const question = command.args[1] ?? "";
-  const stdout = missingVault ? "" : `${JSON.stringify(fakeRecallResponse(question))}\n`;
+  const stdout = isPreparationCommand
+    ? "{}\n"
+    : missingVault
+      ? ""
+      : `${JSON.stringify(fakeRecallResponse(question))}\n`;
   const stderr = missingVault ? "SemanticIndexNotReady: Semantic index is missing\n" : "";
   const exitCode = ChildProcessSpawner.ExitCode(missingVault ? 1 : 0);
   const encode = (text: string) => new TextEncoder().encode(text);
@@ -86,6 +93,11 @@ const withBenchRuntime = <A, E, R>(effect: Effect.Effect<A, E, R | BunServices.B
         context,
       ),
     ),
+  );
+
+const withRealBenchRuntime = <A, E, R>(effect: Effect.Effect<A, E, R | BunServices.BunServices>) =>
+  BenchRuntime.contextEffect.pipe(
+    Effect.flatMap((context) => Effect.provideContext(effect, context)),
   );
 
 const fixturePaths = Effect.gen(function* () {
@@ -239,6 +251,35 @@ describe("public recall benchmark", () => {
     ),
   );
 
+  it.effect("invokes the real recall process at the benchmark boundary", () =>
+    withRealBenchRuntime(
+      Effect.gen(function* () {
+        const { casesPath } = yield* fixturePaths;
+        const benchmarkCases = yield* loadBenchmarkCases(casesPath);
+        const benchmarkCase = benchmarkCases[0];
+        if (benchmarkCase === undefined) {
+          assert.fail("Expected one recall benchmark case");
+        }
+
+        const report = yield* runBenchmarkCase({
+          vaultPath: "/definitely-missing-agentic-memory-vault",
+          benchmarkCase,
+        });
+
+        assert.notStrictEqual(report.exitCode, ChildProcessSpawner.ExitCode(0));
+        assert.include(report.stderr, "ReadVaultFailed");
+        assert.deepEqual(report.command, [
+          "agentic-memory",
+          "recall",
+          benchmarkCase.question,
+          "--vault",
+          "/definitely-missing-agentic-memory-vault",
+          "--json",
+        ]);
+      }),
+    ),
+  );
+
   it.effect("aggregates suite counts, latency, and schema-backed JSON", () =>
     withBenchRuntime(
       Effect.gen(function* () {
@@ -279,12 +320,19 @@ describe("public recall benchmark", () => {
   it.effect("emits valid JSON from the benchmark CLI", () =>
     withBenchRuntime(
       Effect.gen(function* () {
+        fakeSpawnedCommands.length = 0;
         const output = yield* runCapturedBenchmarkCli(["--json"]);
         const report = yield* decodeBenchmarkSuiteResultJson(output.stdout.trim());
 
         assert.strictEqual(output.stderr, "");
         assert.strictEqual(report.status, "pass");
         assert.strictEqual(report.failCount, 0);
+        assert.strictEqual(fakeSpawnedCommands[0]?.[0], "init");
+        assert.strictEqual(fakeSpawnedCommands[1]?.[0], "index");
+        assert.strictEqual(
+          fakeSpawnedCommands.filter(([subcommand]) => subcommand === "recall").length,
+          report.caseCount,
+        );
       }),
     ),
   );
