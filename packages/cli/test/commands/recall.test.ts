@@ -116,6 +116,36 @@ describe("agentic-memory recall command", () => {
     ),
   );
 
+  it.effect("reports a missing vault as a vault read failure", () =>
+    withCliRuntime(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const root = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-cli-recall-missing-vault-",
+          });
+          const vaultPath = path.join(root, "missing-vault");
+
+          const output = yield* runCapturedEffect([
+            "recall",
+            recallQuestion,
+            "--vault",
+            vaultPath,
+            "--json",
+          ]);
+          const failure = yield* decodeCliFailureResultJson(output.stdout);
+
+          assert.strictEqual(output.exitCode, 1);
+          assert.strictEqual(failure.error.code, "ReadVaultFailed");
+          assert.include(failure.error.message, `agentic-memory status --vault ${vaultPath}`);
+          assert.notInclude(failure.error.message, "index --vault");
+          assert.notInclude(failure.error.message, "--delete");
+        }),
+      ),
+    ),
+  );
+
   it.effect("maps a stale semantic index to indexing guidance", () =>
     withCliRuntime(
       withIndexedRecallFixture((vaultPath) =>

@@ -34,17 +34,21 @@ const notFoundAnswer = "I don't know based on the available Agentic Memory.";
 
 const toRecallReadinessError = (cause: SemanticIndexError): RecallError => {
   const reason =
-    cause.reason === "IndexMissing"
-      ? "SemanticIndexMissing"
-      : cause.reason === "IndexStale"
-        ? "SemanticIndexStale"
-        : cause.reason === "IndexIncomplete"
-          ? "SemanticIndexIncomplete"
-          : cause.reason === "InvalidIndex"
-            ? "SemanticIndexInvalid"
-            : cause.reason === "IncompatibleIndex"
-              ? "SemanticIndexIncompatible"
-              : "SemanticIndexNotReady";
+    cause.reason === "InvalidVaultPath" ||
+    cause.reason === "InvalidVaultStructure" ||
+    cause.reason === "IndexReadFailed"
+      ? "ReadVaultFailed"
+      : cause.reason === "IndexMissing"
+        ? "SemanticIndexMissing"
+        : cause.reason === "IndexStale"
+          ? "SemanticIndexStale"
+          : cause.reason === "IndexIncomplete"
+            ? "SemanticIndexIncomplete"
+            : cause.reason === "InvalidIndex"
+              ? "SemanticIndexInvalid"
+              : cause.reason === "IncompatibleIndex"
+                ? "SemanticIndexIncompatible"
+                : "SemanticIndexNotReady";
   return new RecallError({
     reason,
     message: cause.message,

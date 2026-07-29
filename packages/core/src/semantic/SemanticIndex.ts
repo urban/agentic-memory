@@ -535,17 +535,19 @@ export const requireCurrentSemanticIndex = Effect.fnUntraced(function* (
   const readiness = yield* inspectSemanticIndex(vaultPath);
   if (!readiness.recallReady) {
     const reason =
-      readiness.index.status === "missing"
-        ? "IndexMissing"
-        : readiness.index.status === "stale"
-          ? "IndexStale"
-          : readiness.index.status === "incomplete"
-            ? "IndexIncomplete"
-            : readiness.index.status === "invalid"
-              ? "InvalidIndex"
-              : readiness.index.status === "incompatible"
-                ? "IncompatibleIndex"
-                : "SemanticIndexNotReady";
+      readiness.vault.status === "invalid"
+        ? "InvalidVaultStructure"
+        : readiness.index.status === "missing"
+          ? "IndexMissing"
+          : readiness.index.status === "stale"
+            ? "IndexStale"
+            : readiness.index.status === "incomplete"
+              ? "IndexIncomplete"
+              : readiness.index.status === "invalid"
+                ? "InvalidIndex"
+                : readiness.index.status === "incompatible"
+                  ? "IncompatibleIndex"
+                  : "SemanticIndexNotReady";
     return yield* new SemanticIndexError({
       reason,
       message: readiness.warnings.join(" "),
