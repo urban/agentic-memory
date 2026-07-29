@@ -219,11 +219,8 @@ Promotion keeps project files concise and makes atomic notes the single source o
 - Preserve the distinction between content memory and LLM control-plane instructions.
 - Do not store facts in memory when they can be cheaply re-read from the current project files.
 
-## Future semantic recall handoff
+## Semantic recall
 
-Production recall still uses the existing deterministic retrieval path; semantic candidates are not yet wired into it. The follow-on implementation has two stable core seams:
+Production recall requires a current semantic index before query embedding or retrieval. It formats the question for EmbeddingGemma, embeds it through the shared local model service, and selects the nearest eligible chunk using libSQL exact-cosine ordering. Source chunks are excluded before the top-10 result budget.
 
-- `requireCurrentSemanticIndex(vaultPath)` is the single mandatory readiness operation. It must succeed before query embedding or semantic retrieval begins.
-- `searchSemanticIndexExact(...)` is the internal exact-cosine repository operation for retrieving ordered chunk identities.
-
-The recall workflow should compose those operations through the semantic-index module rather than learning embedding-model configuration, cache paths, database locations, vector encoding, or SQL schema details. Approximate indexing and public search commands remain deferred.
+The semantic-index module owns database paths, vector encoding, SQL schema, and exact-search details. Recall composes its public operations without learning those implementation details. During the progressive semantic cutover, the selected indexed chunk is the temporary public answer; current-Markdown hydration and grounded local synthesis are subsequent implementation stages. Approximate indexing and public search commands remain deferred.

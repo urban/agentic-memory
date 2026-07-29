@@ -1,8 +1,12 @@
-import { makeFakeEmbeddingModelLayer } from "@urban/agentic-memory-core/semantic/EmbeddingModel";
+import {
+  EmbeddingModel,
+  makeFakeEmbeddingModelLayer,
+} from "@urban/agentic-memory-core/semantic/EmbeddingModel";
 import { Cause, Console, Effect, Exit, FileSystem, ManagedRuntime, Option, Runtime } from "effect";
 import { makeAppLayer, runAgenticMemoryCommand } from "../src/cli.ts";
 
 type CliRequirements = import("../src/cli.ts").CliRequirements;
+type CliTestRequirements = CliRequirements | EmbeddingModel;
 
 const formatConsoleArgs = (args: ReadonlyArray<unknown>): string => args.map(String).join(" ");
 
@@ -79,13 +83,13 @@ const exitCodeFromExit = (exit: Exit.Exit<void, unknown>): number =>
 export const makeCliTestRuntime = () => {
   const runtime = ManagedRuntime.make(makeAppLayer(makeFakeEmbeddingModelLayer()));
 
-  const withCliRuntime = <A, E, R>(effect: Effect.Effect<A, E, R | CliRequirements>) =>
+  const withCliRuntime = <A, E, R>(effect: Effect.Effect<A, E, R | CliTestRequirements>) =>
     runtime.contextEffect.pipe(Effect.flatMap((context) => Effect.provideContext(effect, context)));
 
-  const runCapturedEffect = (args: ReadonlyArray<string>) =>
+  const captureCommand = <E, R>(command: Effect.Effect<void, E, R>) =>
     Effect.gen(function* () {
       const capture = { stdout: "", stderr: "" };
-      const exit = yield* runAgenticMemoryCommand(args).pipe(
+      const exit = yield* command.pipe(
         Effect.provideService(Console.Console, makeCaptureConsole(capture)),
         Effect.exit,
       );
@@ -96,9 +100,21 @@ export const makeCliTestRuntime = () => {
       };
     });
 
+  const runCapturedEffect = (args: ReadonlyArray<string>) =>
+    captureCommand(runAgenticMemoryCommand(args));
+
+  const runCapturedEffectWithEmbeddingModel = (
+    args: ReadonlyArray<string>,
+    embeddingModel: EmbeddingModel["Service"],
+  ) =>
+    captureCommand(
+      runAgenticMemoryCommand(args).pipe(Effect.provideService(EmbeddingModel, embeddingModel)),
+    );
+
   return {
     dispose: () => runtime.dispose(),
     runCapturedEffect,
+    runCapturedEffectWithEmbeddingModel,
     withCliRuntime,
   };
 };

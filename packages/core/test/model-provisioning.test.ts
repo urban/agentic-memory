@@ -1,7 +1,18 @@
 import { createHash } from "node:crypto";
 import * as BunServices from "@effect/platform-bun/BunServices";
 import { assert, describe, it } from "@effect/vitest";
-import { ConfigProvider, Effect, Fiber, FileSystem, Layer, ManagedRuntime, Path } from "effect";
+import {
+  ConfigProvider,
+  Context,
+  Deferred,
+  Effect,
+  Fiber,
+  FileSystem,
+  Layer,
+  ManagedRuntime,
+  Option,
+  Path,
+} from "effect";
 import {
   EMBEDDING_MODEL_DIMENSIONS,
   EMBEDDING_MODEL_ID,
@@ -106,6 +117,25 @@ const provideLiveModel = <A, E, R>(
         Layer.provideMerge(BunServices.layer),
       ),
       VaultRepositoryLive.pipe(Layer.provide(BunServices.layer)),
+    ),
+  );
+  return runtime.contextEffect.pipe(
+    Effect.flatMap((context) => Effect.provideContext(effect, context)),
+    Effect.ensuring(runtime.disposeEffect),
+  );
+};
+
+const provideLiveModelWithFileSystem = <A, E, R>(
+  effect: Effect.Effect<A, E, R | EmbeddingModel | Path.Path>,
+  options: EmbeddingModelLiveOptions,
+  env: Readonly<Record<string, string>>,
+  fileSystem: FileSystemService,
+) => {
+  const runtime = ManagedRuntime.make(
+    makeEmbeddingModelLive(options).pipe(
+      Layer.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env }))),
+      Layer.provide(Layer.succeed(FileSystem.FileSystem, fileSystem)),
+      Layer.provideMerge(BunServices.layer),
     ),
   );
   return runtime.contextEffect.pipe(
@@ -454,109 +484,638 @@ describe("embedding model provisioning", () => {
     );
   });
 
-  it.effect(
-    "finalizes context, model, and runtime on success, typed failure, and interruption",
-    () =>
-      withBunServices(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const fs = yield* FileSystem.FileSystem;
-            const path = yield* Path.Path;
-            const tempRoot = yield* fs.makeTempDirectoryScoped({
-              prefix: "agentic-memory-live-finalizers-",
+  it.effect("keeps inspection, installation, and unused layer shutdown native-lazy", () =>
+    withBunServices(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const cacheRoot = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-live-native-laziness-",
+          });
+          const acquired: Array<string> = [];
+          const disposed: Array<string> = [];
+          const initializeRuntime = (): Promise<EmbeddingRuntime> => {
+            acquired.push("runtime");
+            return Promise.resolve({
+              loadModel: () => {
+                acquired.push("model");
+                return Promise.reject("model loading must not run");
+              },
+              dispose: () => {
+                disposed.push("runtime");
+                return Promise.resolve();
+              },
             });
-            type Scenario = "success" | "wrong_dimension" | "non_finite" | "interruption";
-            const scenarios: ReadonlyArray<Scenario> = [
-              "success",
-              "wrong_dimension",
-              "non_finite",
-              "interruption",
-            ];
+          };
 
-            yield* Effect.forEach(scenarios, (scenario) => {
-              const disposed: Array<string> = [];
-              const embeddingStarted = Promise.withResolvers<void>();
-              const pendingEmbedding = Promise.withResolvers<{
-                readonly vector: ReadonlyArray<number>;
-              }>();
-              const initializeRuntime = (): Promise<EmbeddingRuntime> =>
+          yield* provideLiveModel(
+            Effect.gen(function* () {
+              const model = yield* EmbeddingModel;
+              const beforeInstall = yield* model.inspect;
+              assert.strictEqual(beforeInstall.status, "missing");
+              const installed = yield* model.install;
+              assert.strictEqual(installed.status, "downloaded");
+              const afterInstall = yield* model.inspect;
+              assert.strictEqual(afterInstall.status, "available");
+              assert.deepEqual(acquired, []);
+            }),
+            {
+              resolveModelFile: makeArtifactResolver(fs, path, validArtifact),
+              initializeRuntime,
+              artifactSha256: validArtifactSha256,
+            },
+            { XDG_CACHE_HOME: cacheRoot },
+          );
+
+          assert.deepEqual(acquired, []);
+          assert.deepEqual(disposed, []);
+        }),
+      ),
+    ),
+  );
+
+  it.effect("reuses validation when acquiring a session for an unchanged artifact", () =>
+    withBunServices(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const cacheRoot = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-live-validation-reuse-",
+          });
+          const artifactPath = canonicalArtifact(path, cacheRoot);
+          yield* fs.makeDirectory(modelDirectory(path, cacheRoot), { recursive: true });
+          yield* fs.writeFile(artifactPath, validArtifact);
+          let artifactStreamCount = 0;
+          const countingFileSystem: FileSystemService = {
+            ...fs,
+            stream: (candidatePath, streamOptions) => {
+              if (candidatePath === artifactPath) {
+                artifactStreamCount += 1;
+              }
+              return streamOptions === undefined
+                ? fs.stream(candidatePath)
+                : fs.stream(candidatePath, streamOptions);
+            },
+          };
+          const initializeRuntime = (): Promise<EmbeddingRuntime> =>
+            Promise.resolve({
+              loadModel: () =>
                 Promise.resolve({
-                  loadModel: () =>
+                  embeddingVectorSize: EMBEDDING_MODEL_DIMENSIONS,
+                  createEmbeddingContext: () =>
                     Promise.resolve({
-                      embeddingVectorSize: EMBEDDING_MODEL_DIMENSIONS,
-                      createEmbeddingContext: () =>
+                      getEmbeddingFor: () =>
                         Promise.resolve({
-                          getEmbeddingFor: () => {
-                            embeddingStarted.resolve();
-                            if (scenario === "interruption") {
-                              return pendingEmbedding.promise;
-                            }
-                            return Promise.resolve({
-                              vector:
-                                scenario === "wrong_dimension"
-                                  ? [1]
-                                  : Array.from(
-                                      { length: EMBEDDING_MODEL_DIMENSIONS },
-                                      (_, index) =>
-                                        scenario === "non_finite" && index === 0 ? Number.NaN : 1,
-                                    ),
-                            });
-                          },
-                          dispose: () => {
-                            disposed.push("context");
-                            return Promise.resolve();
-                          },
+                          vector: Array.from({ length: EMBEDDING_MODEL_DIMENSIONS }, () => 1),
+                        }),
+                      dispose: () => Promise.resolve(),
+                    }),
+                  dispose: () => Promise.resolve(),
+                }),
+              dispose: () => Promise.resolve(),
+            });
+
+          yield* provideLiveModelWithFileSystem(
+            Effect.gen(function* () {
+              const model = yield* EmbeddingModel;
+              assert.strictEqual((yield* model.inspect).status, "available");
+              yield* model.embed(["question"]);
+            }),
+            {
+              resolveModelFile: makeArtifactResolver(fs, path, validArtifact),
+              initializeRuntime,
+              artifactSha256: validArtifactSha256,
+            },
+            { XDG_CACHE_HOME: cacheRoot },
+            countingFileSystem,
+          );
+
+          assert.strictEqual(artifactStreamCount, 1);
+        }),
+      ),
+    ),
+  );
+
+  it.effect("revalidates an artifact changed before session acquisition", () =>
+    withBunServices(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const cacheRoot = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-live-validation-change-",
+          });
+          const artifactPath = canonicalArtifact(path, cacheRoot);
+          yield* fs.makeDirectory(modelDirectory(path, cacheRoot), { recursive: true });
+          yield* fs.writeFile(artifactPath, validArtifact);
+          let artifactStreamCount = 0;
+          const countingFileSystem: FileSystemService = {
+            ...fs,
+            stream: (candidatePath, streamOptions) => {
+              if (candidatePath === artifactPath) {
+                artifactStreamCount += 1;
+              }
+              return streamOptions === undefined
+                ? fs.stream(candidatePath)
+                : fs.stream(candidatePath, streamOptions);
+            },
+          };
+
+          const failure = yield* provideLiveModelWithFileSystem(
+            Effect.gen(function* () {
+              const model = yield* EmbeddingModel;
+              assert.strictEqual((yield* model.inspect).status, "available");
+              yield* fs.writeFileString(artifactPath, "GGUF changed after validation");
+              return yield* model.embed(["question"]);
+            }),
+            {
+              resolveModelFile: makeArtifactResolver(fs, path, validArtifact),
+              initializeRuntime: () => Promise.reject("runtime must not be acquired"),
+              artifactSha256: validArtifactSha256,
+            },
+            { XDG_CACHE_HOME: cacheRoot },
+            countingFileSystem,
+          ).pipe(Effect.flip);
+
+          assert.instanceOf(failure, InvalidEmbeddingArtifactError);
+          assert.strictEqual(artifactStreamCount, 2);
+        }),
+      ),
+    ),
+  );
+
+  it.effect("lazily reuses one native session until the live layer closes", () =>
+    withBunServices(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const cacheRoot = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-live-session-reuse-",
+          });
+          const acquired: Array<string> = [];
+          const disposed: Array<string> = [];
+          const initializeRuntime = (): Promise<EmbeddingRuntime> => {
+            acquired.push("runtime");
+            return Promise.resolve({
+              loadModel: () => {
+                acquired.push("model");
+                return Promise.resolve({
+                  embeddingVectorSize: EMBEDDING_MODEL_DIMENSIONS,
+                  createEmbeddingContext: () => {
+                    acquired.push("context");
+                    return Promise.resolve({
+                      getEmbeddingFor: () =>
+                        Promise.resolve({
+                          vector: Array.from({ length: EMBEDDING_MODEL_DIMENSIONS }, () => 1),
                         }),
                       dispose: () => {
-                        disposed.push("model");
+                        disposed.push("context");
+                        return Promise.resolve();
+                      },
+                    });
+                  },
+                  dispose: () => {
+                    disposed.push("model");
+                    return Promise.resolve();
+                  },
+                });
+              },
+              dispose: () => {
+                disposed.push("runtime");
+                return Promise.resolve();
+              },
+            });
+          };
+
+          const vectorLengths = yield* provideLiveModel(
+            Effect.gen(function* () {
+              const model = yield* EmbeddingModel;
+              const beforeInstall = yield* model.inspect;
+              assert.strictEqual(beforeInstall.status, "missing");
+              yield* model.install;
+              const afterInstall = yield* model.inspect;
+              assert.strictEqual(afterInstall.status, "available");
+              assert.deepEqual(acquired, []);
+
+              const first = yield* model.embed(["first"]);
+              yield* fs.writeFileString(canonicalArtifact(path, cacheRoot), "invalid after load");
+              const second = yield* model.embed(["second"]);
+
+              assert.deepEqual(acquired, ["runtime", "model", "context"]);
+              assert.deepEqual(disposed, []);
+              return [first[0]?.length, second[0]?.length];
+            }),
+            {
+              resolveModelFile: makeArtifactResolver(fs, path, validArtifact),
+              initializeRuntime,
+              artifactSha256: validArtifactSha256,
+            },
+            { XDG_CACHE_HOME: cacheRoot },
+          );
+
+          assert.deepEqual(vectorLengths, [EMBEDDING_MODEL_DIMENSIONS, EMBEDDING_MODEL_DIMENSIONS]);
+          assert.deepEqual(acquired, ["runtime", "model", "context"]);
+          assert.deepEqual(disposed, ["context", "model", "runtime"]);
+        }),
+      ),
+    ),
+  );
+
+  it.effect("single-flights acquisition and serializes concurrent native evaluations", () =>
+    withBunServices(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const cacheRoot = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-live-concurrency-",
+          });
+          const acquired: Array<string> = [];
+          const disposed: Array<string> = [];
+          const runtimeStarted = Promise.withResolvers<void>();
+          const runtimeAcquisition = Promise.withResolvers<EmbeddingRuntime>();
+          const firstEmbeddingStarted = Promise.withResolvers<void>();
+          const secondEmbeddingStarted = Promise.withResolvers<void>();
+          const firstEmbedding = Promise.withResolvers<{
+            readonly vector: ReadonlyArray<number>;
+          }>();
+          const secondEmbedding = Promise.withResolvers<{
+            readonly vector: ReadonlyArray<number>;
+          }>();
+          const vector = Array.from({ length: EMBEDDING_MODEL_DIMENSIONS }, () => 1);
+          let activeEvaluations = 0;
+          let maximumActiveEvaluations = 0;
+          let evaluationCount = 0;
+
+          const nativeRuntime: EmbeddingRuntime = {
+            loadModel: () => {
+              acquired.push("model");
+              return Promise.resolve({
+                embeddingVectorSize: EMBEDDING_MODEL_DIMENSIONS,
+                createEmbeddingContext: () => {
+                  acquired.push("context");
+                  return Promise.resolve({
+                    getEmbeddingFor: () => {
+                      evaluationCount += 1;
+                      activeEvaluations += 1;
+                      maximumActiveEvaluations = Math.max(
+                        maximumActiveEvaluations,
+                        activeEvaluations,
+                      );
+                      if (evaluationCount === 1) {
+                        firstEmbeddingStarted.resolve();
+                        return firstEmbedding.promise.finally(() => {
+                          activeEvaluations -= 1;
+                        });
+                      }
+                      secondEmbeddingStarted.resolve();
+                      return secondEmbedding.promise.finally(() => {
+                        activeEvaluations -= 1;
+                      });
+                    },
+                    dispose: () => {
+                      disposed.push("context");
+                      return Promise.resolve();
+                    },
+                  });
+                },
+                dispose: () => {
+                  disposed.push("model");
+                  return Promise.resolve();
+                },
+              });
+            },
+            dispose: () => {
+              disposed.push("runtime");
+              return Promise.resolve();
+            },
+          };
+          const initializeRuntime = (): Promise<EmbeddingRuntime> => {
+            acquired.push("runtime");
+            runtimeStarted.resolve();
+            return runtimeAcquisition.promise;
+          };
+
+          yield* provideLiveModel(
+            Effect.gen(function* () {
+              const model = yield* EmbeddingModel;
+              yield* model.install;
+              const firstFiber = yield* model
+                .embed(["first"])
+                .pipe(Effect.forkChild({ startImmediately: true }));
+              yield* Effect.promise(() => runtimeStarted.promise);
+
+              const secondAttempted = yield* Deferred.make<void>();
+              const secondFiber = yield* Effect.gen(function* () {
+                yield* Deferred.succeed(secondAttempted, undefined);
+                return yield* model.embed(["second"]);
+              }).pipe(Effect.forkChild({ startImmediately: true }));
+              yield* Deferred.await(secondAttempted);
+
+              runtimeAcquisition.resolve(nativeRuntime);
+              yield* Effect.promise(() => firstEmbeddingStarted.promise);
+              assert.deepEqual(acquired, ["runtime", "model", "context"]);
+              assert.strictEqual(evaluationCount, 1);
+
+              firstEmbedding.resolve({ vector });
+              yield* Effect.promise(() => secondEmbeddingStarted.promise);
+              assert.strictEqual(maximumActiveEvaluations, 1);
+              assert.strictEqual(activeEvaluations, 1);
+
+              secondEmbedding.resolve({ vector });
+              const first = yield* Fiber.join(firstFiber);
+              const second = yield* Fiber.join(secondFiber);
+              assert.strictEqual(first[0]?.length, EMBEDDING_MODEL_DIMENSIONS);
+              assert.strictEqual(second[0]?.length, EMBEDDING_MODEL_DIMENSIONS);
+              assert.strictEqual(activeEvaluations, 0);
+              assert.deepEqual(acquired, ["runtime", "model", "context"]);
+              assert.deepEqual(disposed, []);
+            }),
+            {
+              resolveModelFile: makeArtifactResolver(fs, path, validArtifact),
+              initializeRuntime,
+              artifactSha256: validArtifactSha256,
+            },
+            { XDG_CACHE_HOME: cacheRoot },
+          );
+
+          assert.deepEqual(disposed, ["context", "model", "runtime"]);
+        }),
+      ),
+    ),
+  );
+
+  it.effect("coordinates interruption and finalization around active native work", () =>
+    withBunServices(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const cacheRoot = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-live-interruption-",
+          });
+          const acquired: Array<string> = [];
+          const disposed: Array<string> = [];
+          const embeddingStarted = Promise.withResolvers<void>();
+          const pendingEmbedding = Promise.withResolvers<{
+            readonly vector: ReadonlyArray<number>;
+          }>();
+          const vector = Array.from({ length: EMBEDDING_MODEL_DIMENSIONS }, () => 1);
+          let embeddingSettled = false;
+          let evaluationCount = 0;
+          const initializeRuntime = (): Promise<EmbeddingRuntime> => {
+            acquired.push("runtime");
+            return Promise.resolve({
+              loadModel: () => {
+                acquired.push("model");
+                return Promise.resolve({
+                  embeddingVectorSize: EMBEDDING_MODEL_DIMENSIONS,
+                  createEmbeddingContext: () => {
+                    acquired.push("context");
+                    return Promise.resolve({
+                      getEmbeddingFor: () => {
+                        evaluationCount += 1;
+                        embeddingStarted.resolve();
+                        return pendingEmbedding.promise.finally(() => {
+                          embeddingSettled = true;
+                        });
+                      },
+                      dispose: () => {
+                        disposed.push("context");
+                        return Promise.resolve();
+                      },
+                    });
+                  },
+                  dispose: () => {
+                    disposed.push("model");
+                    return Promise.resolve();
+                  },
+                });
+              },
+              dispose: () => {
+                disposed.push("runtime");
+                return Promise.resolve();
+              },
+            });
+          };
+          const runtime = ManagedRuntime.make(
+            makeEmbeddingModelLive({
+              resolveModelFile: makeArtifactResolver(fs, path, validArtifact),
+              initializeRuntime,
+              artifactSha256: validArtifactSha256,
+            }).pipe(
+              Layer.provide(
+                ConfigProvider.layer(
+                  ConfigProvider.fromEnv({ env: { XDG_CACHE_HOME: cacheRoot } }),
+                ),
+              ),
+              Layer.provideMerge(BunServices.layer),
+            ),
+          );
+
+          yield* Effect.gen(function* () {
+            const context = yield* runtime.contextEffect;
+            const model = Context.get(context, EmbeddingModel);
+            yield* model.install;
+            const activeFiber = yield* model
+              .embed(["first", "second"])
+              .pipe(Effect.forkChild({ startImmediately: true }));
+            yield* Effect.promise(() => embeddingStarted.promise);
+
+            const waitingAttempted = yield* Deferred.make<void>();
+            const waitingInterrupted = yield* Deferred.make<void>();
+            const waitingFiber = yield* Effect.gen(function* () {
+              yield* Deferred.succeed(waitingAttempted, undefined);
+              return yield* model.embed(["waiting"]);
+            }).pipe(
+              Effect.onInterrupt(() => Deferred.succeed(waitingInterrupted, undefined)),
+              Effect.forkChild({ startImmediately: true }),
+            );
+            yield* Deferred.await(waitingAttempted);
+            yield* Effect.yieldNow;
+            yield* Fiber.interrupt(waitingFiber);
+            yield* Deferred.await(waitingInterrupted);
+            assert.strictEqual(evaluationCount, 1);
+
+            const disposalStarted = yield* Deferred.make<void>();
+            const disposalCompleted = yield* Deferred.make<void>();
+            const disposalFiber = yield* Effect.gen(function* () {
+              yield* Deferred.succeed(disposalStarted, undefined);
+              yield* runtime.disposeEffect;
+              yield* Deferred.succeed(disposalCompleted, undefined);
+            }).pipe(Effect.forkChild({ startImmediately: true }));
+            yield* Deferred.await(disposalStarted);
+
+            const interruptionCompleted = yield* Deferred.make<void>();
+            const interruptionFiber = yield* Fiber.interrupt(activeFiber).pipe(
+              Effect.andThen(Deferred.succeed(interruptionCompleted, undefined)),
+              Effect.forkChild({ startImmediately: true }),
+            );
+            yield* Effect.yieldNow;
+
+            const interruptedBeforeSettlement = yield* Deferred.poll(interruptionCompleted);
+            const disposedBeforeSettlement = yield* Deferred.poll(disposalCompleted);
+            assert.isTrue(Option.isNone(interruptedBeforeSettlement));
+            assert.isTrue(Option.isNone(disposedBeforeSettlement));
+            assert.isFalse(embeddingSettled);
+            assert.deepEqual(disposed, []);
+
+            pendingEmbedding.resolve({ vector });
+            yield* Fiber.join(interruptionFiber);
+            yield* Fiber.join(disposalFiber);
+
+            assert.isTrue(embeddingSettled);
+            assert.strictEqual(evaluationCount, 1);
+            assert.deepEqual(acquired, ["runtime", "model", "context"]);
+            assert.deepEqual(disposed, ["context", "model", "runtime"]);
+          }).pipe(Effect.ensuring(runtime.disposeEffect));
+        }),
+      ),
+    ),
+  );
+
+  it.effect("does not retry a failed acquisition within the same layer lifetime", () =>
+    withBunServices(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const cacheRoot = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-live-acquisition-failure-",
+          });
+          const acquired: Array<string> = [];
+          const disposed: Array<string> = [];
+          const initializeRuntime = (): Promise<EmbeddingRuntime> => {
+            acquired.push("runtime");
+            return Promise.resolve({
+              loadModel: () => {
+                acquired.push("model");
+                return Promise.resolve({
+                  embeddingVectorSize: 1,
+                  createEmbeddingContext: () => {
+                    acquired.push("unexpected-context");
+                    return Promise.reject("context creation must not run");
+                  },
+                  dispose: () => {
+                    disposed.push("model");
+                    return Promise.resolve();
+                  },
+                });
+              },
+              dispose: () => {
+                disposed.push("runtime");
+                return Promise.resolve();
+              },
+            });
+          };
+
+          const failures = yield* provideLiveModel(
+            Effect.gen(function* () {
+              const model = yield* EmbeddingModel;
+              yield* model.install;
+              const first = yield* model.embed(["first"]).pipe(Effect.flip);
+              const second = yield* model.embed(["second"]).pipe(Effect.flip);
+              return [first, second];
+            }),
+            {
+              resolveModelFile: makeArtifactResolver(fs, path, validArtifact),
+              initializeRuntime,
+              artifactSha256: validArtifactSha256,
+            },
+            { XDG_CACHE_HOME: cacheRoot },
+          );
+
+          assert.instanceOf(failures[0], EmbeddingRuntimeError);
+          assert.instanceOf(failures[1], EmbeddingRuntimeError);
+          assert.strictEqual(
+            failures[0]?.message,
+            `Embedding model dimension 1 does not match ${EMBEDDING_MODEL_DIMENSIONS}`,
+          );
+          assert.strictEqual(
+            failures[1]?.message,
+            `Embedding model dimension 1 does not match ${EMBEDDING_MODEL_DIMENSIONS}`,
+          );
+          assert.deepEqual(acquired, ["runtime", "model"]);
+          assert.deepEqual(disposed, ["model", "runtime"]);
+        }),
+      ),
+    ),
+  );
+
+  it.effect("keeps vector validation active for every call on a reused session", () =>
+    withBunServices(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const cacheRoot = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-live-vector-validation-",
+          });
+          let embeddingCount = 0;
+          const disposed: Array<string> = [];
+          const initializeRuntime = (): Promise<EmbeddingRuntime> =>
+            Promise.resolve({
+              loadModel: () =>
+                Promise.resolve({
+                  embeddingVectorSize: EMBEDDING_MODEL_DIMENSIONS,
+                  createEmbeddingContext: () =>
+                    Promise.resolve({
+                      getEmbeddingFor: () => {
+                        embeddingCount += 1;
+                        return Promise.resolve({
+                          vector:
+                            embeddingCount === 1
+                              ? [1]
+                              : Array.from({ length: EMBEDDING_MODEL_DIMENSIONS }, (_, index) =>
+                                  index === 0 ? Number.NaN : 1,
+                                ),
+                        });
+                      },
+                      dispose: () => {
+                        disposed.push("context");
                         return Promise.resolve();
                       },
                     }),
                   dispose: () => {
-                    disposed.push("runtime");
+                    disposed.push("model");
                     return Promise.resolve();
                   },
-                });
-              const cacheRoot = path.join(tempRoot, scenario);
-
-              return provideLiveModel(
-                Effect.gen(function* () {
-                  const model = yield* EmbeddingModel;
-                  yield* model.install;
-
-                  if (scenario === "success") {
-                    const vectors = yield* model.embed(["memory"]);
-                    assert.strictEqual(vectors[0]?.length, EMBEDDING_MODEL_DIMENSIONS);
-                  } else if (scenario === "wrong_dimension" || scenario === "non_finite") {
-                    const failure = yield* model.embed(["memory"]).pipe(Effect.flip);
-                    assert.instanceOf(failure, EmbeddingRuntimeError);
-                    assert.strictEqual(
-                      failure.message,
-                      scenario === "wrong_dimension"
-                        ? `Embedding vector 0 has dimension 1; expected ${EMBEDDING_MODEL_DIMENSIONS}`
-                        : "Embedding vector 0 contains non-finite values",
-                    );
-                  } else {
-                    const fiber = yield* model
-                      .embed(["memory"])
-                      .pipe(Effect.forkChild({ startImmediately: true }));
-                    yield* Effect.promise(() => embeddingStarted.promise);
-                    yield* Fiber.interrupt(fiber);
-                  }
-
-                  assert.deepEqual(disposed, ["context", "model", "runtime"]);
                 }),
-                {
-                  resolveModelFile: makeArtifactResolver(fs, path, validArtifact),
-                  initializeRuntime,
-                  artifactSha256: validArtifactSha256,
-                },
-                { XDG_CACHE_HOME: cacheRoot },
-              );
+              dispose: () => {
+                disposed.push("runtime");
+                return Promise.resolve();
+              },
             });
-          }),
-        ),
+
+          const failures = yield* provideLiveModel(
+            Effect.gen(function* () {
+              const model = yield* EmbeddingModel;
+              yield* model.install;
+              const wrongDimension = yield* model.embed(["first"]).pipe(Effect.flip);
+              const nonFinite = yield* model.embed(["second"]).pipe(Effect.flip);
+              assert.deepEqual(disposed, []);
+              return [wrongDimension, nonFinite];
+            }),
+            {
+              resolveModelFile: makeArtifactResolver(fs, path, validArtifact),
+              initializeRuntime,
+              artifactSha256: validArtifactSha256,
+            },
+            { XDG_CACHE_HOME: cacheRoot },
+          );
+
+          assert.strictEqual(
+            failures[0]?.message,
+            `Embedding vector 0 has dimension 1; expected ${EMBEDDING_MODEL_DIMENSIONS}`,
+          );
+          assert.strictEqual(failures[1]?.message, "Embedding vector 0 contains non-finite values");
+          assert.deepEqual(disposed, ["context", "model", "runtime"]);
+        }),
       ),
+    ),
   );
 
   it.effect("provides local inspection, idempotent installation, and bounded fake embeddings", () =>

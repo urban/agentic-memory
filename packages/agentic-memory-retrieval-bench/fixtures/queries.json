@@ -78,13 +78,12 @@
     }
   },
   {
-    "id": "alpha-verification-evidence",
+    "id": "alpha-source-only-not-found",
     "question": "What source verification evidence did the Alpha Product responsiveness trial record for the latency decision?",
-    "includeSources": true,
     "expected": {
-      "status": "answered",
-      "answerMustContain": ["180ms observed p95 verification threshold"],
-      "answerMustNotContain": ["120ms p95"]
+      "status": "not_found",
+      "answerMustContain": [],
+      "answerMustNotContain": ["120ms p95", "180ms observed p95 verification threshold"]
     }
   },
   {

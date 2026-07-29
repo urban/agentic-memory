@@ -31,11 +31,13 @@
   "scripts": {
     "check": "bun run lint && bun run typecheck && bun run test",
     "lint": "oxfmt && oxlint --fix",
+    "probe:local-qwen": "bun scripts/local-qwen-compatibility.ts",
     "probe:semantic-stack": "bun scripts/semantic-stack-probe.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@effect/ai-openai-compat": "4.0.0-beta.100",
     "@effect/platform-bun": "4.0.0-beta.100",
     "@libsql/client": "0.17.4",
     "@urban/agentic-memory-vault-template": "workspace:*",

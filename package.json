@@ -11,8 +11,8 @@
   "scripts": {
     "check": "bun run lint && bun run typecheck && bun run test",
     "lint": "oxlint --fix && oxfmt",
-    "prepare": "husky && effect-tsgo patch",
-    "setup:zed-effect-tsgo": "bash scripts/setup-zed-effect-tsgo.sh",
+    "prepare": "husky",
+    "start:llama": "llama-server --hf-repo Qwen/Qwen3-4B-GGUF --hf-file Qwen3-4B-Q4_K_M.gguf --host 127.0.0.1 --port 8080 --alias agentic-memory-qwen3-4b --ctx-size 16384 --jinja --reasoning off --n-gpu-layers 99",
     "test": "bun --filter='./packages/*' run test",
     "typecheck": "bun --filter='./packages/*' run typecheck"
   },

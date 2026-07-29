@@ -127,7 +127,7 @@ agentic-memory recall "What should I remember about Example Project?" \
   --vault /absolute/path/to/agentic-memory-vault
 ```
 
-Answers a natural-language question using curated Agentic Memory content. Source files are excluded by default. Add `--include-sources` when a verification question explicitly needs source evidence; public JSON still contains only `status`, `question`, `answer`, and `warnings`.
+Answers a natural-language question using eligible Agentic Memory content. Source files are always excluded; public JSON contains only `status`, `question`, `answer`, and `warnings`.
 
 ### Build Steward context
 
@@ -157,17 +157,17 @@ agentic-memory -C /absolute/path/to/project run-steward \
 
 ## Command reference
 
-| Command                                                                | Purpose                                                      |
-| ---------------------------------------------------------------------- | ------------------------------------------------------------ |
-| `agentic-memory init <vault-path>`                                     | Initialize a vault and ensure the shared model is installed. |
-| `agentic-memory index --vault <vault>`                                 | Create or incrementally update local derivative index state. |
-| `agentic-memory index --vault <vault> --delete`                        | Delete only local derivative index state.                    |
-| `agentic-memory -C <project> link --vault <vault> --project <slug>`    | Link a project root to a vault project.                      |
-| `agentic-memory status --vault <vault>`                                | Inspect vault semantic readiness without mutation.           |
-| `agentic-memory -C <project> status`                                   | Inspect project-local link and vault health.                 |
-| `agentic-memory recall <question> --vault <vault> [--include-sources]` | Answer a memory question from a vault.                       |
-| `agentic-memory steward-context --payload <path-or->`                  | Build Steward context for a capture payload.                 |
-| `agentic-memory run-steward --payload <path-or->`                      | Execute the Memory Steward capture boundary.                 |
+| Command                                                             | Purpose                                                      |
+| ------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `agentic-memory init <vault-path>`                                  | Initialize a vault and ensure the shared model is installed. |
+| `agentic-memory index --vault <vault>`                              | Create or incrementally update local derivative index state. |
+| `agentic-memory index --vault <vault> --delete`                     | Delete only local derivative index state.                    |
+| `agentic-memory -C <project> link --vault <vault> --project <slug>` | Link a project root to a vault project.                      |
+| `agentic-memory status --vault <vault>`                             | Inspect vault semantic readiness without mutation.           |
+| `agentic-memory -C <project> status`                                | Inspect project-local link and vault health.                 |
+| `agentic-memory recall <question> --vault <vault>`                  | Answer a memory question from a vault.                       |
+| `agentic-memory steward-context --payload <path-or->`               | Build Steward context for a capture payload.                 |
+| `agentic-memory run-steward --payload <path-or->`                   | Execute the Memory Steward capture boundary.                 |
 
 Add `--json` to supported commands when a script or integration needs machine-readable output.
 

@@ -35,11 +35,14 @@ const pathWithPrependedBin = (
     : `${binDirectoryPath}${pathListSeparator}${currentPath}`;
 };
 
-type RecallCliExecution = {
+export type AgenticMemoryCliExecution = {
   readonly command: ReadonlyArray<string>;
   readonly exitCode: ChildProcessSpawner.ExitCode;
   readonly stdout: string;
   readonly stderr: string;
+};
+
+type RecallCliExecution = AgenticMemoryCliExecution & {
   readonly decoded: DecodedRecallOutput;
 };
 
@@ -110,25 +113,16 @@ const decodeRecallOutput = (stdout: string): Effect.Effect<DecodedRecallOutput, 
     ),
   );
 
-const invokeRecallCli = Effect.fnUntraced(function* (input: {
-  readonly vaultPath: string;
-  readonly benchmarkCase: BenchmarkCase;
-}): Effect.fn.Return<
-  RecallCliExecution,
+export const runAgenticMemoryCli = Effect.fnUntraced(function* (
+  args: ReadonlyArray<string>,
+): Effect.fn.Return<
+  AgenticMemoryCliExecution,
   PlatformError.PlatformError,
   ChildProcessSpawner.ChildProcessSpawner | Path.Path
 > {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const { commandPath, repoRootPath } = yield* resolveCliPaths();
-  const cliArgs = [
-    "recall",
-    input.benchmarkCase.question,
-    "--vault",
-    input.vaultPath,
-    ...(input.benchmarkCase.includeSources === true ? ["--include-sources"] : []),
-    "--json",
-  ] satisfies ReadonlyArray<string>;
-  const command = ChildProcess.make("agentic-memory", [...cliArgs], {
+  const command = ChildProcess.make("agentic-memory", [...args], {
     cwd: repoRootPath,
     env: {
       PATH: commandPath,
@@ -149,17 +143,34 @@ const invokeRecallCli = Effect.fnUntraced(function* (input: {
         },
         { concurrency: 3 },
       );
-      const decoded = yield* decodeRecallOutput(result.stdout);
 
       return {
-        command: ["agentic-memory", ...cliArgs],
+        command: ["agentic-memory", ...args],
         exitCode: result.exitCode,
         stdout: result.stdout,
         stderr: result.stderr,
-        decoded,
       };
     }),
   );
+});
+
+const invokeRecallCli = Effect.fnUntraced(function* (input: {
+  readonly vaultPath: string;
+  readonly benchmarkCase: BenchmarkCase;
+}): Effect.fn.Return<
+  RecallCliExecution,
+  PlatformError.PlatformError,
+  ChildProcessSpawner.ChildProcessSpawner | Path.Path
+> {
+  const execution = yield* runAgenticMemoryCli([
+    "recall",
+    input.benchmarkCase.question,
+    "--vault",
+    input.vaultPath,
+    "--json",
+  ]);
+  const decoded = yield* decodeRecallOutput(execution.stdout);
+  return { ...execution, decoded };
 });
 
 const violationsForGate = (

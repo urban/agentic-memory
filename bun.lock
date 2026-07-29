@@ -51,6 +51,7 @@
       "devDependencies": {
         "@effect/tsgo": "0.6.0",
         "@effect/vitest": "4.0.0-beta.100",
+        "@libsql/client": "0.17.4",
         "@types/bun": "1.3.13",
         "@types/node": "25.6.2",
         "oxfmt": "0.49.0",
@@ -63,6 +64,7 @@
       "name": "@urban/agentic-memory-core",
       "version": "0.4.0",
       "dependencies": {
+        "@effect/ai-openai-compat": "4.0.0-beta.100",
         "@effect/platform-bun": "4.0.0-beta.100",
         "@libsql/client": "0.17.4",
         "@urban/agentic-memory-vault-template": "workspace:*",
@@ -191,6 +193,8 @@
     "@earendil-works/pi-coding-agent": ["@earendil-works/pi-coding-agent@0.75.5", "", { "dependencies": { "@earendil-works/pi-agent-core": "^0.75.5", "@earendil-works/pi-ai": "^0.75.5", "@earendil-works/pi-tui": "^0.75.5", "@silvia-odwyer/photon-node": "0.3.4", "chalk": "5.6.2", "cross-spawn": "7.0.6", "diff": "8.0.4", "glob": "13.0.6", "highlight.js": "10.7.3", "hosted-git-info": "9.0.3", "ignore": "7.0.5", "jiti": "2.7.0", "minimatch": "10.2.5", "proper-lockfile": "4.1.2", "typebox": "1.1.38", "undici": "8.3.0", "yaml": "2.9.0" }, "optionalDependencies": { "@mariozechner/clipboard": "0.3.6" }, "bin": { "pi": "dist/cli.js" } }, "sha512-O3CCQDYy28D4uwtP6zZkdEwzHN6X22v49Sb0+SZTC7x37V/YfmogrWPiaFoWeoc2hmdKhSATI7ZAK5bQbJG5NA=="],
 
     "@earendil-works/pi-tui": ["@earendil-works/pi-tui@0.75.5", "", { "dependencies": { "get-east-asian-width": "1.6.0", "marked": "15.0.12" } }, "sha512-LkXUM1/49pvzzeI39Y5wjBMlgafcCf67HCLhB9Z7yuXHy4XgT+VqxWcZVW5hBdhQsHZd0znjJotfGH1BzxMfiA=="],
+
+    "@effect/ai-openai-compat": ["@effect/ai-openai-compat@4.0.0-beta.100", "", { "peerDependencies": { "effect": "^4.0.0-beta.100" } }, "sha512-k28Gre440bF2MhQ6VhIOdDoiwNOJjsiI6jyrfmq2q8Tb09jUkq8M5/f5VDQARitOjxYlvvWrmnja0hBm6Edfmg=="],
 
     "@effect/platform-bun": ["@effect/platform-bun@4.0.0-beta.100", "", { "dependencies": { "@effect/platform-node-shared": "^4.0.0-beta.100" }, "peerDependencies": { "effect": "^4.0.0-beta.100" } }, "sha512-UyH4bgzlV3aJOXbUr/3Zej3MBPe9TDrdkwStLDpVn9Yc6dKIKOJBd0G/8+OQhunGAuCL9a4SaNvwhkMJajahrg=="],
 

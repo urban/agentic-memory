@@ -7,7 +7,6 @@ const RecallWarnings = Schema.Array(Schema.String).annotate({
 export const RecallRequest = Schema.Struct({
   vaultPath: Schema.String,
   question: Schema.String,
-  includeSources: Schema.Boolean,
 }).annotate({ identifier: "RecallRequest" });
 export type RecallRequest = typeof RecallRequest.Type;
 
@@ -37,7 +36,18 @@ export const encodeRecallSuccessJson = Schema.encodeUnknownEffect(RecallSuccessJ
 });
 
 export class RecallError extends Schema.TaggedErrorClass<RecallError>()("RecallError", {
-  reason: Schema.Literals(["InvalidQuestion", "ReadVaultFailed"]),
+  reason: Schema.Literals([
+    "InvalidQuestion",
+    "ReadVaultFailed",
+    "SemanticIndexMissing",
+    "SemanticIndexStale",
+    "SemanticIndexIncomplete",
+    "SemanticIndexInvalid",
+    "SemanticIndexIncompatible",
+    "SemanticIndexNotReady",
+    "QueryEmbeddingFailed",
+    "SemanticSearchFailed",
+  ]),
   message: Schema.String,
   cause: Schema.optional(Schema.Unknown),
 }) {}

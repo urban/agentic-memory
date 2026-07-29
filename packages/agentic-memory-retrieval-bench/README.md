@@ -17,6 +17,10 @@ bun --filter='./packages/agentic-memory-retrieval-bench' run bench
 bun --filter='./packages/agentic-memory-retrieval-bench' run bench -- --json
 ```
 
+Without `--vault`, the command initializes a disposable vault, overlays the synthetic fixture,
+builds its semantic index, and removes the generated vault after the run. Pass `--vault <path>`
+to benchmark an already initialized and indexed vault instead.
+
 Run all package checks:
 
 ```sh
@@ -42,7 +46,7 @@ Cases cover:
 - project-specific facts and competing-project distractors
 - user preferences and combined questions
 - unknown and unrelated questions
-- default recall and explicit `--include-sources` recall
+- source-only questions that must abstain under the source-free contract
 - current facts when conflicting historical facts exist
 - rationale and work-resumption questions
 - consistent answers when facts appear more than once

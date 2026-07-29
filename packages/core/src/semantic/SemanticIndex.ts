@@ -7,6 +7,7 @@ import {
   EMBEDDING_MODEL_DIMENSIONS,
   EMBEDDING_MODEL_ID,
   EmbeddingModel,
+  MAX_EMBEDDING_BATCH_SIZE,
 } from "./EmbeddingModel.ts";
 import {
   chunkManagedMemoryDocument,
@@ -21,6 +22,7 @@ import {
   readSemanticIndexSnapshot,
   removeSemanticIndexDocuments,
   replaceSemanticIndexDocument,
+  searchSemanticIndexExact,
 } from "./SemanticIndexRepository.ts";
 
 type ManagedMemoryDocument = import("../vault/ManagedMemory.ts").ManagedMemoryDocument;
@@ -92,7 +94,12 @@ export class SemanticIndexError extends Schema.TaggedErrorClass<SemanticIndexErr
       "IncompatibleIndex",
       "IndexBusy",
       "InvalidEmbedding",
+      "IndexMissing",
+      "IndexStale",
+      "IndexIncomplete",
+      "InvalidIndex",
       "SemanticIndexNotReady",
+      "SearchFailed",
       "DeleteFailed",
     ]),
     message: Schema.String,
@@ -527,12 +534,49 @@ export const requireCurrentSemanticIndex = Effect.fnUntraced(function* (
 > {
   const readiness = yield* inspectSemanticIndex(vaultPath);
   if (!readiness.recallReady) {
+    const reason =
+      readiness.vault.status === "invalid"
+        ? "InvalidVaultStructure"
+        : readiness.index.status === "missing"
+          ? "IndexMissing"
+          : readiness.index.status === "stale"
+            ? "IndexStale"
+            : readiness.index.status === "incomplete"
+              ? "IndexIncomplete"
+              : readiness.index.status === "invalid"
+                ? "InvalidIndex"
+                : readiness.index.status === "incompatible"
+                  ? "IncompatibleIndex"
+                  : "SemanticIndexNotReady";
     return yield* new SemanticIndexError({
-      reason: "SemanticIndexNotReady",
+      reason,
       message: readiness.warnings.join(" "),
     });
   }
   return readiness;
+});
+
+export interface SemanticRecallCandidate {
+  readonly text: string;
+}
+
+export const searchSemanticIndex = Effect.fnUntraced(function* (
+  vaultPath: string,
+  query: ReadonlyArray<number>,
+  limit: number,
+): Effect.fn.Return<ReadonlyArray<SemanticRecallCandidate>, SemanticIndexError, Path.Path> {
+  const paths = yield* indexPaths(vaultPath);
+  return yield* searchSemanticIndexExact(paths.databasePath, query, limit, "exclude_sources").pipe(
+    Effect.map((hits) => hits.map(({ text }) => ({ text }))),
+    Effect.mapError(
+      (cause) =>
+        new SemanticIndexError({
+          reason: "SearchFailed",
+          message: "Failed to search the semantic index",
+          cause,
+        }),
+    ),
+  );
 });
 
 const embedDocument = Effect.fnUntraced(function* (
@@ -546,9 +590,13 @@ const embedDocument = Effect.fnUntraced(function* (
   const chunks = chunkManagedMemoryDocument(parsed);
   const model = yield* EmbeddingModel;
   const batches: Array<ReadonlyArray<ReadonlyArray<number>>> = [];
-  for (let offset = 0; offset < chunks.length; offset += 64) {
+  for (let offset = 0; offset < chunks.length; offset += MAX_EMBEDDING_BATCH_SIZE) {
     const vectors = yield* model
-      .embed(chunks.slice(offset, offset + 64).map(({ embeddingInput }) => embeddingInput))
+      .embed(
+        chunks
+          .slice(offset, offset + MAX_EMBEDDING_BATCH_SIZE)
+          .map(({ embeddingInput }) => embeddingInput),
+      )
       .pipe(
         Effect.mapError(
           (cause) =>

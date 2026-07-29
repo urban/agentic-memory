@@ -1,13 +1,14 @@
 #!/usr/bin/env bun
 
-import { BunRuntime } from "@effect/platform-bun";
 import * as BunServices from "@effect/platform-bun/BunServices";
-import { Console, Effect, ManagedRuntime, Path } from "effect";
+import { Console, Effect, FileSystem, ManagedRuntime, Path, Schema } from "effect";
+import { ChildProcessSpawner } from "effect/unstable/process";
 import { loadBenchmarkCases } from "./BenchmarkCase.ts";
-import { runBenchmarkSuite } from "./BenchmarkRunner.ts";
+import { runAgenticMemoryCli, runBenchmarkSuite } from "./BenchmarkRunner.ts";
 import { encodeBenchmarkSuiteResultJson } from "./BenchmarkReport.ts";
 
 type BenchmarkSuiteReport = import("./BenchmarkRunner.ts").BenchmarkSuiteReport;
+type AgenticMemoryCliExecution = import("./BenchmarkRunner.ts").AgenticMemoryCliExecution;
 type BenchOptions = {
   readonly json: boolean;
   readonly vaultPath?: string;
@@ -88,6 +89,44 @@ const reportFailureDiagnostics = (report: BenchmarkSuiteReport): Effect.Effect<v
   return diagnostics.length === 0 ? Effect.void : Console.error(diagnostics.join("\n"));
 };
 
+class BenchmarkVaultPreparationError extends Schema.TaggedErrorClass<BenchmarkVaultPreparationError>()(
+  "BenchmarkVaultPreparationError",
+  {
+    step: Schema.Literals(["init", "index"]),
+    message: Schema.String,
+    stderr: Schema.String,
+  },
+) {}
+
+const requireSuccessfulPreparationStep = (
+  step: "init" | "index",
+  execution: AgenticMemoryCliExecution,
+): Effect.Effect<void, BenchmarkVaultPreparationError> => {
+  const diagnostics = execution.stderr.trim();
+  return execution.exitCode === ChildProcessSpawner.ExitCode(0)
+    ? Effect.void
+    : Effect.fail(
+        new BenchmarkVaultPreparationError({
+          step,
+          message: `Failed to ${step} the disposable benchmark vault${diagnostics.length === 0 ? "" : `: ${diagnostics}`}`,
+          stderr: execution.stderr,
+        }),
+      );
+};
+
+const prepareDefaultBenchmarkVault = Effect.fnUntraced(function* (fixturePath: string) {
+  const fs = yield* FileSystem.FileSystem;
+  const vaultPath = yield* fs.makeTempDirectoryScoped({
+    prefix: "agentic-memory-retrieval-benchmark-",
+  });
+  const initExecution = yield* runAgenticMemoryCli(["init", vaultPath, "--yes", "--json"]);
+  yield* requireSuccessfulPreparationStep("init", initExecution);
+  yield* fs.copy(fixturePath, vaultPath, { overwrite: true });
+  const indexExecution = yield* runAgenticMemoryCli(["index", "--vault", vaultPath, "--json"]);
+  yield* requireSuccessfulPreparationStep("index", indexExecution);
+  return vaultPath;
+});
+
 const BenchmarkRuntime = ManagedRuntime.make(BunServices.layer);
 
 export const runBenchmarkCli = Effect.fnUntraced(function* (args: ReadonlyArray<string>) {
@@ -102,31 +141,40 @@ export const runBenchmarkCli = Effect.fnUntraced(function* (args: ReadonlyArray<
     return;
   }
 
-  const path = yield* Path.Path;
-  const casesPath = yield* path.fromFileUrl(new URL("../fixtures/queries.json", import.meta.url));
-  const defaultVaultPath = yield* path.fromFileUrl(
-    new URL("../fixtures/basic-vault", import.meta.url),
+  return yield* Effect.scoped(
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      const casesPath = yield* path.fromFileUrl(
+        new URL("../fixtures/queries.json", import.meta.url),
+      );
+      const defaultVaultFixturePath = yield* path.fromFileUrl(
+        new URL("../fixtures/basic-vault", import.meta.url),
+      );
+      const vaultPath =
+        parsed.options.vaultPath ?? (yield* prepareDefaultBenchmarkVault(defaultVaultFixturePath));
+      const benchmarkCases = yield* loadBenchmarkCases(casesPath);
+      const report = yield* runBenchmarkSuite({
+        vaultPath,
+        benchmarkCases,
+      });
+
+      if (parsed.options.json) {
+        const json = yield* encodeBenchmarkSuiteResultJson(report);
+        yield* Console.log(json);
+        yield* reportFailureDiagnostics(report);
+      } else {
+        yield* Console.log(renderHumanReport(report));
+      }
+
+      if (report.status === "fail") {
+        process.exitCode = 1;
+      }
+    }),
   );
-  const benchmarkCases = yield* loadBenchmarkCases(casesPath);
-  const report = yield* runBenchmarkSuite({
-    vaultPath: parsed.options.vaultPath ?? defaultVaultPath,
-    benchmarkCases,
-  });
-
-  if (parsed.options.json) {
-    const json = yield* encodeBenchmarkSuiteResultJson(report);
-    yield* Console.log(json);
-    yield* reportFailureDiagnostics(report);
-  } else {
-    yield* Console.log(renderHumanReport(report));
-  }
-
-  if (report.status === "fail") {
-    process.exitCode = 1;
-  }
 });
 
 if (import.meta.main) {
+  const { BunRuntime } = await import("@effect/platform-bun");
   BunRuntime.runMain(
     BenchmarkRuntime.contextEffect.pipe(
       Effect.flatMap((context) =>

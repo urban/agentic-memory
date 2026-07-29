@@ -269,7 +269,6 @@ describe("core contracts", () => {
       const request = yield* decodeRecallRequest({
         vaultPath: "/vault",
         question: "What should I remember?",
-        includeSources: false,
       });
       const response = yield* decodeRecallResponse({
         status: "answered",
@@ -285,21 +284,26 @@ describe("core contracts", () => {
       });
       const missingQuestion = yield* decodeRecallRequest({
         vaultPath: "/vault",
-        includeSources: false,
-      }).pipe(Effect.exit);
-      const missingSourcePolicy = yield* decodeRecallRequest({
-        vaultPath: "/vault",
-        question: "What should I remember?",
       }).pipe(Effect.exit);
 
       assert.strictEqual(request.vaultPath, "/vault");
       assert.strictEqual(request.question, "What should I remember?");
-      assert.isFalse(request.includeSources);
       assert.strictEqual(response.status, "answered");
       assert.strictEqual(notFoundResponse.status, "not_found");
       assert.deepStrictEqual(response.warnings, []);
       assert.strictEqual(missingQuestion._tag, "Failure");
-      assert.strictEqual(missingSourcePolicy._tag, "Failure");
+    }),
+  );
+
+  it.effect("rejects source inclusion in the core recall request", () =>
+    Effect.gen(function* () {
+      const withSourceInclusion = yield* decodeRecallRequest({
+        vaultPath: "/vault",
+        question: "What should I remember?",
+        includeSources: false,
+      }).pipe(Effect.exit);
+
+      assert.strictEqual(withSourceInclusion._tag, "Failure");
     }),
   );
 

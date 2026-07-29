@@ -686,7 +686,7 @@ describe("semantic index workflow with native libSQL", () => {
           const query = Array.from({ length: EMBEDDING_MODEL_DIMENSIONS }, (_, index) =>
             index === 0 ? 1 : 0,
           );
-          const ranked = yield* searchSemanticIndexExact(databasePath, query, 2);
+          const ranked = yield* searchSemanticIndexExact(databasePath, query, 2, "all");
           assert.strictEqual(ranked[0]?.documentPath, "notes/nearest.md");
           const inspection = yield* inspectSemanticIndex(vaultPath);
           assert.strictEqual(inspection.status, "ready");
@@ -1026,10 +1026,10 @@ describe("semantic index workflow with native libSQL", () => {
 
           assert.strictEqual(inspections.incomplete.index.status, "incomplete");
           assert.isFalse(inspections.incomplete.recallReady);
-          assert.strictEqual(inspections.incompleteGuard.reason, "SemanticIndexNotReady");
+          assert.strictEqual(inspections.incompleteGuard.reason, "IndexIncomplete");
           assert.strictEqual(inspections.mismatched.index.status, "invalid");
           assert.isFalse(inspections.mismatched.recallReady);
-          assert.strictEqual(inspections.mismatchedGuard.reason, "SemanticIndexNotReady");
+          assert.strictEqual(inspections.mismatchedGuard.reason, "InvalidIndex");
           assert.strictEqual(control.calls, callsAfterIndex);
         }),
       ),
@@ -1049,6 +1049,7 @@ describe("semantic index workflow with native libSQL", () => {
 
           const initial = yield* synchronizeSemanticIndex(vaultPath);
           const callsAfterInitial = control.calls;
+          const inspectionsAfterInitial = control.inspections;
           const current = yield* synchronizeSemanticIndex(vaultPath);
           assert.strictEqual(current.status, "already_current");
           assert.deepStrictEqual(current.files, {
@@ -1059,6 +1060,7 @@ describe("semantic index workflow with native libSQL", () => {
           });
           assert.deepStrictEqual(current.chunks, { embedded: 0, removed: 0 });
           assert.strictEqual(control.calls, callsAfterInitial);
+          assert.strictEqual(control.inspections, inspectionsAfterInitial);
 
           yield* fs.writeFileString(
             path.join(vaultPath, "notes", "added.md"),
@@ -1122,7 +1124,12 @@ describe("semantic index workflow with native libSQL", () => {
           const originalHash = before.documents.find(
             ({ path }) => path === "notes/nearest.md",
           )?.contentHash;
+          const callsBeforeFailure = control.calls;
 
+          yield* fs.writeFileString(
+            path.join(vaultPath, "notes", "committed-before-failure.md"),
+            "# Committed first\n\nThis document commits before the later replacement fails.\n",
+          );
           yield* fs.writeFileString(
             path.join(vaultPath, "notes", "nearest.md"),
             "# Nearest\n\nfail-replacement\n",
@@ -1130,25 +1137,35 @@ describe("semantic index workflow with native libSQL", () => {
           control.failOnText = "fail-replacement";
           const failure = yield* synchronizeSemanticIndex(vaultPath).pipe(Effect.flip);
           assert.strictEqual(failure.reason, "InvalidEmbedding");
+          assert.strictEqual(control.calls, callsBeforeFailure + 2);
           const failedSnapshot = yield* readSemanticIndexSnapshot(databasePath);
           assert.strictEqual(failedSnapshot.metadata?.state, "incomplete");
           assert.strictEqual(
             failedSnapshot.documents.find(({ path }) => path === "notes/nearest.md")?.contentHash,
             originalHash,
           );
+          assert.strictEqual(
+            failedSnapshot.documents.find(
+              ({ path }) => path === "notes/committed-before-failure.md",
+            )?.integrity,
+            "complete",
+          );
           assert.isFalse(yield* fs.exists(path.join(vaultPath, ".agentic-memory", "index.lock")));
 
           delete control.failOnText;
+          const callsBeforeRetry = control.calls;
           const retried = yield* synchronizeSemanticIndex(vaultPath);
           assert.strictEqual(retried.status, "indexed");
           assert.deepStrictEqual(retried.files, {
             new: 0,
             changed: 1,
             deleted: 0,
-            unchanged: 3,
+            unchanged: 4,
           });
+          assert.strictEqual(control.calls, callsBeforeRetry + 1);
           const completed = yield* readSemanticIndexSnapshot(databasePath);
           assert.strictEqual(completed.metadata?.state, "complete");
+          assert.strictEqual(completed.documents.length, 5);
           assert.notStrictEqual(
             completed.documents.find(({ path }) => path === "notes/nearest.md")?.contentHash,
             originalHash,
@@ -1389,7 +1406,7 @@ describe("semantic index workflow with native libSQL", () => {
           const query = Array.from({ length: EMBEDDING_MODEL_DIMENSIONS }, (_, index) =>
             index === 0 ? 1 : 0,
           );
-          const vectorsBefore = yield* searchSemanticIndexExact(databasePath, query, 10);
+          const vectorsBefore = yield* searchSemanticIndexExact(databasePath, query, 10, "all");
           const databaseUrl = yield* path.toFileUrl(databasePath);
           const client = yield* Effect.acquireRelease(
             Effect.sync(() => createClient({ url: databaseUrl.href, intMode: "number" })),
@@ -1403,7 +1420,7 @@ describe("semantic index workflow with native libSQL", () => {
           assert.strictEqual(control.calls, callsAfterInitial);
 
           const after = yield* readSemanticIndexSnapshot(databasePath);
-          const vectorsAfter = yield* searchSemanticIndexExact(databasePath, query, 10);
+          const vectorsAfter = yield* searchSemanticIndexExact(databasePath, query, 10, "all");
           assert.deepStrictEqual(after.documents, before.documents);
           assert.deepStrictEqual(vectorsAfter, vectorsBefore);
           assert.isUndefined(after.metadata);

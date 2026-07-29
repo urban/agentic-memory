@@ -7,7 +7,7 @@ import { commandRoot } from "./root.ts";
 
 type RecallError = import("@urban/agentic-memory-core/recall/Recall").RecallError;
 
-const toRecallFailure = (cause: RecallError) => {
+const toRecallFailure = (vaultPath: string, cause: RecallError) => {
   switch (cause.reason) {
     case "InvalidQuestion":
       return toFailure({
@@ -17,7 +17,47 @@ const toRecallFailure = (cause: RecallError) => {
     case "ReadVaultFailed":
       return toFailure({
         code: "ReadVaultFailed",
-        message: cause.message,
+        message: `Failed to read the Agentic Memory vault; run agentic-memory status --vault ${vaultPath}.`,
+      });
+    case "SemanticIndexMissing":
+      return toFailure({
+        code: "SemanticIndexMissing",
+        message: `Semantic index is missing; run agentic-memory index --vault ${vaultPath}.`,
+      });
+    case "SemanticIndexStale":
+      return toFailure({
+        code: "SemanticIndexStale",
+        message: `Semantic index is stale; run agentic-memory index --vault ${vaultPath}.`,
+      });
+    case "SemanticIndexIncomplete":
+      return toFailure({
+        code: "SemanticIndexIncomplete",
+        message: `Semantic index is incomplete; run agentic-memory index --vault ${vaultPath}.`,
+      });
+    case "SemanticIndexInvalid":
+      return toFailure({
+        code: "SemanticIndexInvalid",
+        message: `Semantic index is invalid; run agentic-memory index --vault ${vaultPath} --delete, then run agentic-memory index --vault ${vaultPath}.`,
+      });
+    case "SemanticIndexIncompatible":
+      return toFailure({
+        code: "SemanticIndexIncompatible",
+        message: `Semantic index is incompatible; run agentic-memory index --vault ${vaultPath} --delete, then run agentic-memory index --vault ${vaultPath}.`,
+      });
+    case "SemanticIndexNotReady":
+      return toFailure({
+        code: "SemanticIndexNotReady",
+        message: `Recall is not ready; run agentic-memory status --vault ${vaultPath}.`,
+      });
+    case "QueryEmbeddingFailed":
+      return toFailure({
+        code: "QueryEmbeddingFailed",
+        message: `Failed to prepare the recall query; run agentic-memory status --vault ${vaultPath}, then try again.`,
+      });
+    case "SemanticSearchFailed":
+      return toFailure({
+        code: "SemanticSearchFailed",
+        message: `Failed to search Agentic Memory; run agentic-memory status --vault ${vaultPath}, then try again.`,
       });
   }
 };
@@ -29,18 +69,14 @@ export const commandRecall = Command.make(
       Argument.withDescription("Natural-language memory question"),
     ),
     vaultPath: Flag.string("vault").pipe(Flag.withDescription("Path to the Agentic Memory vault")),
-    includeSources: Flag.boolean("include-sources").pipe(
-      Flag.withDescription("Include source files as eligible recall material"),
-    ),
   },
-  Effect.fnUntraced(function* ({ includeSources, question, vaultPath }) {
+  Effect.fnUntraced(function* ({ question, vaultPath }) {
     const root = yield* commandRoot;
     const resolvedVaultPath = yield* resolvePathInput(root.directory.path, vaultPath, "Vault path");
     const result = yield* recall({
-      includeSources,
       question,
       vaultPath: resolvedVaultPath,
-    }).pipe(Effect.mapError(toRecallFailure));
+    }).pipe(Effect.mapError((cause) => toRecallFailure(resolvedVaultPath, cause)));
     const jsonText = yield* encodeRecallSuccessJson(result).pipe(
       Effect.mapError((cause) =>
         toFailure({
@@ -59,11 +95,6 @@ export const commandRecall = Command.make(
       command:
         'agentic-memory -C /absolute/path/to recall "In Alpha Product, what latency budget should I follow?" --vault vault --json',
       description: "Resolve a relative vault path and use the public recall CLI shape",
-    },
-    {
-      command:
-        'agentic-memory recall "What source evidence supports the Alpha decision?" --vault /absolute/path/to/vault --include-sources --json',
-      description: "Explicitly make source files eligible for recall",
     },
   ]),
 );
