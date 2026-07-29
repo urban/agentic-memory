@@ -14,7 +14,7 @@ import {
   Semaphore,
   Stream,
 } from "effect";
-import { getLlama, resolveModelFile } from "node-llama-cpp";
+import { getLlama, LlamaLogLevel, resolveModelFile } from "node-llama-cpp";
 import {
   EMBEDDING_MODEL_DIMENSIONS,
   EMBEDDING_MODEL_FILE_NAME,
@@ -510,7 +510,8 @@ export const makeEmbeddingModelLive = (
     EmbeddingModel,
     make({
       resolveModelFile: options.resolveModelFile,
-      initializeRuntime: options.initializeRuntime ?? getLlama,
+      initializeRuntime:
+        options.initializeRuntime ?? (() => getLlama({ logLevel: LlamaLogLevel.error })),
       homeDirectory: options.homeDirectory ?? homedir(),
       artifactSha256: options.artifactSha256 ?? EMBEDDING_MODEL_SHA256,
     }),
