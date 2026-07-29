@@ -199,6 +199,51 @@ describe("semantic recall", () => {
     }),
   );
 
+  it.effect("rejects an indexed chunk after managed memory changes during embedding", () =>
+    Effect.gen(function* () {
+      const queryEmbeddingStarted = yield* Deferred.make<void>();
+      const continueQueryEmbedding = yield* Deferred.make<void>();
+      const control: EmbeddingControl = { inputs: [] };
+      return yield* withRecallRuntime(
+        control,
+        Effect.scoped(
+          Effect.gen(function* () {
+            const fs = yield* FileSystem.FileSystem;
+            const path = yield* Path.Path;
+            const vaultPath = yield* fs.makeTempDirectoryScoped({
+              prefix: "agentic-memory-semantic-recall-stale-during-query-",
+            });
+            yield* initializeMinimalVault(vaultPath);
+            const notePath = path.join(vaultPath, "notes", "answer.md");
+            yield* fs.writeFileString(
+              notePath,
+              "# Answer\n\nThe obsolete indexed answer is 640ms.\n",
+            );
+            yield* synchronizeSemanticIndex(vaultPath);
+            control.inputs = [];
+            control.beforeEmbeddingResult = Deferred.succeed(queryEmbeddingStarted, undefined).pipe(
+              Effect.andThen(Deferred.await(continueQueryEmbedding)),
+            );
+
+            const recallFiber = yield* recall({
+              vaultPath,
+              question: "What is the indexed answer?",
+            }).pipe(Effect.result, Effect.forkChild({ startImmediately: true }));
+            yield* Deferred.await(queryEmbeddingStarted);
+            yield* fs.writeFileString(notePath, "# Answer\n\nThe current answer is 900ms.\n");
+            yield* Deferred.succeed(continueQueryEmbedding, undefined);
+            const result = yield* Fiber.join(recallFiber);
+
+            assert.strictEqual(result._tag, "Failure");
+            if (result._tag === "Failure") {
+              assert.strictEqual(result.failure.reason, "SemanticIndexStale");
+            }
+          }),
+        ),
+      );
+    }),
+  );
+
   it.effect("excludes sources before selecting the top ten eligible chunks", () => {
     const control: EmbeddingControl = { inputs: [] };
     return withRecallRuntime(

@@ -95,6 +95,9 @@ export const recall = Effect.fnUntraced(function* (
         }),
     ),
   );
+  yield* requireCurrentSemanticIndex(request.vaultPath).pipe(
+    Effect.mapError(toRecallReadinessError),
+  );
   const bestHit = hits[0];
   return bestHit === undefined
     ? {
