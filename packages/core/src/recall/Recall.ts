@@ -2,6 +2,7 @@ import { Effect, FileSystem, Path } from "effect";
 import { EmbeddingModel } from "../semantic/EmbeddingModel.ts";
 import { formatQueryEmbeddingInput } from "../semantic/MarkdownChunking.ts";
 import { requireCurrentSemanticIndex, searchSemanticIndex } from "../semantic/SemanticIndex.ts";
+import { hydrateSemanticRecallCandidate } from "./EvidenceHydration.ts";
 import { RecallError } from "./RecallContract.ts";
 type RecallRequest = import("./RecallContract.ts").RecallRequest;
 type RecallResponse = import("./RecallContract.ts").RecallResponse;
@@ -99,17 +100,28 @@ export const recall = Effect.fnUntraced(function* (
     Effect.mapError(toRecallReadinessError),
   );
   const bestHit = hits[0];
-  return bestHit === undefined
-    ? {
-        status: "not_found",
-        question: request.question,
-        answer: notFoundAnswer,
-        warnings: [],
-      }
-    : {
-        status: "answered",
-        question: request.question,
-        answer: bestHit.text,
-        warnings: [],
-      };
+  if (bestHit === undefined) {
+    return {
+      status: "not_found",
+      question: request.question,
+      answer: notFoundAnswer,
+      warnings: [],
+    };
+  }
+  const answer = yield* hydrateSemanticRecallCandidate(request.vaultPath, bestHit).pipe(
+    Effect.mapError(
+      (cause) =>
+        new RecallError({
+          reason: "EvidenceHydrationFailed",
+          message: cause.message,
+          cause,
+        }),
+    ),
+  );
+  return {
+    status: "answered",
+    question: request.question,
+    answer,
+    warnings: [],
+  };
 });

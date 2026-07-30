@@ -557,7 +557,9 @@ export const requireCurrentSemanticIndex = Effect.fnUntraced(function* (
 });
 
 export interface SemanticRecallCandidate {
-  readonly text: string;
+  readonly documentPath: string;
+  readonly ordinal: number;
+  readonly textHash: string;
 }
 
 export const searchSemanticIndex = Effect.fnUntraced(function* (
@@ -567,7 +569,13 @@ export const searchSemanticIndex = Effect.fnUntraced(function* (
 ): Effect.fn.Return<ReadonlyArray<SemanticRecallCandidate>, SemanticIndexError, Path.Path> {
   const paths = yield* indexPaths(vaultPath);
   return yield* searchSemanticIndexExact(paths.databasePath, query, limit, "exclude_sources").pipe(
-    Effect.map((hits) => hits.map(({ text }) => ({ text }))),
+    Effect.map((hits) =>
+      hits.map(({ documentPath, ordinal, textHash }) => ({
+        documentPath,
+        ordinal,
+        textHash,
+      })),
+    ),
     Effect.mapError(
       (cause) =>
         new SemanticIndexError({

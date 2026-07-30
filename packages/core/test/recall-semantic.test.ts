@@ -1,7 +1,17 @@
 import * as BunServices from "@effect/platform-bun/BunServices";
 import { assert, describe, it } from "@effect/vitest";
+import { createClient } from "@libsql/client";
 import { bundledVaultTemplatePath } from "@urban/agentic-memory-vault-template/VaultTemplatePackage";
-import { Deferred, Effect, Fiber, FileSystem, Layer, ManagedRuntime, Path } from "effect";
+import {
+  Deferred,
+  Effect,
+  Fiber,
+  FileSystem,
+  Layer,
+  ManagedRuntime,
+  Path,
+  PlatformError,
+} from "effect";
 import { recall } from "../src/recall/Recall.ts";
 import {
   EMBEDDING_MODEL_DIMENSIONS,
@@ -75,7 +85,186 @@ const initializeMinimalVault = Effect.fnUntraced(function* (vaultPath: string) {
   yield* fs.writeFileString(path.join(vaultPath, "USER.md"), "# User\n");
 });
 
+const executeSemanticIndexSql = Effect.fnUntraced(function* (vaultPath: string, sql: string) {
+  const path = yield* Path.Path;
+  const databaseUrl = yield* path.toFileUrl(
+    path.join(vaultPath, ".agentic-memory", "index", "recall.db"),
+  );
+  yield* Effect.acquireUseRelease(
+    Effect.sync(() => createClient({ url: databaseUrl.href })),
+    (client) => Effect.promise(() => client.execute(sql)),
+    (client) => Effect.sync(() => client.close()),
+  );
+});
+
 describe("semantic recall", () => {
+  it.effect("answers from the current Markdown chunk instead of the indexed snippet", () => {
+    const control: EmbeddingControl = { inputs: [] };
+    return withRecallRuntime(
+      control,
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const vaultPath = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-semantic-recall-hydration-",
+          });
+          yield* initializeMinimalVault(vaultPath);
+          yield* fs.writeFileString(
+            path.join(vaultPath, "notes", "authoritative.md"),
+            "# Authoritative\n\nThe current Markdown answer is 640ms.\n",
+          );
+          yield* synchronizeSemanticIndex(vaultPath);
+          yield* executeSemanticIndexSql(
+            vaultPath,
+            "UPDATE chunks SET text = 'The private indexed snippet says 900ms.' WHERE document_path = 'notes/authoritative.md'",
+          );
+          control.inputs = [];
+
+          const response = yield* recall({
+            vaultPath,
+            question: "What is the current Markdown answer?",
+          });
+
+          assert.strictEqual(response.status, "answered");
+          assert.strictEqual(response.answer, "The current Markdown answer is 640ms.");
+        }),
+      ),
+    );
+  });
+
+  it.effect("fails when the selected ordinal is missing from current Markdown", () => {
+    const control: EmbeddingControl = { inputs: [] };
+    return withRecallRuntime(
+      control,
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const vaultPath = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-semantic-recall-missing-ordinal-",
+          });
+          yield* initializeMinimalVault(vaultPath);
+          yield* fs.writeFileString(
+            path.join(vaultPath, "notes", "answer.md"),
+            "# Answer\n\nThe approved timeout is 640ms.\n",
+          );
+          yield* synchronizeSemanticIndex(vaultPath);
+          yield* executeSemanticIndexSql(
+            vaultPath,
+            "UPDATE chunks SET ordinal = 99 WHERE document_path = 'notes/answer.md'",
+          );
+          control.inputs = [];
+
+          const result = yield* recall({
+            vaultPath,
+            question: "What is the approved timeout?",
+          }).pipe(Effect.result);
+
+          assert.strictEqual(result._tag, "Failure");
+          if (result._tag === "Failure") {
+            assert.strictEqual(result.failure.reason, "EvidenceHydrationFailed");
+            assert.include(result.failure.message, "ordinal");
+          }
+        }),
+      ),
+    );
+  });
+
+  it.effect("fails when indexed provenance no longer matches current Markdown", () => {
+    const control: EmbeddingControl = { inputs: [] };
+    return withRecallRuntime(
+      control,
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const vaultPath = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-semantic-recall-provenance-",
+          });
+          yield* initializeMinimalVault(vaultPath);
+          yield* fs.writeFileString(
+            path.join(vaultPath, "notes", "answer.md"),
+            "# Answer\n\nThe approved timeout is 640ms.\n",
+          );
+          yield* synchronizeSemanticIndex(vaultPath);
+          yield* executeSemanticIndexSql(
+            vaultPath,
+            "UPDATE chunks SET text_hash = 'private-stale-provenance' WHERE document_path = 'notes/answer.md'",
+          );
+          control.inputs = [];
+
+          const result = yield* recall({
+            vaultPath,
+            question: "What is the approved timeout?",
+          }).pipe(Effect.result);
+
+          assert.strictEqual(result._tag, "Failure");
+          if (result._tag === "Failure") {
+            assert.strictEqual(result.failure.reason, "EvidenceHydrationFailed");
+            assert.include(result.failure.message, "provenance");
+          }
+        }),
+      ),
+    );
+  });
+
+  it.effect("reports a managed Markdown read failure during hydration", () => {
+    const control: EmbeddingControl = { inputs: [] };
+    return withRecallRuntime(
+      control,
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const vaultPath = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-semantic-recall-hydration-failure-",
+          });
+          yield* initializeMinimalVault(vaultPath);
+          const notePath = path.join(vaultPath, "notes", "answer.md");
+          yield* fs.writeFileString(notePath, "# Answer\n\nThe approved timeout is 640ms.\n");
+          yield* synchronizeSemanticIndex(vaultPath);
+          control.inputs = [];
+
+          let answerReads = 0;
+          const permissionDenied = PlatformError.systemError({
+            _tag: "PermissionDenied",
+            module: "FileSystem",
+            method: "readFileString",
+            pathOrDescriptor: notePath,
+          });
+          const hydrationFailureFileSystem = FileSystem.FileSystem.of({
+            ...fs,
+            readFileString: (entryPath, encoding) => {
+              if (entryPath !== notePath) return fs.readFileString(entryPath, encoding);
+              answerReads += 1;
+              return answerReads === 3
+                ? Effect.fail(permissionDenied)
+                : fs.readFileString(entryPath, encoding);
+            },
+          });
+
+          const result = yield* recall({
+            vaultPath,
+            question: "What is the approved timeout?",
+          }).pipe(
+            Effect.provideService(FileSystem.FileSystem, hydrationFailureFileSystem),
+            Effect.result,
+          );
+
+          assert.strictEqual(result._tag, "Failure");
+          if (result._tag === "Failure") {
+            assert.strictEqual(result.failure.reason, "EvidenceHydrationFailed");
+            assert.strictEqual(
+              result.failure.message,
+              "Failed to hydrate current Agentic Memory evidence",
+            );
+          }
+        }),
+      ),
+    );
+  });
+
   it.effect("returns the nearest exact-cosine semantic chunk", () => {
     const control: EmbeddingControl = { inputs: [] };
     return withRecallRuntime(

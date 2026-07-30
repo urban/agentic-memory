@@ -47,6 +47,7 @@ export class RecallError extends Schema.TaggedErrorClass<RecallError>()("RecallE
     "SemanticIndexNotReady",
     "QueryEmbeddingFailed",
     "SemanticSearchFailed",
+    "EvidenceHydrationFailed",
   ]),
   message: Schema.String,
   cause: Schema.optional(Schema.Unknown),

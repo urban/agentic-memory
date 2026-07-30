@@ -59,6 +59,11 @@ const toRecallFailure = (vaultPath: string, cause: RecallError) => {
         code: "SemanticSearchFailed",
         message: `Failed to search Agentic Memory; run agentic-memory status --vault ${vaultPath}, then try again.`,
       });
+    case "EvidenceHydrationFailed":
+      return toFailure({
+        code: "EvidenceHydrationFailed",
+        message: `Failed to hydrate current Agentic Memory evidence; run agentic-memory status --vault ${vaultPath}, then rebuild the index if needed.`,
+      });
   }
 };
 
