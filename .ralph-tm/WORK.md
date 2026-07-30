@@ -10,11 +10,12 @@ Never use `--force`, `--allow-human`, `--allow-no-verification`, destructive del
 2. Read `<workflow-directory>/HANDOFF_CONTRACT.md` completely.
 3. Read `<workflow-directory>/HANDOFF.md` completely and require it to satisfy the canonical contract.
 4. Require a nonempty `TM_ACTOR` equal to the handoff actor.
-5. Require the recorded transaction branch to equal `git branch --show-current`.
-6. Require the current Work Item to be a full ID.
-7. Run `tm validate` and `tm show <current-id> --json`.
-8. Require the current item to be open, agent-executor, and claimed by `TM_ACTOR`.
-9. Confirm that the current Git index tree equals the handoff's `Candidate tree before work` when state is `selected`, or its `Candidate tree after work` when state is `ready-for-review`.
+5. Require a nonempty `RALPH_TM_ROOT`. Run `tm validate`, resolve `RALPH_TM_ROOT` with `tm show "$RALPH_TM_ROOT" --json`, and require the returned `.ticket.id` to equal the handoff's full `Backlog root`.
+6. Require the recorded transaction branch to equal `git branch --show-current`.
+7. Require the current Work Item to be a full ID.
+8. Run `tm show <current-id> --json`.
+9. Require the current item to be open, agent-executor, and claimed by `TM_ACTOR`.
+10. Confirm that the current Git index tree equals the handoff's `Candidate tree before work` when state is `selected`, or its `Candidate tree after work` when state is `ready-for-review`.
 
 If the handoff is missing, malformed, on another branch, or in any state other than `selected` or `ready-for-review`, stop without choosing replacement work.
 

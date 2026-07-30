@@ -9,9 +9,10 @@ Every phase must read this contract before reading or writing the live handoff. 
 ```markdown
 # Ralph transaction handoff
 
-- Version: `1`
+- Version: `2`
 - State: `selected`
 - Actor: `ralph-loop`
+- Backlog root: `<full target Work Item ID>`
 - Base branch: `main`
 - Base commit: `<full Git commit ID>`
 - Transaction branch: `ralph/transaction-<full-work-item-id>`
@@ -40,7 +41,7 @@ Pending.
 - Pending.
 ```
 
-The initial handoff has only the Root entry under `Transaction items`. Append each finding once, in creation order, with the exact rejected item it blocks. Do not record Work Item lifecycle status in this file; query `tm` whenever status matters.
+The `Backlog root` is the canonical full ID resolved from `RALPH_TM_ROOT`; every phase must require the environment target to resolve to the same ID. The initial handoff has only the Root entry under `Transaction items`. Append each finding once, in creation order, with the exact rejected item it blocks. Do not record Work Item lifecycle status in this file; query `tm` whenever status matters.
 
 ## States
 

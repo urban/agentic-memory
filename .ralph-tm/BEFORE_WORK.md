@@ -11,22 +11,22 @@ This workflow is serial. Ralph is the only code worker and the sole `tm` writer.
 3. Use `<workflow-directory>/HANDOFF.md` as the live handoff and `HANDOFF.md.tmp` as its temporary replacement.
 4. Require a nonempty `TM_ACTOR` and use that exact identity for every claim, release, and completion in the transaction.
 5. Require `git`, `jq`, and `tm` on `PATH`.
-6. Confirm with `git check-ignore` that the handoff and temporary handoff are ignored.
-7. Confirm with `git check-ignore --no-index .ralph-snapshot-ignore-probe/BEFORE_WORK.md` that root-level `.ralph-snapshot-*` directories are ignored. Ralph's live iteration snapshot exists while these instructions run; stop rather than risk treating it as transaction work or staging it.
+6. Run `tm validate`.
+7. Require a nonempty `RALPH_TM_ROOT`. Resolve it with `tm show "$RALPH_TM_ROOT" --json`, store the returned `.ticket.id` as `target_root`, and require that Ticket to use the `agent` executor.
+8. Confirm with `git check-ignore` that the handoff and temporary handoff are ignored.
+9. Confirm with `git check-ignore --no-index .ralph-snapshot-ignore-probe/BEFORE_WORK.md` that root-level `.ralph-snapshot-*` directories are ignored. Ralph's live iteration snapshot exists while these instructions run; stop rather than risk treating it as transaction work or staging it.
 
-Always run `tm validate` before selecting or mutating Work Items.
+## Validate the scoped agent-only backlog
 
-## Validate the agent-only backlog
+Use `tm list --root "$target_root" --status open --executor human --json` and recursively inspect its tree. If any object has `matchesFilter: true`, stop and report that the target backlog contains open human-executor Work Items. Completed human Work Items and human Work Items outside the target subtree do not block this workflow.
 
-Use `tm list --all --executor human --json` and recursively inspect its tree. If any object has `matchesFilter: true`, stop and report that this workflow does not support human-executor Work Items.
-
-Do not interpret `tm next` returning `no-actionable-work` as overall completion. Overall completion requires an empty open backlog across all executors.
+Do not interpret `tm next` returning `no-actionable-work` as overall completion. Overall completion requires an empty open backlog across all executors within the target subtree.
 
 ## Resume an existing handoff
 
 When the handoff exists, read it completely and treat IDs and Git coordinates as assertions to validate, not as replacements for `tm` or Git state.
 
-Require the recorded transaction branch, base branch, base commit, transaction root, current item, state, transaction-item relationships, and candidate tree fields to be internally coherent.
+Require the recorded backlog root to equal the canonical target backlog root resolved from `RALPH_TM_ROOT`. Require the recorded transaction branch, base branch, base commit, transaction root, current item, state, transaction-item relationships, and candidate tree fields to be internally coherent.
 
 Handle its state as follows:
 
@@ -50,7 +50,7 @@ When the state is `planning` or `remediation`:
 3. Consider only open transaction items. Never inspect unrelated global items while the transaction is active.
 4. Prioritize an actionable review finding over the transaction root. Prefer the deepest blocking chain first, then preserve finding creation order for independent siblings.
 5. When all findings blocking a rejected item are done, select that rejected item for integration and re-review. The transaction root is selected last, after all findings and rejected descendants have passed.
-6. Validate a proposed candidate with `tm next --root <candidate-id> --json`. Select it only when the returned `.item.id` exactly equals the proposed ID. Do not reproduce `tm` actionability rules by reading `.tasks/tasks.jsonl`.
+6. Validate a proposed candidate with `tm next --root <candidate-id> --json`. Select it only when the returned `.ticket.id` exactly equals the proposed ID. Do not reproduce `tm` actionability rules by reading `.tasks/tasks.jsonl`.
 7. Claim the selected item with `tm claim <id> --actor "$TM_ACTOR"`.
 8. Record it as `Current Work Item`, record `git write-tree` as `Candidate tree before work`, clear prior current-item verification, and set the state to `selected`.
 9. Replace the handoff atomically by writing the complete new document to the temporary path and renaming it.
@@ -65,13 +65,14 @@ Only do this when no handoff exists or after successfully finishing an accepted 
 2. Require no merge, rebase, cherry-pick, or revert in progress.
 3. Require `git status --porcelain=v1` to be empty. Do not stash, reset, commit, or discard pre-existing changes.
 4. Record `git rev-parse HEAD` as the base commit.
-5. Query `tm list --status open --all-executors --json`. Recursively count objects with `matchesFilter: true`.
+5. Query `tm list --root "$target_root" --status open --all-executors --json`. Recursively count objects with `matchesFilter: true`.
 6. If that count is zero, emit the exact overall completion marker below and do nothing else.
-7. Otherwise run `tm next --json` for the initial global selection. If it has no `.item`, report an open but stalled backlog and stop.
-8. Inspect the selected item with `tm show --json`; require executor `agent`.
+7. Otherwise run `tm next --root "$target_root" --json` for the initial scoped selection. If it has no `.ticket`, report the target backlog as open but stalled and stop.
+8. Inspect the selected `.ticket` with `tm show --json`; require executor `agent`.
 9. Create a unique branch from the clean base named `ralph/transaction-<full-work-item-id>`. If that branch already exists without a valid handoff, stop for recovery rather than deleting or reusing it.
 10. Switch to the new transaction branch and claim the selected item with `tm claim <id> --actor "$TM_ACTOR"`.
 11. Create the handoff atomically with:
+    - the canonical target backlog root;
     - base branch and base commit;
     - transaction branch;
     - transaction root and current Work Item set to the selected full ID;
@@ -83,7 +84,7 @@ Only do this when no handoff exists or after successfully finishing an accepted 
     - verification set to `pending`.
 12. Re-run `tm validate` and finish the Planner invocation.
 
-Only this no-handoff path may use global `tm next` ordering.
+Only this no-handoff path may use target-root `tm next` ordering.
 
 When the entire workflow is complete, emit exactly:
 

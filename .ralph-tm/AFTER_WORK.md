@@ -11,10 +11,11 @@ Do not implement fixes yourself, select unrelated work, bypass dependencies, or 
 3. Read `<workflow-directory>/HANDOFF.md` completely and require it to satisfy the canonical contract.
 4. Require state `ready-for-review`.
 5. Require a nonempty `TM_ACTOR` equal to the handoff actor.
-6. Require the recorded transaction branch to equal `git branch --show-current`.
-7. Require `git write-tree` to equal `Candidate tree after work`.
-8. Run `tm validate` and `tm show <current-id> --json`.
-9. Require the current Work Item to be open, agent-executor, and claimed by `TM_ACTOR`.
+6. Require a nonempty `RALPH_TM_ROOT`. Run `tm validate`, resolve `RALPH_TM_ROOT` with `tm show "$RALPH_TM_ROOT" --json`, and require the returned `.ticket.id` to equal the handoff's full `Backlog root`.
+7. Require the recorded transaction branch to equal `git branch --show-current`.
+8. Require `git write-tree` to equal `Candidate tree after work`.
+9. Run `tm show <current-id> --json`.
+10. Require the current Work Item to be open, agent-executor, and claimed by `TM_ACTOR`.
 
 Stop without mutation if the handoff, claim, branch, task state, or candidate identity is inconsistent.
 
@@ -83,7 +84,7 @@ When review finds a concrete defect:
    - exact verification expectations;
    - source traceability to this review transaction.
 4. Before creating anything, reconcile findings already recorded for this rejected item and finish any recorded but missing dependency edge. Never duplicate an existing finding from a partially completed review attempt.
-5. Use `tm create --json` and capture each full finding ID from `.item.id`. Immediately record each created ID and its intended `Blocks` relationship through an atomic handoff replacement before attempting the next mutation.
+5. Use `tm create --json` and capture each full finding ID from `.ticket.id`. Immediately record each created ID and its intended `Blocks` relationship through an atomic handoff replacement before attempting the next mutation.
 6. For every successfully created finding, run `tm block <rejected-id> --by <finding-id>`. If creation or edge recording fails, preserve every captured ID and intended edge in the handoff, report all mutations already made, and stop so recovery cannot silently duplicate the finding.
 7. Release the rejected item with `tm release <rejected-id> --actor "$TM_ACTOR"` only after all intended finding edges exist.
 8. Run `tm validate` and stage the resulting task-store changes.
