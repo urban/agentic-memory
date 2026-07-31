@@ -4,6 +4,21 @@ Prepare exactly one Work Item for the Worker while preserving the active review 
 
 This workflow is serial. Ralph is the only code worker and the sole `tm` writer. Every Work Item must use the `agent` executor. Never use `--force`, `--allow-human`, `--allow-no-verification`, destructive deletion, or direct edits to `.tasks/tasks.jsonl`.
 
+## Global completion signal
+
+Initialize `overall_completion_authorized` to `false`.
+
+`COMPLETE` is a global Ralph loop-control signal, not an acknowledgement that this Planner invocation succeeded. Finishing selection, resuming a handoff, validating the task store, or finding no currently actionable item must never authorize it.
+
+The only instruction allowed to set `overall_completion_authorized` to `true` is Step 6 under **Start a new transaction**, after proving both:
+
+1. no live handoff exists; and
+2. the recursive open Work Item count under `RALPH_TM_ROOT`, across all executors, is exactly zero.
+
+Every other path must leave it `false`. In particular, a `selected`, `ready-for-review`, `planning`, `remediation`, or `accepted-awaiting-commit` handoff is not overall completion. An `accepted-awaiting-merge` handoff may authorize completion only after the merge and cleanup succeed, the handoff is removed, and the no-handoff open-count check proves zero remaining Work Items.
+
+“Finish this invocation” means phase success only. It does not mean overall workflow completion. Do not copy a completion marker merely because it appears in these instructions.
+
 ## Runtime paths and identity
 
 1. Resolve the workflow directory from `RALPH_TM_DIR`, defaulting to `.ralph-tm`.
@@ -66,8 +81,13 @@ Only do this when no handoff exists or after successfully finishing an accepted 
 3. Require `git status --porcelain=v1` to be empty. Do not stash, reset, commit, or discard pre-existing changes.
 4. Record `git rev-parse HEAD` as the base commit.
 5. Query `tm list --root "$target_root" --status open --all-executors --json`. Recursively count objects with `matchesFilter: true`.
-6. If that count is zero, emit the exact overall completion marker below and do nothing else.
-7. Otherwise run `tm next --root "$target_root" --json` for the initial scoped selection. If it has no `.ticket`, report the target backlog as open but stalled and stop.
+6. If and only if that count is zero:
+   - require that no live handoff exists;
+   - record the exact query and zero count as completion evidence;
+   - set `overall_completion_authorized` to `true`;
+   - perform no further planning or mutation;
+   - proceed to the Final output gate.
+7. Otherwise leave `overall_completion_authorized` as `false` and run `tm next --root "$target_root" --json` for the initial scoped selection. If it has no `.ticket`, report the target backlog as open but stalled and stop.
 8. Inspect the selected `.ticket` with `tm show --json`; require executor `agent`.
 9. Create a unique branch from the clean base named `ralph/transaction-<full-work-item-id>`. If that branch already exists without a valid handoff, stop for recovery rather than deleting or reusing it.
 10. Switch to the new transaction branch and claim the selected item with `tm claim <id> --actor "$TM_ACTOR"`.
@@ -86,6 +106,12 @@ Only do this when no handoff exists or after successfully finishing an accepted 
 
 Only this no-handoff path may use target-root `tm next` ordering.
 
-When the entire workflow is complete, emit exactly:
+## Final output gate
+
+Check `overall_completion_authorized` immediately before responding.
+
+- When it is `false`, do not emit Ralph's `COMPLETE` marker anywhere in the response. Follow Ralph's appended protocol for ordinary invocation completion only.
+- When it is `true`, emit the following two standalone lines at the very end, with nothing after them:
 
 <promise>COMPLETE</promise>
+<promise>INVOCATION_COMPLETE</promise>
