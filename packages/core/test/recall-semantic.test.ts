@@ -35,6 +35,8 @@ const vector = (first: number, second: number, third: number): ReadonlyArray<num
 
 const embeddingFor = (input: string): ReadonlyArray<number> => {
   if (input.startsWith("task: search result | query:")) return vector(1, 0, 0);
+  const evidenceRank = input.match(/evidence-rank-(\d+)/u)?.[1];
+  if (evidenceRank !== undefined) return vector(1, Number(evidenceRank) / 100, 0);
   if (input.includes("route-only-nearest")) return vector(1, 0.01, 0);
   if (input.includes("safe-scrubbed-answer")) return vector(0.98, 0.2, 0);
   if (input.includes("substantive-map-answer")) return vector(0.96, 0.28, 0);
@@ -287,7 +289,7 @@ describe("semantic recall", () => {
     );
   });
 
-  it.effect("returns the nearest exact-cosine semantic chunk", () => {
+  it.effect("preserves exact-cosine order in the interim evidence answer", () => {
     const control: EmbeddingControl = { inputs: [] };
     return withRecallRuntime(
       control,
@@ -314,7 +316,10 @@ describe("semantic recall", () => {
           const response = yield* recall({ vaultPath, question });
 
           assert.strictEqual(response.status, "answered");
-          assert.strictEqual(response.answer, "The approved timeout is 640ms.");
+          assert.strictEqual(
+            response.answer,
+            ["The approved timeout is 640ms.", "The recall timeout answer is 900ms."].join("\n\n"),
+          );
           assert.deepStrictEqual(control.inputs, [
             "task: search result | query: What is the recall timeout answer?",
           ]);
@@ -514,6 +519,12 @@ describe("semantic recall", () => {
               "",
             ].join("\n"),
           );
+          for (let index = 0; index < 8; index += 1) {
+            yield* fs.writeFileString(
+              path.join(vaultPath, "maps", `routes-${index}.md`),
+              `# Routes ${index}\n\nRead the route-only-nearest map document for routing.\n`,
+            );
+          }
           yield* fs.writeFileString(
             path.join(vaultPath, "notes", "linked-answer.md"),
             "# Linked answer\n\nThe linked-route-answer must not be expanded from the route.\n",
@@ -1343,6 +1354,199 @@ describe("semantic recall", () => {
 
           assert.strictEqual(response.status, "answered");
           assert.strictEqual(response.answer, answer);
+        }),
+      ),
+    );
+  });
+
+  it.effect("keeps semantic order while limiting interim evidence to five documents", () => {
+    const control: EmbeddingControl = { inputs: [] };
+    return withRecallRuntime(
+      control,
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const vaultPath = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-semantic-recall-evidence-order-",
+          });
+          yield* initializeMinimalVault(vaultPath);
+          for (let rank = 1; rank <= 6; rank += 1) {
+            yield* fs.writeFileString(
+              path.join(vaultPath, "notes", `evidence-${rank}.md`),
+              `# evidence-rank-${rank}\n\nThe ranked evidence passage is ${rank}.\n`,
+            );
+          }
+          yield* synchronizeSemanticIndex(vaultPath);
+          control.inputs = [];
+
+          const response = yield* recall({
+            vaultPath,
+            question: "What are the ranked evidence passages?",
+          });
+
+          assert.strictEqual(response.status, "answered");
+          assert.strictEqual(
+            response.answer,
+            Array.from(
+              { length: 5 },
+              (_, index) => `The ranked evidence passage is ${index + 1}.`,
+            ).join("\n\n"),
+          );
+        }),
+      ),
+    );
+  });
+
+  it.effect("selects at most two interim passages from one document", () => {
+    const control: EmbeddingControl = { inputs: [] };
+    return withRecallRuntime(
+      control,
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const vaultPath = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-semantic-recall-document-budget-",
+          });
+          yield* initializeMinimalVault(vaultPath);
+          yield* fs.writeFileString(
+            path.join(vaultPath, "notes", "primary.md"),
+            [1, 2, 3]
+              .map(
+                (rank) =>
+                  `# evidence-rank-${rank}\n\nThe primary document evidence passage is ${rank}.\n`,
+              )
+              .join("\n"),
+          );
+          yield* fs.writeFileString(
+            path.join(vaultPath, "notes", "secondary.md"),
+            "# evidence-rank-4\n\nThe secondary document evidence passage is 4.\n",
+          );
+          yield* synchronizeSemanticIndex(vaultPath);
+          control.inputs = [];
+
+          const response = yield* recall({
+            vaultPath,
+            question: "What are the document-budget evidence passages?",
+          });
+
+          assert.strictEqual(response.status, "answered");
+          assert.strictEqual(
+            response.answer,
+            [
+              "The primary document evidence passage is 1.",
+              "The primary document evidence passage is 2.",
+              "The secondary document evidence passage is 4.",
+            ].join("\n\n"),
+          );
+        }),
+      ),
+    );
+  });
+
+  it.effect("deduplicates repeated and overlapping interim passages", () => {
+    const control: EmbeddingControl = { inputs: [] };
+    return withRecallRuntime(
+      control,
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const vaultPath = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-semantic-recall-evidence-deduplication-",
+          });
+          yield* initializeMinimalVault(vaultPath);
+          const firstPassage =
+            "The first ranked fact is retained. The shared boundary fact appears once.";
+          const documents: ReadonlyArray<readonly [number, string]> = [
+            [1, firstPassage],
+            [2, "The shared boundary fact appears once. The second ranked fact is also retained."],
+            [3, firstPassage],
+          ];
+          for (const [rank, passage] of documents) {
+            yield* fs.writeFileString(
+              path.join(vaultPath, "notes", `deduplication-${rank}.md`),
+              `# evidence-rank-${rank}\n\n${passage}\n`,
+            );
+          }
+          yield* synchronizeSemanticIndex(vaultPath);
+          control.inputs = [];
+
+          const response = yield* recall({
+            vaultPath,
+            question: "Which deduplicated facts should be retained?",
+          });
+
+          assert.strictEqual(response.status, "answered");
+          assert.strictEqual(
+            response.answer,
+            [firstPassage, "The second ranked fact is also retained."].join("\n\n"),
+          );
+        }),
+      ),
+    );
+  });
+
+  it.effect("deduplicates repeated facts within one interim passage", () => {
+    const control: EmbeddingControl = { inputs: [] };
+    return withRecallRuntime(
+      control,
+      Effect.scoped(
+        Effect.gen(function* () {
+          const response = yield* recallSingleAnswerDocument(
+            control,
+            "agentic-memory-semantic-recall-internal-evidence-deduplication-",
+            [
+              "# evidence-rank-1",
+              "",
+              "- The repeated packet fact appears once.",
+              "- The repeated packet fact appears once.",
+              "- The repeated packet fact appears once.",
+              "",
+            ].join("\n"),
+          );
+
+          assert.strictEqual(response.status, "answered");
+          assert.strictEqual(response.answer, "The repeated packet fact appears once.");
+        }),
+      ),
+    );
+  });
+
+  it.effect("omits passages that would exceed the interim evidence token budget", () => {
+    const control: EmbeddingControl = { inputs: [] };
+    return withRecallRuntime(
+      control,
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const vaultPath = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-semantic-recall-evidence-token-budget-",
+          });
+          yield* initializeMinimalVault(vaultPath);
+          yield* fs.writeFileString(
+            path.join(vaultPath, "notes", "oversized.md"),
+            `# evidence-rank-1\n\n${"x".repeat(18_004)}\n`,
+          );
+          yield* fs.writeFileString(
+            path.join(vaultPath, "notes", "bounded.md"),
+            "# evidence-rank-2\n\nThe bounded evidence passage remains available.\n",
+          );
+          yield* synchronizeSemanticIndex(vaultPath);
+          control.inputs = [];
+
+          const response = yield* recall({
+            vaultPath,
+            question: "Which evidence fits the packet budget?",
+          });
+          const encoded = yield* encodeRecallSuccessJson(response);
+
+          assert.strictEqual(response.status, "answered");
+          assert.strictEqual(response.answer, "The bounded evidence passage remains available.");
+          assert.notInclude(encoded, "E1");
+          assert.notInclude(encoded, vaultPath);
         }),
       ),
     );

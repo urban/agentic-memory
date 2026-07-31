@@ -19,6 +19,13 @@ const recallFixtureVaultPath = fileURLToPath(
 );
 const recallQuestion =
   "In Alpha Product, what latency budget should I follow, and how should I present options back to Urban?";
+const expectedRecallAnswer = [
+  "Alpha Product is the active fixture project for testing project-aware memory retrieval.",
+  "Explicit: When presenting prioritization options, use stack-ranked capital-letter choices so the user can reply with an order such as C > A > B.",
+  "This fixture vault tests prompt-relative retrieval across projects, notes, records, sources, and user preferences.",
+  "When asking the user to choose between options, present the choices as capital-letter options and invite a stack-ranked reply, for example C > A > B.",
+  "Alpha Product interactive retry scheduling should use a 200ms p95 latency budget.",
+].join("\n\n");
 const { dispose, runCapturedEffect, runCapturedEffectWithEmbeddingModel, withCliRuntime } =
   makeCliTestRuntime();
 
@@ -73,10 +80,7 @@ describe("agentic-memory recall command", () => {
         assert.strictEqual(output.stderr, "");
         assert.strictEqual(decoded.status, "answered");
         assert.strictEqual(decoded.question, recallQuestion);
-        assert.strictEqual(
-          decoded.answer,
-          "Alpha Product is the active fixture project for testing project-aware memory retrieval.",
-        );
+        assert.strictEqual(decoded.answer, expectedRecallAnswer);
         assert.deepStrictEqual(decoded.warnings, []);
       }),
     ),
@@ -413,10 +417,7 @@ describe("agentic-memory recall command", () => {
         assert.strictEqual(output.exitCode, 0);
         assert.strictEqual(output.stderr, "");
         assert.strictEqual(result.status, "answered");
-        assert.strictEqual(
-          result.answer,
-          "Alpha Product is the active fixture project for testing project-aware memory retrieval.",
-        );
+        assert.strictEqual(result.answer, expectedRecallAnswer);
       }),
     ),
   );
