@@ -14,6 +14,10 @@ import {
 } from "effect";
 import { encodeRecallSuccessJson, recall } from "../src/recall/Recall.ts";
 import {
+  EvidenceEchoRecallSynthesisLayer,
+  RecallSynthesis,
+} from "../src/recall/RecallSynthesis.ts";
+import {
   EMBEDDING_MODEL_DIMENSIONS,
   EMBEDDING_MODEL_ID,
   EmbeddingModel,
@@ -71,10 +75,14 @@ const makeControlledEmbeddingLayer = (control: EmbeddingControl): Layer.Layer<Em
 
 const withRecallRuntime = <A, E, R>(
   control: EmbeddingControl,
-  effect: Effect.Effect<A, E, R | EmbeddingModel | BunServices.BunServices>,
+  effect: Effect.Effect<A, E, R | EmbeddingModel | RecallSynthesis | BunServices.BunServices>,
 ) => {
   const runtime = ManagedRuntime.make(
-    Layer.merge(BunServices.layer, makeControlledEmbeddingLayer(control)),
+    Layer.mergeAll(
+      BunServices.layer,
+      makeControlledEmbeddingLayer(control),
+      EvidenceEchoRecallSynthesisLayer,
+    ),
   );
   return runtime.contextEffect.pipe(
     Effect.flatMap((context) => Effect.provideContext(effect, context)),
@@ -122,6 +130,63 @@ const recallSingleAnswerDocument = Effect.fnUntraced(function* (
 });
 
 describe("semantic recall", () => {
+  it.effect("returns one synthesized answer instead of rendering the evidence packet", () => {
+    const control: EmbeddingControl = { inputs: [] };
+    const synthesis = RecallSynthesis.of({
+      synthesize: (input) => {
+        assert.strictEqual(input.question, "What is the deployment timeout?");
+        assert.strictEqual(input.evidence.passages[0]?.id, "E1");
+        assert.include(input.evidence.passages[0]?.text ?? "", "640ms");
+        return Effect.succeed({
+          status: "answered",
+          answer: "Use a 640ms deployment timeout.",
+          claim: "The deployment timeout is 640ms.",
+          evidenceIds: ["E1"],
+        });
+      },
+    });
+
+    return withRecallRuntime(
+      control,
+      Effect.scoped(
+        recallSingleAnswerDocument(
+          control,
+          "agentic-memory-semantic-recall-synthesis-",
+          "# Answer\n\nThe approved deployment timeout is 640ms.\n",
+        ).pipe(Effect.provideService(RecallSynthesis, synthesis)),
+      ),
+    ).pipe(
+      Effect.map((response) => {
+        assert.strictEqual(response.status, "answered");
+        assert.strictEqual(response.answer, "Use a 640ms deployment timeout.");
+        assert.notInclude(response.answer, "# Answer");
+      }),
+    );
+  });
+
+  it.effect("renders deterministic not_found wording when synthesis abstains", () => {
+    const control: EmbeddingControl = { inputs: [] };
+    const synthesis = RecallSynthesis.of({
+      synthesize: () => Effect.succeed({ status: "not_found" }),
+    });
+
+    return withRecallRuntime(
+      control,
+      Effect.scoped(
+        recallSingleAnswerDocument(
+          control,
+          "agentic-memory-semantic-recall-abstention-",
+          "# Answer\n\nThe deployment timeout might be 640ms.\n",
+        ).pipe(Effect.provideService(RecallSynthesis, synthesis)),
+      ),
+    ).pipe(
+      Effect.map((response) => {
+        assert.strictEqual(response.status, "not_found");
+        assert.strictEqual(response.answer, "I don't know based on the available Agentic Memory.");
+      }),
+    );
+  });
+
   it.effect("answers from the current Markdown chunk instead of the indexed snippet", () => {
     const control: EmbeddingControl = { inputs: [] };
     return withRecallRuntime(

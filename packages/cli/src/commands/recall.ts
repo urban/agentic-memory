@@ -69,6 +69,42 @@ const toRecallFailure = (vaultPath: string, cause: RecallError) => {
         code: "EvidenceHydrationFailed",
         message: `Failed to hydrate current Agentic Memory evidence; run agentic-memory status --vault ${vaultPath}, then rebuild the index if needed.`,
       });
+    case "SynthesisConfigurationMissing":
+      return toFailure({
+        code: "SynthesisConfigurationMissing",
+        message:
+          "Local synthesis is not configured; set AGENTIC_MEMORY_SYNTHESIS_URL to a loopback llama-server /v1 endpoint and start the required local server.",
+      });
+    case "SynthesisConfigurationInvalid":
+      return toFailure({
+        code: "SynthesisConfigurationInvalid",
+        message:
+          "Local synthesis configuration is invalid; set AGENTIC_MEMORY_SYNTHESIS_URL to a valid loopback HTTP llama-server /v1 endpoint.",
+      });
+    case "SynthesisEndpointNotLoopback":
+      return toFailure({
+        code: "SynthesisEndpointNotLoopback",
+        message:
+          "Local synthesis refused a non-loopback endpoint; use localhost, 127.0.0.0/8, or ::1.",
+      });
+    case "SynthesisServerUnavailable":
+      return toFailure({
+        code: "SynthesisServerUnavailable",
+        message:
+          "The local synthesis server is unavailable; start the configured llama-server and try again.",
+      });
+    case "SynthesisServerIncompatible":
+      return toFailure({
+        code: "SynthesisServerIncompatible",
+        message:
+          "The local synthesis server is incompatible; verify the required local model and server setup.",
+      });
+    case "SynthesisStructuredOutputFailed":
+      return toFailure({
+        code: "SynthesisStructuredOutputFailed",
+        message:
+          "The local synthesis server returned malformed structured output; verify the required local server setup and try again.",
+      });
   }
 };
 

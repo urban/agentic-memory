@@ -1,5 +1,9 @@
 import { decodeRecallSuccessJson } from "@urban/agentic-memory-core/recall/Recall";
 import {
+  RecallSynthesis,
+  RecallSynthesisError,
+} from "@urban/agentic-memory-core/recall/RecallSynthesis";
+import {
   EmbeddingModel,
   EmbeddingRuntimeError,
   makeFakeEmbeddingModel,
@@ -26,8 +30,13 @@ const expectedRecallAnswer = [
   "Beta Platform uses a 5 second batch retry window. This applies only to Beta Platform background batch processing.",
   "Do not use this note for Alpha Product interactive scheduler prompts.",
 ].join("\n\n");
-const { dispose, runCapturedEffect, runCapturedEffectWithEmbeddingModel, withCliRuntime } =
-  makeCliTestRuntime();
+const {
+  dispose,
+  runCapturedEffect,
+  runCapturedEffectWithEmbeddingModel,
+  runCapturedEffectWithRecallSynthesis,
+  withCliRuntime,
+} = makeCliTestRuntime();
 
 const withIndexedRecallFixture = <A, E, R>(use: (vaultPath: string) => Effect.Effect<A, E, R>) =>
   Effect.scoped(
@@ -108,6 +117,59 @@ describe("agentic-memory recall command", () => {
         assert.strictEqual(decoded.answer, expectedRecallAnswer);
         assert.deepStrictEqual(decoded.warnings, []);
       }),
+    ),
+  );
+
+  it.effect("maps every synthesis failure to stable local-server guidance", () =>
+    withCliRuntime(
+      withIndexedRecallFixture((vaultPath) =>
+        Effect.gen(function* () {
+          const cases: ReadonlyArray<
+            readonly [
+              RecallSynthesisError["reason"],
+              (
+                | "SynthesisConfigurationMissing"
+                | "SynthesisConfigurationInvalid"
+                | "SynthesisEndpointNotLoopback"
+                | "SynthesisServerUnavailable"
+                | "SynthesisServerIncompatible"
+                | "SynthesisStructuredOutputFailed"
+              ),
+            ]
+          > = [
+            ["MissingConfiguration", "SynthesisConfigurationMissing"],
+            ["InvalidConfiguration", "SynthesisConfigurationInvalid"],
+            ["NonLoopbackEndpoint", "SynthesisEndpointNotLoopback"],
+            ["ServerUnavailable", "SynthesisServerUnavailable"],
+            ["ServerIncompatible", "SynthesisServerIncompatible"],
+            ["MalformedStructuredOutput", "SynthesisStructuredOutputFailed"],
+          ];
+
+          for (const [reason, expectedCode] of cases) {
+            const synthesis = RecallSynthesis.of({
+              synthesize: () =>
+                Effect.fail(
+                  new RecallSynthesisError({
+                    reason,
+                    message: "Private prompt, evidence E1, provider response, and /tmp/model.gguf",
+                  }),
+                ),
+            });
+            const output = yield* runCapturedEffectWithRecallSynthesis(
+              ["recall", recallQuestion, "--vault", vaultPath, "--json"],
+              synthesis,
+            );
+            const failure = yield* decodeCliFailureResultJson(output.stdout);
+
+            assert.strictEqual(output.exitCode, 1);
+            assert.strictEqual(failure.error.code, expectedCode);
+            assert.notInclude(failure.error.message, "Private prompt");
+            assert.notInclude(failure.error.message, "E1");
+            assert.notInclude(failure.error.message, "provider response");
+            assert.notInclude(failure.error.message, "/tmp/model.gguf");
+          }
+        }),
+      ),
     ),
   );
 

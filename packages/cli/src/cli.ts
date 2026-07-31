@@ -1,6 +1,10 @@
 import packageJson from "../package.json" with { type: "json" };
 import * as BunServices from "@effect/platform-bun/BunServices";
 import { makeCaptureObservabilityLayer } from "@urban/agentic-memory-core/observability/CaptureTelemetry";
+import {
+  LocalRecallSynthesisLive,
+  RecallSynthesis,
+} from "@urban/agentic-memory-core/recall/RecallSynthesis";
 import { EmbeddingModel } from "@urban/agentic-memory-core/semantic/EmbeddingModel";
 import { EmbeddingModelLive } from "@urban/agentic-memory-core/semantic/EmbeddingModelLive";
 import { PiProcessRunnerLayer } from "@urban/agentic-memory-core/steward/PiProcessRunner";
@@ -10,6 +14,7 @@ import {
 } from "@urban/agentic-memory-core/vault/VaultRepository";
 import { Layer } from "effect";
 import { Command } from "effect/unstable/cli";
+import { FetchHttpClient } from "effect/unstable/http";
 import { commandInit } from "./commands/init.ts";
 import { commandIndex } from "./commands/index.ts";
 import { commandLink } from "./commands/link.ts";
@@ -22,7 +27,6 @@ import { commandStewardContext } from "./commands/steward-context.ts";
 export const cliVersion = packageJson.version;
 
 type StewardRunner = import("@urban/agentic-memory-core/steward/StewardExecution").StewardRunner;
-
 export type CliRequirements = BunServices.BunServices | StewardRunner | VaultRepository;
 
 const observabilityLayer = makeCaptureObservabilityLayer({
@@ -39,11 +43,19 @@ const baseAppLayer: Layer.Layer<CliRequirements> = Layer.mergeAll(
 
 export const makeAppLayer = (
   embeddingModelLayer: Layer.Layer<EmbeddingModel, never, BunServices.BunServices>,
-): Layer.Layer<CliRequirements | EmbeddingModel> =>
-  Layer.merge(baseAppLayer, embeddingModelLayer.pipe(Layer.provide(BunServices.layer)));
+  recallSynthesisLayer: Layer.Layer<RecallSynthesis>,
+): Layer.Layer<CliRequirements | EmbeddingModel | RecallSynthesis> =>
+  Layer.mergeAll(
+    baseAppLayer,
+    embeddingModelLayer.pipe(Layer.provide(BunServices.layer)),
+    recallSynthesisLayer.pipe(Layer.provide(BunServices.layer)),
+  );
 
-export const appLayer: Layer.Layer<CliRequirements | EmbeddingModel> =
-  makeAppLayer(EmbeddingModelLive);
+export const appLayer: Layer.Layer<CliRequirements | EmbeddingModel | RecallSynthesis> =
+  makeAppLayer(
+    EmbeddingModelLive,
+    LocalRecallSynthesisLive.pipe(Layer.provide(FetchHttpClient.layer)),
+  );
 
 export const agenticMemoryCommand = commandRoot.pipe(
   Command.withSubcommands([

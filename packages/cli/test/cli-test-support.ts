@@ -2,11 +2,15 @@ import {
   EmbeddingModel,
   makeFakeEmbeddingModelLayer,
 } from "@urban/agentic-memory-core/semantic/EmbeddingModel";
+import {
+  EvidenceEchoRecallSynthesisLayer,
+  RecallSynthesis,
+} from "@urban/agentic-memory-core/recall/RecallSynthesis";
 import { Cause, Console, Effect, Exit, FileSystem, ManagedRuntime, Option, Runtime } from "effect";
 import { makeAppLayer, runAgenticMemoryCommand } from "../src/cli.ts";
 
 type CliRequirements = import("../src/cli.ts").CliRequirements;
-type CliTestRequirements = CliRequirements | EmbeddingModel;
+type CliTestRequirements = CliRequirements | EmbeddingModel | RecallSynthesis;
 
 const formatConsoleArgs = (args: ReadonlyArray<unknown>): string => args.map(String).join(" ");
 
@@ -81,7 +85,9 @@ const exitCodeFromExit = (exit: Exit.Exit<void, unknown>): number =>
   Exit.isSuccess(exit) ? 0 : Runtime.getErrorExitCode(Cause.squash(exit.cause));
 
 export const makeCliTestRuntime = () => {
-  const runtime = ManagedRuntime.make(makeAppLayer(makeFakeEmbeddingModelLayer()));
+  const runtime = ManagedRuntime.make(
+    makeAppLayer(makeFakeEmbeddingModelLayer(), EvidenceEchoRecallSynthesisLayer),
+  );
 
   const withCliRuntime = <A, E, R>(effect: Effect.Effect<A, E, R | CliTestRequirements>) =>
     runtime.contextEffect.pipe(Effect.flatMap((context) => Effect.provideContext(effect, context)));
@@ -111,10 +117,19 @@ export const makeCliTestRuntime = () => {
       runAgenticMemoryCommand(args).pipe(Effect.provideService(EmbeddingModel, embeddingModel)),
     );
 
+  const runCapturedEffectWithRecallSynthesis = (
+    args: ReadonlyArray<string>,
+    recallSynthesis: RecallSynthesis["Service"],
+  ) =>
+    captureCommand(
+      runAgenticMemoryCommand(args).pipe(Effect.provideService(RecallSynthesis, recallSynthesis)),
+    );
+
   return {
     dispose: () => runtime.dispose(),
     runCapturedEffect,
     runCapturedEffectWithEmbeddingModel,
+    runCapturedEffectWithRecallSynthesis,
     withCliRuntime,
   };
 };

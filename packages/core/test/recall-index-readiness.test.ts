@@ -4,6 +4,10 @@ import { bundledVaultTemplatePath } from "@urban/agentic-memory-vault-template/V
 import { Effect, FileSystem, Layer, ManagedRuntime, Path } from "effect";
 import { recall } from "../src/recall/Recall.ts";
 import {
+  EvidenceEchoRecallSynthesisLayer,
+  RecallSynthesis,
+} from "../src/recall/RecallSynthesis.ts";
+import {
   EMBEDDING_MODEL_DIMENSIONS,
   EMBEDDING_MODEL_ID,
   EmbeddingModel,
@@ -63,10 +67,14 @@ const makeObservedEmbeddingModelLayer = (
 
 const withRecallRuntime = <A, E, R>(
   access: EmbeddingModelAccess,
-  effect: Effect.Effect<A, E, R | EmbeddingModel | BunServices.BunServices>,
+  effect: Effect.Effect<A, E, R | EmbeddingModel | RecallSynthesis | BunServices.BunServices>,
 ) => {
   const runtime = ManagedRuntime.make(
-    Layer.merge(BunServices.layer, makeObservedEmbeddingModelLayer(access)),
+    Layer.mergeAll(
+      BunServices.layer,
+      makeObservedEmbeddingModelLayer(access),
+      EvidenceEchoRecallSynthesisLayer,
+    ),
   );
   return runtime.contextEffect.pipe(
     Effect.flatMap((context) => Effect.provideContext(effect, context)),
@@ -198,6 +206,13 @@ describe("recall semantic index readiness", () => {
         rejectEmbeddings: false,
       };
       const fileSystemAccess: FileSystemAccess = { calls: 0 };
+      let synthesisCalls = 0;
+      const observedSynthesis = RecallSynthesis.of({
+        synthesize: () => {
+          synthesisCalls += 1;
+          return Effect.succeed({ status: "not_found" });
+        },
+      });
       return withRecallRuntime(
         access,
         recall({
@@ -205,6 +220,7 @@ describe("recall semantic index readiness", () => {
           question,
         }).pipe(
           Effect.provideService(FileSystem.FileSystem, makeObservedFileSystem(fileSystemAccess)),
+          Effect.provideService(RecallSynthesis, observedSynthesis),
           Effect.result,
           Effect.map((result) => {
             assert.strictEqual(result._tag, "Failure");
@@ -216,6 +232,7 @@ describe("recall semantic index readiness", () => {
             assert.strictEqual(access.inspectCalls, 0);
             assert.strictEqual(access.embedCalls, 0);
             assert.strictEqual(access.installCalls, 0);
+            assert.strictEqual(synthesisCalls, 0);
           }),
         ),
       );

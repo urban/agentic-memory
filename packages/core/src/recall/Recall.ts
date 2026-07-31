@@ -7,10 +7,12 @@ import { prepareRecallEvidencePacket } from "./EvidencePacket.ts";
 import { prepareSafeRecallEvidence } from "./EvidenceSafety.ts";
 import { isUnsupportedMultipartQuestion } from "./QuestionScope.ts";
 import { RecallError } from "./RecallContract.ts";
+import { RecallSynthesis } from "./RecallSynthesis.ts";
 type RecallRequest = import("./RecallContract.ts").RecallRequest;
 type RecallResponse = import("./RecallContract.ts").RecallResponse;
 type RecallEvidenceCandidate = import("./EvidencePacket.ts").RecallEvidenceCandidate;
 type SemanticIndexError = import("../semantic/SemanticIndex.ts").SemanticIndexError;
+type RecallSynthesisError = import("./RecallSynthesis.ts").RecallSynthesisError;
 
 export {
   decodeRecallRequest,
@@ -69,12 +71,28 @@ const toRecallReadinessError = (cause: SemanticIndexError): RecallError => {
   });
 };
 
+const toRecallSynthesisError = (cause: RecallSynthesisError): RecallError => {
+  const reason =
+    cause.reason === "MissingConfiguration"
+      ? "SynthesisConfigurationMissing"
+      : cause.reason === "InvalidConfiguration"
+        ? "SynthesisConfigurationInvalid"
+        : cause.reason === "NonLoopbackEndpoint"
+          ? "SynthesisEndpointNotLoopback"
+          : cause.reason === "ServerUnavailable"
+            ? "SynthesisServerUnavailable"
+            : cause.reason === "ServerIncompatible"
+              ? "SynthesisServerIncompatible"
+              : "SynthesisStructuredOutputFailed";
+  return new RecallError({ reason, message: cause.message, cause });
+};
+
 export const recall = Effect.fnUntraced(function* (
   request: RecallRequest,
 ): Effect.fn.Return<
   RecallResponse,
   RecallError,
-  EmbeddingModel | FileSystem.FileSystem | Path.Path
+  EmbeddingModel | FileSystem.FileSystem | Path.Path | RecallSynthesis
 > {
   const question = yield* validateRecallQuestion(request.question);
   yield* requireCurrentSemanticIndex(request.vaultPath).pipe(
@@ -137,10 +155,21 @@ export const recall = Effect.fnUntraced(function* (
       warnings: [],
     };
   }
-  return {
-    status: "answered",
-    question: request.question,
-    answer: packet.passages.map(({ text }) => text).join("\n\n"),
-    warnings: [],
-  };
+  const synthesis = yield* RecallSynthesis;
+  const result = yield* synthesis
+    .synthesize({ question, evidence: packet })
+    .pipe(Effect.mapError(toRecallSynthesisError));
+  return result.status === "answered"
+    ? {
+        status: "answered",
+        question: request.question,
+        answer: result.answer,
+        warnings: [],
+      }
+    : {
+        status: "not_found",
+        question: request.question,
+        answer: notFoundAnswer,
+        warnings: [],
+      };
 });
