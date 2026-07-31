@@ -44,7 +44,7 @@ agentic-memory recall "<question>" --vault <fixture-vault> --json
 Cases cover:
 
 - project-specific facts and competing-project distractors
-- user preferences and combined questions
+- singular user-preference questions in project-specific and general contexts
 - unknown and unrelated questions
 - source-only questions that must abstain under the source-free contract
 - current facts when conflicting historical facts exist

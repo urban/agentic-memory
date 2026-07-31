@@ -19,6 +19,23 @@ interface EmbeddingModelAccess {
   rejectEmbeddings: boolean;
 }
 
+interface FileSystemAccess {
+  calls: number;
+}
+
+const makeObservedFileSystem = (access: FileSystemAccess): FileSystem.FileSystem =>
+  new Proxy(FileSystem.makeNoop({}), {
+    get: (target, property, receiver): unknown => {
+      const member: unknown = Reflect.get(target, property, receiver);
+      return typeof member === "function"
+        ? (...args: ReadonlyArray<unknown>) => {
+            access.calls += 1;
+            return Reflect.apply(member, target, args);
+          }
+        : member;
+    },
+  });
+
 const makeObservedEmbeddingModelLayer = (
   access: EmbeddingModelAccess,
 ): Layer.Layer<EmbeddingModel> =>
@@ -95,6 +112,144 @@ describe("recall semantic index readiness", () => {
       ),
     );
   });
+
+  const singularQuestions = [
+    "What latency budget applies to Alpha retry scheduling?",
+    "Who owns the Alpha release?",
+    "When was the retry policy approved?",
+    "What does the phrase as well as mean?",
+    "What does the phrase plus who mean?",
+    "What does the phrase also tell me mean?",
+    "When did the phrase also tell me become common?",
+    'When did the phrase "also tell me" become common?',
+    "What did Alice also tell me about Alpha?",
+    "When did Alice also tell me the budget?",
+    "Explain what the plus operator means.",
+    "Tell me what the phrase as well as means.",
+    'What does the phrase "show and tell" mean?',
+    'What does the expression "and explain" mean?',
+    'What does the word "show and tell" mean?',
+    'What does the term "and explain" mean?',
+  ];
+
+  for (const question of singularQuestions) {
+    it.effect(`accepts the singular factual question: ${question}`, () => {
+      const access: EmbeddingModelAccess = {
+        embedCalls: 0,
+        inspectCalls: 0,
+        installCalls: 0,
+        rejectEmbeddings: false,
+      };
+      return withRecallRuntime(
+        access,
+        recall({
+          vaultPath: "/vault/that/does/not/exist",
+          question,
+        }).pipe(
+          Effect.result,
+          Effect.map((result) => {
+            assert.strictEqual(result._tag, "Failure");
+            if (result._tag === "Failure") {
+              assert.strictEqual(result.failure.reason, "ReadVaultFailed");
+            }
+            assert.strictEqual(access.embedCalls, 0);
+          }),
+        ),
+      );
+    });
+  }
+
+  const unsupportedQuestions = [
+    "What latency budget applies? Why was it chosen?",
+    "Tell me the latency budget. Explain why it was chosen.",
+    "Tell me the latency budget.\nExplain why it was chosen.",
+    "Tell me the latency budget; explain why it was chosen.",
+    "What latency budget applies, and why was it chosen?",
+    "What latency budget applies, and how should I present it?",
+    "What latency budget applies, and what project uses it?",
+    "What latency budget applies? Also tell me who approved it.",
+    "Tell me the latency budget as well as who approved it.",
+    "Tell me the latency budget as well as its rationale.",
+    "Tell me the latency budget and then explain its history.",
+    "Tell me the latency budget and then its rationale.",
+    "Tell me the latency budget. Plus, explain why it was chosen.",
+    "Tell me the latency budget, plus its rationale.",
+    "What latency budget applies, plus who approved it?",
+    "Tell me the latency budget. Provide the rationale.",
+    "Tell me the latency budget\nProvide the rationale.",
+    "Tell me the latency budget; include the rationale.",
+    "Tell me the latency budget and also tell me who approved it.",
+    "Tell me the latency budget also tell me who approved it.",
+    'What does the phrase "foo" mean, and what does "bar" mean?',
+    "What latency budget applies.Why was it chosen?",
+    "What latency budget applies, why was it chosen?",
+    "Tell me the latency budget and explain why it was chosen.",
+    "Tell me the latency budget and also explain why it was chosen.",
+    "Tell me the latency budget. Also, explain why it was chosen.",
+    "Tell me the latency budget, and can you explain why it was chosen?",
+  ];
+
+  for (const question of unsupportedQuestions) {
+    it.effect(`rejects the multipart question before operational access: ${question}`, () => {
+      const access: EmbeddingModelAccess = {
+        embedCalls: 0,
+        inspectCalls: 0,
+        installCalls: 0,
+        rejectEmbeddings: false,
+      };
+      const fileSystemAccess: FileSystemAccess = { calls: 0 };
+      return withRecallRuntime(
+        access,
+        recall({
+          vaultPath: "/vault/that/should/not/be-inspected",
+          question,
+        }).pipe(
+          Effect.provideService(FileSystem.FileSystem, makeObservedFileSystem(fileSystemAccess)),
+          Effect.result,
+          Effect.map((result) => {
+            assert.strictEqual(result._tag, "Failure");
+            if (result._tag === "Failure") {
+              assert.strictEqual(result.failure.reason, "UnsupportedMultipartQuestion");
+              assert.include(result.failure.message, "separate recall commands");
+            }
+            assert.strictEqual(fileSystemAccess.calls, 0);
+            assert.strictEqual(access.inspectCalls, 0);
+            assert.strictEqual(access.embedCalls, 0);
+            assert.strictEqual(access.installCalls, 0);
+          }),
+        ),
+      );
+    });
+  }
+
+  it.effect(
+    "validates a large repeated-marker question within a bounded time",
+    () => {
+      const access: EmbeddingModelAccess = {
+        embedCalls: 0,
+        inspectCalls: 0,
+        installCalls: 0,
+        rejectEmbeddings: false,
+      };
+      return withRecallRuntime(
+        access,
+        recall({
+          vaultPath: "/vault/that/does/not/exist",
+          question: `${"plus x ".repeat(64_000)}end`,
+        }).pipe(
+          Effect.result,
+          Effect.map((result) => {
+            assert.strictEqual(result._tag, "Failure");
+            if (result._tag === "Failure") {
+              assert.strictEqual(result.failure.reason, "ReadVaultFailed");
+            }
+            assert.strictEqual(access.embedCalls, 0);
+          }),
+        ),
+      );
+    },
+    2_000,
+  );
 
   it.effect("rejects a lexically answerable vault when its semantic index is missing", () => {
     const access: EmbeddingModelAccess = {

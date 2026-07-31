@@ -38,6 +38,7 @@ export const encodeRecallSuccessJson = Schema.encodeUnknownEffect(RecallSuccessJ
 export class RecallError extends Schema.TaggedErrorClass<RecallError>()("RecallError", {
   reason: Schema.Literals([
     "InvalidQuestion",
+    "UnsupportedMultipartQuestion",
     "ReadVaultFailed",
     "SemanticIndexMissing",
     "SemanticIndexStale",

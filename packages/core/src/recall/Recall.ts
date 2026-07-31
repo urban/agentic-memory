@@ -5,6 +5,7 @@ import { requireCurrentSemanticIndex, searchSemanticIndex } from "../semantic/Se
 import { hydrateSemanticRecallCandidate } from "./EvidenceHydration.ts";
 import { prepareRecallEvidencePacket } from "./EvidencePacket.ts";
 import { prepareSafeRecallEvidence } from "./EvidenceSafety.ts";
+import { isUnsupportedMultipartQuestion } from "./QuestionScope.ts";
 import { RecallError } from "./RecallContract.ts";
 type RecallRequest = import("./RecallContract.ts").RecallRequest;
 type RecallResponse = import("./RecallContract.ts").RecallResponse;
@@ -24,11 +25,19 @@ export {
 
 const validateRecallQuestion = (question: string): Effect.Effect<string, RecallError> => {
   const trimmed = question.trim();
-  return trimmed.length === 0
+  if (trimmed.length === 0) {
+    return Effect.fail(
+      new RecallError({
+        reason: "InvalidQuestion",
+        message: "Recall question must not be empty or whitespace.",
+      }),
+    );
+  }
+  return isUnsupportedMultipartQuestion(trimmed)
     ? Effect.fail(
         new RecallError({
-          reason: "InvalidQuestion",
-          message: "Recall question must not be empty or whitespace.",
+          reason: "UnsupportedMultipartQuestion",
+          message: "Recall supports one factual question at a time; use separate recall commands.",
         }),
       )
     : Effect.succeed(trimmed);

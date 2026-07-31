@@ -14,6 +14,11 @@ const toRecallFailure = (vaultPath: string, cause: RecallError) => {
         code: "InvalidRecallQuestion",
         message: cause.message,
       });
+    case "UnsupportedMultipartQuestion":
+      return toFailure({
+        code: "UnsupportedMultipartQuestion",
+        message: cause.message,
+      });
     case "ReadVaultFailed":
       return toFailure({
         code: "ReadVaultFailed",

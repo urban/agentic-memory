@@ -17,14 +17,14 @@ import { makeCliTestRuntime } from "../cli-test-support.ts";
 const recallFixtureVaultPath = fileURLToPath(
   new URL("../../../core/test/fixtures/retrieval/basic-vault/", import.meta.url),
 );
-const recallQuestion =
-  "In Alpha Product, what latency budget should I follow, and how should I present options back to Urban?";
+const recallQuestion = "In Alpha Product, what latency budget should I follow?";
 const expectedRecallAnswer = [
-  "Alpha Product is the active fixture project for testing project-aware memory retrieval.",
-  "Explicit: When presenting prioritization options, use stack-ranked capital-letter choices so the user can reply with an order such as C > A > B.",
-  "This fixture vault tests prompt-relative retrieval across projects, notes, records, sources, and user preferences.",
   "When asking the user to choose between options, present the choices as capital-letter options and invite a stack-ranked reply, for example C > A > B.",
-  "Alpha Product interactive retry scheduling should use a 200ms p95 latency budget.",
+  "2026-07-01: Added distractor retry policy.",
+  "2026-07-01: Accepted the Alpha scheduler latency decision.",
+  "Beta Platform uses background batch retries where throughput matters more than responsiveness.",
+  "Beta Platform uses a 5 second batch retry window. This applies only to Beta Platform background batch processing.",
+  "Do not use this note for Alpha Product interactive scheduler prompts.",
 ].join("\n\n");
 const { dispose, runCapturedEffect, runCapturedEffectWithEmbeddingModel, withCliRuntime } =
   makeCliTestRuntime();
@@ -60,6 +60,31 @@ describe("agentic-memory recall command", () => {
       assert.strictEqual(decoded.answer, "Follow the contract.");
     }),
   );
+
+  it.effect("maps multipart questions to split-request guidance before reading the vault", () =>
+    withCliRuntime(
+      runCapturedEffect([
+        "recall",
+        "What latency budget applies, and why was it chosen?",
+        "--vault",
+        "/vault/that/should/not/be-inspected",
+        "--json",
+      ]),
+    ).pipe(
+      Effect.flatMap((output) =>
+        decodeCliFailureResultJson(output.stdout).pipe(
+          Effect.map((failure) => ({ failure, output })),
+        ),
+      ),
+      Effect.map(({ failure, output }) => {
+        assert.strictEqual(output.exitCode, 1);
+        assert.strictEqual(failure.error.code, "UnsupportedMultipartQuestion");
+        assert.include(failure.error.message, "separate recall commands");
+        assert.notInclude(failure.error.message, "/vault/that/should/not/be-inspected");
+      }),
+    ),
+  );
+
   it.effect("emits public recall success JSON for answered recall", () =>
     withCliRuntime(
       withIndexedRecallFixture((vaultPath) =>
