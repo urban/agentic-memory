@@ -3,6 +3,7 @@ import { EmbeddingModel } from "../semantic/EmbeddingModel.ts";
 import { formatQueryEmbeddingInput } from "../semantic/MarkdownChunking.ts";
 import { requireCurrentSemanticIndex, searchSemanticIndex } from "../semantic/SemanticIndex.ts";
 import { hydrateSemanticRecallCandidate } from "./EvidenceHydration.ts";
+import { prepareSafeRecallEvidence } from "./EvidenceSafety.ts";
 import { RecallError } from "./RecallContract.ts";
 type RecallRequest = import("./RecallContract.ts").RecallRequest;
 type RecallResponse = import("./RecallContract.ts").RecallResponse;
@@ -99,8 +100,25 @@ export const recall = Effect.fnUntraced(function* (
   yield* requireCurrentSemanticIndex(request.vaultPath).pipe(
     Effect.mapError(toRecallReadinessError),
   );
-  const bestHit = hits[0];
-  if (bestHit === undefined) {
+  let answer: string | undefined;
+  for (const hit of hits) {
+    const hydrated = yield* hydrateSemanticRecallCandidate(request.vaultPath, hit).pipe(
+      Effect.mapError(
+        (cause) =>
+          new RecallError({
+            reason: "EvidenceHydrationFailed",
+            message: cause.message,
+            cause,
+          }),
+      ),
+    );
+    const prepared = prepareSafeRecallEvidence(hydrated);
+    if (prepared._tag === "eligible") {
+      answer = prepared.text;
+      break;
+    }
+  }
+  if (answer === undefined) {
     return {
       status: "not_found",
       question: request.question,
@@ -108,16 +126,6 @@ export const recall = Effect.fnUntraced(function* (
       warnings: [],
     };
   }
-  const answer = yield* hydrateSemanticRecallCandidate(request.vaultPath, bestHit).pipe(
-    Effect.mapError(
-      (cause) =>
-        new RecallError({
-          reason: "EvidenceHydrationFailed",
-          message: cause.message,
-          cause,
-        }),
-    ),
-  );
   return {
     status: "answered",
     question: request.question,
