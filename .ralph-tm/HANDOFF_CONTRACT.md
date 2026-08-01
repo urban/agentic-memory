@@ -41,14 +41,14 @@ Pending.
 - Pending.
 ```
 
-The `Backlog root` is the canonical full ID resolved from `RALPH_TM_ROOT`; every phase must require the environment target to resolve to the same ID. The initial handoff has only the Root entry under `Transaction items`. Append each finding once, in creation order, with the exact rejected item it blocks. Do not record Work Item lifecycle status in this file; query `tm` whenever status matters.
+The `Backlog root` is the canonical full ID resolved from `RALPH_TM_ROOT`; every phase must require the environment target to resolve to the same ID. A new handoff has only the Root entry under `Transaction items`. Historical handoffs may already contain Findings in creation order with the exact rejected item each blocks; preserve that fixed list and do not append to it. Do not record Work Item lifecycle status in this file; query `tm` whenever status matters.
 
 ## States
 
-- `selected`: `Current Work Item` is open and claimed by Actor. The Worker may implement or resume it. The before-work tree is populated and the after-work tree is `pending`.
+- `selected`: `Current Work Item` is open and claimed by Actor. The Worker may implement or resume it. The before-work tree is populated and the after-work tree is `pending`. On a same-item review retry, `Worker summary` contains the Reviewer's consolidated repair checklist and `Worker verification` contains its evidence; the Worker replaces both with the next implementation summary and verification.
 - `ready-for-review`: `Current Work Item` remains open and claimed by Actor. Both attempt tree fields and concrete Worker verification are populated.
 - `planning`: no current item is selected after an accepted finding. The Planner must choose the next transaction item.
-- `remediation`: no current item is selected after review created findings. The Planner must choose a finding before unrelated work.
+- `remediation`: legacy state with no current item selected after historical review findings were created. The Planner must choose an existing finding before unrelated work and must not create another.
 - `accepted-awaiting-commit`: the transaction root is done in `tm`, the accepted candidate is staged on the transaction branch, and the accepted Git commit has not been created.
 - `accepted-awaiting-merge`: the accepted commit exists on the clean transaction branch and has not been fully merged and cleaned up on the base branch.
 
@@ -63,6 +63,10 @@ Use `none`, not an omitted field, when there is no Current Work Item. Use `pendi
 - `Candidate tree after work` identifies the exact tree submitted for independent review.
 
 The handoff itself and its temporary file must be ignored, so changing them must not affect these tree IDs.
+
+## Burn-down mode
+
+The transaction-item relationship list is fixed for the remainder of the current backlog run. Preserve every existing Root and Finding entry exactly, but do not append findings. Review defects are repaired under the current Work Item. If a repair must return to the Worker, the Reviewer reuses the existing Worker summary and verification sections for consolidated feedback and returns the handoff to `selected`; it does not create another Ticket.
 
 ## Atomic replacement
 

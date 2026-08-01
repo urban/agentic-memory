@@ -4,6 +4,17 @@ Prepare exactly one Work Item for the Worker while preserving the active review 
 
 This workflow is serial. Ralph is the only code worker and the sole `tm` writer. Every Work Item must use the `agent` executor. Never use `--force`, `--allow-human`, `--allow-no-verification`, destructive deletion, or direct edits to `.tasks/tasks.jsonl`.
 
+## Monotonic burn-down invariant
+
+This run drains the Work Items that already exist. The transaction item set and the relevant open count may stay level during implementation but must never increase. During a live handoff, the relevant count is the number of open IDs recorded under `Transaction items`; without a handoff, it is the recursive open count under `RALPH_TM_ROOT`.
+
+- No phase may run `tm create`, add a new dependency, or split review feedback into another Work Item.
+- Review defects are repaired under the currently selected Work Item. If the Reviewer cannot finish a repair, it returns that same item to `selected` with consolidated feedback in the handoff.
+- Existing findings and dependency edges remain authoritative and are drained deepest-first. Do not delete, cancel, re-parent, or bypass them merely to reduce the count.
+- A completed dependency is settled evidence. Re-check it only for a regression introduced by the current attempt; do not reopen its design or invent stronger acceptance criteria.
+
+Before and after any Planner mutation, compare the applicable relevant open count. Stop if a Planner action would increase it. Root-level historical findings may sit outside the backlog hierarchy, so never use only the `RALPH_TM_ROOT` tree to count an active transaction.
+
 ## Global completion signal
 
 Initialize `overall_completion_authorized` to `false`.
@@ -56,15 +67,15 @@ Never start unrelated work while an existing transaction still needs implementat
 
 ## Select within an active transaction
 
-The handoff records the transaction root and every review finding created during the transaction, including which rejected item each finding blocks.
+The handoff records the transaction root and the existing review findings already created during the transaction, including which rejected item each finding blocks. The list is now fixed: preserve it exactly and never append another finding.
 
 When the state is `planning` or `remediation`:
 
 1. Inspect every recorded transaction Work Item with `tm show --json`.
-2. Reconcile completed findings in the handoff with authoritative `tm` state.
+2. Reconcile completed findings in the handoff with authoritative `tm` state. Require the handoff's finding set to remain unchanged.
 3. Consider only open transaction items. Never inspect unrelated global items while the transaction is active.
 4. Prioritize an actionable review finding over the transaction root. Prefer the deepest blocking chain first, then preserve finding creation order for independent siblings.
-5. When all findings blocking a rejected item are done, select that rejected item for integration and re-review. The transaction root is selected last, after all findings and rejected descendants have passed.
+5. When all findings blocking a rejected item are done, select that rejected item for integration and bounded re-review. The transaction root is selected last, after all findings and rejected descendants have passed. Integration review verifies the original criteria and completed dependency Results; it is not a fresh exploratory audit.
 6. Validate a proposed candidate with `tm next --root <candidate-id> --json`. Select it only when the returned `.ticket.id` exactly equals the proposed ID. Do not reproduce `tm` actionability rules by reading `.tasks/tasks.jsonl`.
 7. Claim the selected item with `tm claim <id> --actor "$TM_ACTOR"`.
 8. Record it as `Current Work Item`, record `git write-tree` as `Candidate tree before work`, clear prior current-item verification, and set the state to `selected`.
@@ -100,7 +111,7 @@ Only do this when no handoff exists or after successfully finishing an accepted 
     - actor;
     - `git write-tree` as the candidate tree before work;
     - candidate tree after work set to `pending`;
-    - an empty review-finding relationship list;
+    - an empty, fixed review-finding relationship list;
     - verification set to `pending`.
 12. Re-run `tm validate` and finish the Planner invocation.
 

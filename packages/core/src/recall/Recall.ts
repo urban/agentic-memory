@@ -7,6 +7,7 @@ import { prepareRecallEvidencePacket } from "./EvidencePacket.ts";
 import { prepareSafeRecallEvidence } from "./EvidenceSafety.ts";
 import { isUnsupportedMultipartQuestion } from "./QuestionScope.ts";
 import { RecallError } from "./RecallContract.ts";
+import { validateRecallGrounding } from "./RecallGrounding.ts";
 import { RecallSynthesis } from "./RecallSynthesis.ts";
 type RecallRequest = import("./RecallContract.ts").RecallRequest;
 type RecallResponse = import("./RecallContract.ts").RecallResponse;
@@ -159,11 +160,21 @@ export const recall = Effect.fnUntraced(function* (
   const result = yield* synthesis
     .synthesize({ question, evidence: packet })
     .pipe(Effect.mapError(toRecallSynthesisError));
-  return result.status === "answered"
+  const grounded = yield* validateRecallGrounding(packet, result).pipe(
+    Effect.mapError(
+      (cause) =>
+        new RecallError({
+          reason: "GroundingValidationFailed",
+          message: cause.message,
+          cause,
+        }),
+    ),
+  );
+  return grounded.status === "answered"
     ? {
         status: "answered",
         question: request.question,
-        answer: result.answer,
+        answer: grounded.answer,
         warnings: [],
       }
     : {

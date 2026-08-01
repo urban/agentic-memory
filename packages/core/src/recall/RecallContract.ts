@@ -55,6 +55,7 @@ export class RecallError extends Schema.TaggedErrorClass<RecallError>()("RecallE
     "SynthesisServerUnavailable",
     "SynthesisServerIncompatible",
     "SynthesisStructuredOutputFailed",
+    "GroundingValidationFailed",
   ]),
   message: Schema.String,
   cause: Schema.optional(Schema.Unknown),

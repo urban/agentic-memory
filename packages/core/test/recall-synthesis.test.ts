@@ -92,7 +92,7 @@ const synthesizeWith = (
 describe("local recall synthesis", () => {
   it.effect("generates answered and not_found through the structured schema", () => {
     const contents = [
-      '{"status":"answered","answer":"azure-17","claim":"The launch code is azure-17.","evidenceIds":["E1"]}',
+      '{"status":"answered","answer":"azure-17","claim":"The launch code is azure-17.","evidenceIds":["E1"],"providerModelIdentity":"absent"}',
       '{"status":"not_found"}',
     ];
     let requestCount = 0;
@@ -111,6 +111,7 @@ describe("local recall synthesis", () => {
         answer: "azure-17",
         claim: "The launch code is azure-17.",
         evidenceIds: ["E1"],
+        providerModelIdentity: "absent",
       });
       assert.deepEqual(notFound, { status: "not_found" });
       assert.strictEqual(requestCount, 2);
@@ -125,7 +126,7 @@ describe("local recall synthesis", () => {
         return jsonResponse(
           request,
           responseBody(
-            '{"status":"answered","answer":"azure-17","claim":"The launch code is azure-17.","evidenceIds":["E1"]}',
+            '{"status":"answered","answer":"azure-17","claim":"The launch code is azure-17.","evidenceIds":["E1"],"providerModelIdentity":"absent"}',
           ),
         );
       }).pipe(
@@ -237,6 +238,35 @@ describe("local recall synthesis", () => {
       assert.strictEqual(schemaInvalidError.reason, "MalformedStructuredOutput");
       assert.strictEqual(thinkingError.reason, "ServerIncompatible");
     });
+  });
+
+  it.effect.each([
+    {
+      name: "answer",
+      content:
+        '{"status":"answered","answer":" ","claim":"The launch code is azure-17.","evidenceIds":["E1"],"providerModelIdentity":"absent"}',
+    },
+    {
+      name: "claim",
+      content:
+        '{"status":"answered","answer":"azure-17","claim":" ","evidenceIds":["E1"],"providerModelIdentity":"absent"}',
+    },
+    {
+      name: "evidence ID",
+      content:
+        '{"status":"answered","answer":"azure-17","claim":"The launch code is azure-17.","evidenceIds":[" "],"providerModelIdentity":"absent"}',
+    },
+  ])("rejects a whitespace-only $name in an otherwise valid answered result", ({ content }) => {
+    const client = makeHttpClient((request) =>
+      Effect.succeed(jsonResponse(request, responseBody(content))),
+    );
+
+    return synthesizeWith("http://127.0.0.1:8080/v1", client).pipe(
+      Effect.flip,
+      Effect.map((error) => {
+        assert.strictEqual(error.reason, "MalformedStructuredOutput");
+      }),
+    );
   });
 
   it.effect("times out after 60 seconds without retrying", () => {

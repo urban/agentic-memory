@@ -105,6 +105,12 @@ const toRecallFailure = (vaultPath: string, cause: RecallError) => {
         message:
           "The local synthesis server returned malformed structured output; verify the required local server setup and try again.",
       });
+    case "GroundingValidationFailed":
+      return toFailure({
+        code: "GroundingValidationFailed",
+        message:
+          "The synthesized answer could not be grounded safely in Agentic Memory; try a narrower factual question.",
+      });
   }
 };
 

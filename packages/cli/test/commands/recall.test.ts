@@ -173,6 +173,340 @@ describe("agentic-memory recall command", () => {
     ),
   );
 
+  it.effect("maps grounding failures without exposing synthesis internals", () =>
+    withCliRuntime(
+      withIndexedRecallFixture((vaultPath) => {
+        const unsafeAnswer = "Amazon Bedrock read private/alpha for the answer.";
+        const unsafeClaim = "Llama 3.1 70B derived the claim from the prompt.";
+        const synthesis = RecallSynthesis.of({
+          synthesize: () =>
+            Effect.succeed({
+              status: "answered",
+              answer: unsafeAnswer,
+              claim: unsafeClaim,
+              evidenceIds: ["E1"],
+              providerModelIdentity: "present",
+            }),
+        });
+        return runCapturedEffectWithRecallSynthesis(
+          ["recall", recallQuestion, "--vault", vaultPath, "--json"],
+          synthesis,
+        ).pipe(
+          Effect.flatMap((output) =>
+            decodeCliFailureResultJson(output.stdout).pipe(
+              Effect.map((failure) => ({ failure, output })),
+            ),
+          ),
+        );
+      }),
+    ).pipe(
+      Effect.map(({ failure, output }) => {
+        assert.strictEqual(output.exitCode, 1);
+        assert.strictEqual(failure.error.code, "GroundingValidationFailed");
+        for (const unsafeValue of ["Amazon Bedrock", "private/alpha", "Llama 3.1 70B", "prompt"]) {
+          assert.notInclude(output.stdout, unsafeValue);
+          assert.notInclude(output.stderr, unsafeValue);
+        }
+      }),
+    ),
+  );
+
+  it.effect("rejects generalized retrieval-ranking prose at the CLI boundary", () =>
+    withCliRuntime(
+      withIndexedRecallFixture((vaultPath) =>
+        Effect.gen(function* () {
+          const cases = [
+            {
+              answer: "Use MEMORY_ADAPTER for the deployment details.",
+              claim: "The deployment details are available.",
+            },
+            {
+              answer: "The deployment details are available.",
+              claim: "The MEMORY_ADAPTER contains the deployment details.",
+            },
+            {
+              answer: "Retrieval placed the deployment timeout first overall.",
+              claim: "The deployment timeout is 640ms.",
+            },
+            {
+              answer:
+                "Retrieval placed the deployment timeout first chronologically among the candidates.",
+              claim: "The deployment timeout is 640ms.",
+            },
+            {
+              answer:
+                "Retrieval placed the deployment timeout first **chronologically** among the candidates.",
+              claim: "The deployment timeout is 640ms.",
+            },
+            {
+              answer: "Retrieval placed the deployment timeout first _overall_ before filtering.",
+              claim: "The deployment timeout is 640ms.",
+            },
+            {
+              answer: "Retrieval ordered the deployment timeout first and returned it.",
+              claim: "The deployment timeout is 640ms.",
+            },
+            {
+              answer: "Use a 640ms deployment timeout.",
+              claim: "Retrieval placed the deployment timeout first overall.",
+            },
+            {
+              answer: "Use a 640ms deployment timeout.",
+              claim: "Retrieval placed the deployment timeout first overall before filtering.",
+            },
+            {
+              answer: "Use a 640ms deployment timeout.",
+              claim:
+                "Retrieval placed the deployment timeout first **chronologically** among the candidates.",
+            },
+            {
+              answer: "Use a 640ms deployment timeout.",
+              claim: "Retrieval placed the deployment timeout first _overall_ before filtering.",
+            },
+            {
+              answer: "Retrieval placed this first overall before filtering.",
+              claim: "The deployment timeout is 640ms.",
+            },
+            {
+              answer: "Retrieval placed this **first** overall before filtering.",
+              claim: "The deployment timeout is 640ms.",
+            },
+            {
+              answer: "Retrieval placed this first chrono**logically** among the candidates.",
+              claim: "The deployment timeout is 640ms.",
+            },
+            {
+              answer: "Retrieval placed this `first` overall before filtering.",
+              claim: "The deployment timeout is 640ms.",
+            },
+            {
+              answer: "Retrieval placed this first overall.",
+              claim: "The deployment timeout is 640ms.",
+            },
+            {
+              answer: "Retrieval placed this first chronologically.",
+              claim: "The deployment timeout is 640ms.",
+            },
+            {
+              answer: "Retrieval placed this first secondly.",
+              claim: "The deployment timeout is 640ms.",
+            },
+            {
+              answer: "Use a 640ms deployment timeout.",
+              claim: "Retrieval placed this first overall before filtering.",
+            },
+            {
+              answer: "Use a 640ms deployment timeout.",
+              claim: "Retrieval placed this **first** overall before filtering.",
+            },
+            {
+              answer: "Use a 640ms deployment timeout.",
+              claim: "Retrieval placed this first chrono`logically` among the candidates.",
+            },
+            {
+              answer: "Use a 640ms deployment timeout.",
+              claim: "Retrieval placed this first overall.",
+            },
+            {
+              answer: "Use a 640ms deployment timeout.",
+              claim: "Retrieval placed this first chronologically.",
+            },
+            {
+              answer: "Use a 640ms deployment timeout.",
+              claim: "Retrieval placed this first secondly.",
+            },
+            {
+              answer: "Retrieval placed this first chronologically among the candidates.",
+              claim: "The deployment timeout is 640ms.",
+            },
+            {
+              answer: "Use a 640ms deployment timeout.",
+              claim: "Retrieval placed this first chronologically among the candidates.",
+            },
+            {
+              answer: "Retrieval placed this first chronologically in the candidate list.",
+              claim: "The deployment timeout is 640ms.",
+            },
+            {
+              answer: "Use a 640ms deployment timeout.",
+              claim: "Retrieval placed this first chronologically in the candidate list.",
+            },
+            {
+              answer: "Retrieval placed this first secondly in the candidate list.",
+              claim: "The deployment timeout is 640ms.",
+            },
+            {
+              answer: "Use a 640ms deployment timeout.",
+              claim: "Retrieval placed this first secondly in the candidate list.",
+            },
+            {
+              answer: "Retrieval placed this first recently in the candidate list.",
+              claim: "The deployment timeout is 640ms.",
+            },
+            {
+              answer: "Use a 640ms deployment timeout.",
+              claim: "Retrieval placed this first recently in the candidate list.",
+            },
+            {
+              answer: "Retrieval placed this first recently in the results.",
+              claim: "The deployment timeout is 640ms.",
+            },
+            {
+              answer: "Use a 640ms deployment timeout.",
+              claim: "Retrieval placed this first recently in the results.",
+            },
+            {
+              answer: "Retrieval placed this first recently within the options.",
+              claim: "The deployment timeout is 640ms.",
+            },
+            {
+              answer: "Use a 640ms deployment timeout.",
+              claim: "Retrieval placed this first recently within the options.",
+            },
+            {
+              answer: "Retrieval placed that first secondly in the shortlist.",
+              claim: "The deployment timeout is 640ms.",
+            },
+            {
+              answer: "Use a 640ms deployment timeout.",
+              claim: "Retrieval placed that first secondly in the shortlist.",
+            },
+            {
+              answer: "Retrieval placed this first family in temporary housing first.",
+              claim: "The deployment timeout is 640ms.",
+            },
+            {
+              answer: "Use a 640ms deployment timeout.",
+              claim: "Retrieval placed this first family in temporary housing first.",
+            },
+            {
+              answer: "Use a 640ms deployment timeout.",
+              claim: "Retrieval ordered the deployment timeout first and returned it.",
+            },
+            {
+              answer: "Retrieval placed records with the user-selected labels highest.",
+              claim: "The deployment timeout is 640ms.",
+            },
+            {
+              answer: "Use a 640ms deployment timeout.",
+              claim: "Retrieval placed records with the user-selected labels highest.",
+            },
+            {
+              answer: "Retrieval placed the candidate the team preferred at the top.",
+              claim: "The deployment timeout is 640ms.",
+            },
+            {
+              answer: "Use a 640ms deployment timeout.",
+              claim: "Retrieval placed the candidate the team preferred at the top.",
+            },
+            {
+              answer: "Retrieval placed the candidate after the user-selected labels at the top.",
+              claim: "The deployment timeout is 640ms.",
+            },
+            {
+              answer: "Use a 640ms deployment timeout.",
+              claim: "Retrieval placed the candidate after the user-selected labels at the top.",
+            },
+            {
+              answer: "Retrieval placed records before the archived candidates highest.",
+              claim: "The deployment timeout is 640ms.",
+            },
+            {
+              answer: "Use a 640ms deployment timeout.",
+              claim: "Retrieval placed records before the archived candidates highest.",
+            },
+            {
+              answer: "Retrieval placed records before the eligible candidates highest.",
+              claim: "The deployment timeout is 640ms.",
+            },
+            {
+              answer: "Use a 640ms deployment timeout.",
+              claim: "Retrieval placed records before the eligible candidates highest.",
+            },
+            {
+              answer:
+                "Retrieval placed the notes before the archived project candidate records at the top.",
+              claim: "The deployment timeout is 640ms.",
+            },
+            {
+              answer: "Use a 640ms deployment timeout.",
+              claim:
+                "Retrieval placed the notes before the archived project candidate records at the top.",
+            },
+          ];
+
+          for (const { answer, claim } of cases) {
+            const synthesis = RecallSynthesis.of({
+              synthesize: () =>
+                Effect.succeed({
+                  status: "answered",
+                  answer,
+                  claim,
+                  evidenceIds: ["E1"],
+                  providerModelIdentity: "absent",
+                }),
+            });
+            const output = yield* runCapturedEffectWithRecallSynthesis(
+              ["recall", recallQuestion, "--vault", vaultPath, "--json"],
+              synthesis,
+            );
+            const failure = yield* decodeCliFailureResultJson(output.stdout);
+
+            assert.strictEqual(output.exitCode, 1);
+            assert.strictEqual(failure.error.code, "GroundingValidationFailed");
+            assert.notInclude(failure.error.message, answer);
+            assert.notInclude(failure.error.message, claim);
+          }
+        }),
+      ),
+    ),
+  );
+
+  it.effect("emits intransitive subordinate clauses in answers and claims", () =>
+    withCliRuntime(
+      withIndexedRecallFixture((vaultPath) =>
+        Effect.gen(function* () {
+          const clauses = [
+            "while the team arrived first",
+            "while the busy team arrived first",
+            "after they finished last",
+            "while Alice arrived first",
+            "while engineers arrived first",
+          ];
+          const fields: ReadonlyArray<"answer" | "claim"> = ["answer", "claim"];
+
+          for (const clause of clauses) {
+            for (const field of fields) {
+              const publicText = `Retrieval placed the note ${clause}.`;
+              const synthesis = RecallSynthesis.of({
+                synthesize: () =>
+                  Effect.succeed({
+                    status: "answered",
+                    answer:
+                      field === "answer" ? publicText : "The requested information was available.",
+                    claim:
+                      field === "claim" ? publicText : "The requested information was available.",
+                    evidenceIds: ["E1"],
+                    providerModelIdentity: "absent",
+                  }),
+              });
+              const output = yield* runCapturedEffectWithRecallSynthesis(
+                ["recall", recallQuestion, "--vault", vaultPath, "--json"],
+                synthesis,
+              );
+              const decoded = yield* decodeRecallSuccessJson(output.stdout.trim());
+
+              assert.strictEqual(output.exitCode, 0);
+              assert.strictEqual(output.stderr, "");
+              assert.strictEqual(decoded.status, "answered");
+              if (field === "answer") assert.strictEqual(decoded.answer, publicText);
+            }
+          }
+        }),
+      ),
+    ),
+  );
+
   it.effect("maps a missing semantic index to indexing guidance", () =>
     withCliRuntime(
       Effect.scoped(

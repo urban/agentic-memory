@@ -12,6 +12,7 @@ import {
   Path,
   PlatformError,
 } from "effect";
+import { isSafeRecallPublicText } from "../src/recall/EvidenceSafety.ts";
 import { encodeRecallSuccessJson, recall } from "../src/recall/Recall.ts";
 import {
   EvidenceEchoRecallSynthesisLayer,
@@ -129,7 +130,721 @@ const recallSingleAnswerDocument = Effect.fnUntraced(function* (
   });
 });
 
+interface ProhibitedPublicOutputCase {
+  readonly name: string;
+  readonly answer: string;
+  readonly claim: string;
+  readonly providerModelIdentity?: "absent" | "present";
+}
+
+const prohibitedPublicOutputCases: ReadonlyArray<ProhibitedPublicOutputCase> = [
+  {
+    name: "the control-plane MEMORY_ADAPTER token in the answer",
+    answer: "Use MEMORY_ADAPTER for the deployment details.",
+    claim: "The deployment details are available.",
+  },
+  {
+    name: "the control-plane MEMORY_ADAPTER token in the claim",
+    answer: "The deployment details are available.",
+    claim: "The MEMORY_ADAPTER contains the deployment details.",
+  },
+  {
+    name: "underscore-delimited evidence metadata in the answer",
+    answer: "The text_hash identifies the deployment evidence.",
+    claim: "The deployment evidence is identified.",
+  },
+  {
+    name: "underscore-delimited evidence metadata in the claim",
+    answer: "The deployment evidence is identified.",
+    claim: "The document_path identifies the deployment evidence.",
+  },
+  {
+    name: "a bare relative document path in the answer",
+    answer: "The deployment design is documented in design.md.",
+    claim: "The deployment design has been documented.",
+  },
+  {
+    name: "a capitalized dotted JavaScript document reference in the answer",
+    answer: "Open Node.js for the deployment details.",
+    claim: "The deployment design has been documented.",
+  },
+  {
+    name: "an extensionless relative document path in the answer",
+    answer: "The deployment decision is recorded in notes/alpha.",
+    claim: "The deployment decision has been recorded.",
+  },
+  {
+    name: "a relative path outside conventional memory directories in the answer",
+    answer: "The deployment decision is recorded in private/alpha.",
+    claim: "The deployment decision has been recorded.",
+  },
+  {
+    name: "a generic relative path in arbitrary answer prose",
+    answer: "The deployment decision appears in private/alpha before rollout.",
+    claim: "The deployment decision has been documented.",
+  },
+  {
+    name: "a generic relative path in arbitrary claim prose",
+    answer: "The deployment decision has been documented.",
+    claim: "The deployment decision appears in private/alpha.",
+  },
+  {
+    name: "a generic relative path followed by terms in the answer",
+    answer: "The deployment decision appears in private/alpha terms before rollout.",
+    claim: "The deployment decision has been documented.",
+  },
+  {
+    name: "a generic relative path followed by access in the claim",
+    answer: "The policy grants limited access to operators.",
+    claim: "The policy grants private/alpha access to operators.",
+  },
+  {
+    name: "a prompt reference in the answer",
+    answer: "The prompt says to use a 640ms deployment timeout.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "a prepositional prompt reference in the answer",
+    answer: "According to the prompt, use a 640ms deployment timeout.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "an instruction-source prompt reference in the answer",
+    answer: "The answer follows instructions from the prompt.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "an indefinite passive prompt source in the answer",
+    answer: "The answer reflects instructions supplied by a prompt.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "provider details in the answer",
+    answer: "The provider was OpenAI when the 640ms timeout was selected.",
+    claim: "The deployment timeout is 640ms.",
+    providerModelIdentity: "present",
+  },
+  {
+    name: "unlisted provider details in the answer",
+    answer: "The provider was Amazon Bedrock when the 640ms timeout was selected.",
+    claim: "The deployment timeout is 640ms.",
+    providerModelIdentity: "present",
+  },
+  {
+    name: "provider details preceding the provider descriptor in the answer",
+    answer: "Amazon Bedrock was selected as the provider.",
+    claim: "The deployment timeout is 640ms.",
+    providerModelIdentity: "present",
+  },
+  {
+    name: "provider details using serves as in the answer",
+    answer: "Amazon Bedrock serves as the provider.",
+    claim: "The deployment timeout is 640ms.",
+    providerModelIdentity: "present",
+  },
+  {
+    name: "provider details using served as in the answer",
+    answer: "Amazon Bedrock served as the provider.",
+    claim: "The deployment timeout is 640ms.",
+    providerModelIdentity: "present",
+  },
+  {
+    name: "provider details using served as after the descriptor in the answer",
+    answer: "The provider served as Amazon Bedrock.",
+    claim: "The deployment timeout is 640ms.",
+    providerModelIdentity: "present",
+  },
+  {
+    name: "provider details using served as after a newline in the answer",
+    answer: "Deployment details:\nProvider served as Amazon Bedrock.",
+    claim: "The deployment timeout is 640ms.",
+    providerModelIdentity: "present",
+  },
+  {
+    name: "provider details using is serving as in the answer",
+    answer: "Amazon Bedrock is serving as the provider.",
+    claim: "The deployment timeout is 640ms.",
+    providerModelIdentity: "present",
+  },
+  {
+    name: "provider details using is serving as after the descriptor in the answer",
+    answer: "The provider is serving as Amazon Bedrock.",
+    claim: "The deployment timeout is 640ms.",
+    providerModelIdentity: "present",
+  },
+  {
+    name: "provider details using has served as after the descriptor in the answer",
+    answer: "The provider has served as Amazon Bedrock.",
+    claim: "The deployment timeout is 640ms.",
+    providerModelIdentity: "present",
+  },
+  {
+    name: "provider details using will serve as in the answer",
+    answer: "Amazon Bedrock will serve as the provider.",
+    claim: "The deployment timeout is 640ms.",
+    providerModelIdentity: "present",
+  },
+  {
+    name: "provider details using will have served as after the descriptor in the answer",
+    answer: "The provider will have served as Amazon Bedrock.",
+    claim: "The deployment timeout is 640ms.",
+    providerModelIdentity: "present",
+  },
+  {
+    name: "article-prefixed model identity using served as in the answer",
+    answer: "The model served as an OpenAI model.",
+    claim: "The deployment timeout is 640ms.",
+    providerModelIdentity: "present",
+  },
+  {
+    name: "definite-article model identity using served as in the answer",
+    answer: "The model served as the OpenAI service.",
+    claim: "The deployment timeout is 640ms.",
+    providerModelIdentity: "present",
+  },
+  {
+    name: "lowercase provider identity using served as in the answer",
+    answer: "The provider served as amazon bedrock.",
+    claim: "The deployment timeout is 640ms.",
+    providerModelIdentity: "present",
+  },
+  {
+    name: "lowercase provider identity with a generic suffix in the answer",
+    answer: "The provider served as amazon bedrock provider.",
+    claim: "The deployment timeout is 640ms.",
+    providerModelIdentity: "present",
+  },
+  {
+    name: "lowercase model identity with a generic suffix in the answer",
+    answer: "The model served as openai language model.",
+    claim: "The deployment timeout is 640ms.",
+    providerModelIdentity: "present",
+  },
+  {
+    name: "model details in the answer",
+    answer: "The model is gpt-4o and the deployment timeout is 640ms.",
+    claim: "The deployment timeout is 640ms.",
+    providerModelIdentity: "present",
+  },
+  {
+    name: "unlisted model details in the answer",
+    answer: "The model is Llama 3.1 70B and the deployment timeout is 640ms.",
+    claim: "The deployment timeout is 640ms.",
+    providerModelIdentity: "present",
+  },
+  {
+    name: "model details preceding the model descriptor in the answer",
+    answer: "Llama 3.1 70B was the selected model.",
+    claim: "The deployment timeout is 640ms.",
+    providerModelIdentity: "present",
+  },
+  {
+    name: "model details using serves as in the answer",
+    answer: "Llama 3.1 70B serves as the model.",
+    claim: "The deployment timeout is 640ms.",
+    providerModelIdentity: "present",
+  },
+  {
+    name: "trace details in the answer",
+    answer: "Trace details show a 640ms deployment timeout.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "execution trace details in the answer",
+    answer: "The execution trace shows a 640ms deployment timeout.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "prepositional execution trace details in the answer",
+    answer: "The 640ms deployment timeout appears in the execution trace.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "ranking diagnostics in the answer",
+    answer: "Ranking diagnostics placed the 640ms timeout first.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "ranking behavior in the answer",
+    answer: "The ranking placed the 640ms timeout first.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "predicate ranking details in the answer",
+    answer: "The 640ms deployment timeout ranked first during retrieval.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "retrieval-subject ranking details in the answer",
+    answer: "Retrieval ranked the 640ms deployment timeout first.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "retrieval-subject placement ranking details in the answer",
+    answer: "Retrieval placed the 640ms deployment timeout first.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "retrieval-subject ordering ranking details in the answer",
+    answer: "Retrieval ordered the 640ms deployment timeout first.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "adverb-modified placed ranking details in the answer",
+    answer: "Retrieval placed the 640ms deployment timeout first overall.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "adverb-modified ordered ranking details in the answer",
+    answer: "Retrieval ordered the 640ms deployment timeout first chronologically.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "continued chronological ranking details in the answer",
+    answer:
+      "Retrieval placed the 640ms deployment timeout first chronologically among the candidates.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "continued overall ranking details in the answer",
+    answer: "Retrieval placed the 640ms deployment timeout first overall before filtering.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "emphasis-formatted continued chronological ranking details in the answer",
+    answer:
+      "Retrieval placed the 640ms deployment timeout first **chronologically** among the candidates.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "emphasis-formatted continued overall ranking details in the answer",
+    answer: "Retrieval placed the 640ms deployment timeout first _overall_ before filtering.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "demonstrative-pronoun ranking details in the answer",
+    answer: "Retrieval placed this first overall before filtering.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "emphasis-formatted demonstrative-pronoun ranking details in the answer",
+    answer: "Retrieval placed this **first** overall before filtering.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "split emphasis-formatted ranking adverb in the answer",
+    answer: "Retrieval placed this first chrono**logically** among the candidates.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "code-formatted demonstrative-pronoun ranking details in the answer",
+    answer: "Retrieval placed this `first` overall before filtering.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "split code-formatted ranking adverb in the answer",
+    answer: "Retrieval placed this first chrono`logically` among the candidates.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "clause-final demonstrative-pronoun ranking details in the answer",
+    answer: "Retrieval placed this first overall.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "clause-final chronological demonstrative-pronoun ranking details in the answer",
+    answer: "Retrieval placed this first chronologically.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "clause-final ordinal-sequence demonstrative-pronoun ranking details in the answer",
+    answer: "Retrieval placed this first secondly.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "adverb-modified demonstrative-pronoun ranking details in the answer",
+    answer: "Retrieval placed this first chronologically among the candidates.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "locative demonstrative-pronoun ranking details in the answer",
+    answer: "Retrieval placed this first chronologically in the candidate list.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "secondly modified demonstrative-pronoun ranking details in the answer",
+    answer: "Retrieval placed this first secondly in the candidate list.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "recently modified demonstrative-pronoun ranking details in the answer",
+    answer: "Retrieval placed this first recently in the candidate list.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "result-scoped demonstrative-pronoun ranking details in the answer",
+    answer: "Retrieval placed this first recently in the results.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "option-scoped demonstrative-pronoun ranking details in the answer",
+    answer: "Retrieval placed this first recently within the options.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "shortlist-scoped demonstrative-pronoun ranking details in the answer",
+    answer: "Retrieval placed that first secondly in the shortlist.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "ranking details after a demonstrative ordinal noun phrase in the answer",
+    answer: "Retrieval placed this first family in temporary housing first.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "coordinated placed ranking details in the answer",
+    answer: "Retrieval placed the 640ms deployment timeout first and returned it.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "coordinated ordered ranking details in the answer",
+    answer: "Retrieval ordered the 640ms deployment timeout first and returned it.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "ranking details after an adjective noun object in the answer",
+    answer: "Retrieval placed records with the user-selected labels highest.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "ranking details after a restrictive relative clause in the answer",
+    answer: "Retrieval placed the candidate the team preferred at the top.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "ranking details after an after-prepositional noun phrase in the answer",
+    answer: "Retrieval placed the candidate after the user-selected labels at the top.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "ranking details after a before-prepositional noun phrase in the answer",
+    answer: "Retrieval placed records before the archived candidates highest.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "ranking details after an adjective noun phrase in the answer",
+    answer: "Retrieval placed records before the eligible candidates highest.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "ranking details after a compound noun phrase in the answer",
+    answer: "Retrieval placed the notes before the archived project candidate records at the top.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "ranking details after an en-ending compound noun head in the answer",
+    answer: "Retrieval placed records before the community garden highest.",
+    claim: "The deployment timeout is 640ms.",
+  },
+  {
+    name: "prohibited internal details in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "According to the prompt, the deployment timeout is 640ms.",
+  },
+  {
+    name: "an instruction-source prompt reference in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "The prompt requested a 640ms deployment timeout.",
+  },
+  {
+    name: "an indefinite passive prompt source in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "The answer reflects instructions supplied by a prompt.",
+  },
+  {
+    name: "provider identity details in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "The provider was Amazon Bedrock when the timeout was selected.",
+    providerModelIdentity: "present",
+  },
+  {
+    name: "model identity details in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "The model is Llama 3.1 70B.",
+    providerModelIdentity: "present",
+  },
+  {
+    name: "provider details using serves as in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Amazon Bedrock serves as the provider.",
+    providerModelIdentity: "present",
+  },
+  {
+    name: "model details using serves as in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Llama 3.1 70B serves as the model.",
+    providerModelIdentity: "present",
+  },
+  {
+    name: "model details using served as in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Llama 3.1 70B served as the model.",
+    providerModelIdentity: "present",
+  },
+  {
+    name: "model details using served as after the descriptor in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "The model served as Llama 3.1 70B.",
+    providerModelIdentity: "present",
+  },
+  {
+    name: "model details using served as after a newline in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Deployment details:\nModel served as Llama 3.1 70B.",
+    providerModelIdentity: "present",
+  },
+  {
+    name: "model details using is serving as in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Llama 3.1 70B is serving as the model.",
+    providerModelIdentity: "present",
+  },
+  {
+    name: "model details using is serving as after the descriptor in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "The model is serving as Llama 3.1 70B.",
+    providerModelIdentity: "present",
+  },
+  {
+    name: "model details using has been serving as in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Llama 3.1 70B has been serving as the model.",
+    providerModelIdentity: "present",
+  },
+  {
+    name: "model details using will be serving as after the descriptor in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "The model will be serving as Llama 3.1 70B.",
+    providerModelIdentity: "present",
+  },
+  {
+    name: "model details using will have been serving as in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Llama 3.1 70B will have been serving as the model.",
+    providerModelIdentity: "present",
+  },
+  {
+    name: "article-prefixed provider identity using is serving as in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "The provider is serving as an Amazon Bedrock provider.",
+    providerModelIdentity: "present",
+  },
+  {
+    name: "generic-modifier model identity using served as in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "The model served as a hosted OpenAI service.",
+    providerModelIdentity: "present",
+  },
+  {
+    name: "lowercase identity after generic modifiers using served as in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "The provider served as the selected amazon bedrock service.",
+    providerModelIdentity: "present",
+  },
+  {
+    name: "lowercase identity after an indefinite article and generic modifier in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "The provider served as a selected amazon bedrock service.",
+    providerModelIdentity: "present",
+  },
+  {
+    name: "retrieval-subject ranking details in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Retrieval ranked the 640ms deployment timeout first.",
+  },
+  {
+    name: "retrieval-subject ordering details in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Retrieval ordered the 640ms deployment timeout first.",
+  },
+  {
+    name: "retrieval-subject placement details in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Retrieval placed the 640ms deployment timeout first.",
+  },
+  {
+    name: "adverb-modified placed ranking details in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Retrieval placed the 640ms deployment timeout first overall.",
+  },
+  {
+    name: "adverb-modified ordered ranking details in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Retrieval ordered the 640ms deployment timeout first chronologically.",
+  },
+  {
+    name: "continued chronological ranking details in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim:
+      "Retrieval placed the 640ms deployment timeout first chronologically among the candidates.",
+  },
+  {
+    name: "continued overall ranking details in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Retrieval placed the 640ms deployment timeout first overall before filtering.",
+  },
+  {
+    name: "emphasis-formatted continued chronological ranking details in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim:
+      "Retrieval placed the 640ms deployment timeout first **chronologically** among the candidates.",
+  },
+  {
+    name: "emphasis-formatted continued overall ranking details in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Retrieval placed the 640ms deployment timeout first _overall_ before filtering.",
+  },
+  {
+    name: "demonstrative-pronoun ranking details in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Retrieval placed this first overall before filtering.",
+  },
+  {
+    name: "emphasis-formatted demonstrative-pronoun ranking details in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Retrieval placed this **first** overall before filtering.",
+  },
+  {
+    name: "split emphasis-formatted ranking adverb in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Retrieval placed this first chrono**logically** among the candidates.",
+  },
+  {
+    name: "code-formatted demonstrative-pronoun ranking details in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Retrieval placed this `first` overall before filtering.",
+  },
+  {
+    name: "split code-formatted ranking adverb in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Retrieval placed this first chrono`logically` among the candidates.",
+  },
+  {
+    name: "clause-final demonstrative-pronoun ranking details in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Retrieval placed this first overall.",
+  },
+  {
+    name: "clause-final chronological demonstrative-pronoun ranking details in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Retrieval placed this first chronologically.",
+  },
+  {
+    name: "clause-final ordinal-sequence demonstrative-pronoun ranking details in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Retrieval placed this first secondly.",
+  },
+  {
+    name: "adverb-modified demonstrative-pronoun ranking details in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Retrieval placed this first chronologically among the candidates.",
+  },
+  {
+    name: "locative demonstrative-pronoun ranking details in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Retrieval placed this first chronologically in the candidate list.",
+  },
+  {
+    name: "secondly modified demonstrative-pronoun ranking details in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Retrieval placed this first secondly in the candidate list.",
+  },
+  {
+    name: "recently modified demonstrative-pronoun ranking details in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Retrieval placed this first recently in the candidate list.",
+  },
+  {
+    name: "result-scoped demonstrative-pronoun ranking details in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Retrieval placed this first recently in the results.",
+  },
+  {
+    name: "option-scoped demonstrative-pronoun ranking details in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Retrieval placed this first recently within the options.",
+  },
+  {
+    name: "shortlist-scoped demonstrative-pronoun ranking details in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Retrieval placed that first secondly in the shortlist.",
+  },
+  {
+    name: "ranking details after a demonstrative ordinal noun phrase in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Retrieval placed this first family in temporary housing first.",
+  },
+  {
+    name: "coordinated placed ranking details in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Retrieval placed the 640ms deployment timeout first and returned it.",
+  },
+  {
+    name: "coordinated ordered ranking details in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Retrieval ordered the 640ms deployment timeout first and returned it.",
+  },
+  {
+    name: "ranking details after an adjective noun object in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Retrieval placed records with the user-selected labels highest.",
+  },
+  {
+    name: "ranking details after a restrictive relative clause in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Retrieval placed the candidate the team preferred at the top.",
+  },
+  {
+    name: "ranking details after an after-prepositional noun phrase in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Retrieval placed the candidate after the user-selected labels at the top.",
+  },
+  {
+    name: "ranking details after a before-prepositional noun phrase in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Retrieval placed records before the archived candidates highest.",
+  },
+  {
+    name: "ranking details after an adjective noun phrase in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Retrieval placed records before the eligible candidates highest.",
+  },
+  {
+    name: "ranking details after a compound noun phrase in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Retrieval placed the notes before the archived project candidate records at the top.",
+  },
+  {
+    name: "ranking details after an en-ending compound noun head in the claim",
+    answer: "Use a 640ms deployment timeout.",
+    claim: "Retrieval placed records before the community garden highest.",
+  },
+];
+
 describe("semantic recall", () => {
+  it("rejects adversarial ranking text within a bounded duration", () => {
+    const adversarialSubject = `${Array.from({ length: 8 }, () => "busy").join(" ")} team xyz`;
+    const startedAt = performance.now();
+
+    const isSafe = isSafeRecallPublicText(
+      `Retrieval placed records before the ${adversarialSubject} highest.`,
+    );
+    const elapsedMilliseconds = performance.now() - startedAt;
+
+    assert.isFalse(isSafe);
+    assert.isBelow(elapsedMilliseconds, 250);
+  });
+
   it.effect("returns one synthesized answer instead of rendering the evidence packet", () => {
     const control: EmbeddingControl = { inputs: [] };
     const synthesis = RecallSynthesis.of({
@@ -142,6 +857,7 @@ describe("semantic recall", () => {
           answer: "Use a 640ms deployment timeout.",
           claim: "The deployment timeout is 640ms.",
           evidenceIds: ["E1"],
+          providerModelIdentity: "absent",
         });
       },
     });
@@ -164,6 +880,735 @@ describe("semantic recall", () => {
     );
   });
 
+  it.effect(
+    "fails grounding when synthesis references evidence outside the supplied packet",
+    () => {
+      const control: EmbeddingControl = { inputs: [] };
+      const synthesis = RecallSynthesis.of({
+        synthesize: () =>
+          Effect.succeed({
+            status: "answered",
+            answer: "Use a 640ms deployment timeout.",
+            claim: "The deployment timeout is 640ms.",
+            evidenceIds: ["E99"],
+            providerModelIdentity: "absent",
+          }),
+      });
+
+      return withRecallRuntime(
+        control,
+        Effect.scoped(
+          recallSingleAnswerDocument(
+            control,
+            "agentic-memory-semantic-recall-unknown-evidence-",
+            "# Answer\n\nThe approved deployment timeout is 640ms.\n",
+          ).pipe(Effect.provideService(RecallSynthesis, synthesis), Effect.result),
+        ),
+      ).pipe(
+        Effect.map((result) => {
+          assert.strictEqual(result._tag, "Failure");
+          if (result._tag === "Failure") {
+            assert.strictEqual(result.failure._tag, "RecallError");
+            if (result.failure._tag === "RecallError") {
+              assert.strictEqual(result.failure.reason, "GroundingValidationFailed");
+            }
+          }
+        }),
+      );
+    },
+  );
+
+  it.effect("fails grounding when an answered synthesis has no supporting evidence", () => {
+    const control: EmbeddingControl = { inputs: [] };
+    const synthesis = RecallSynthesis.of({
+      synthesize: () =>
+        Effect.succeed({
+          status: "answered",
+          answer: "Use a 640ms deployment timeout.",
+          claim: "The deployment timeout is 640ms.",
+          evidenceIds: [],
+          providerModelIdentity: "absent",
+        }),
+    });
+
+    return withRecallRuntime(
+      control,
+      Effect.scoped(
+        recallSingleAnswerDocument(
+          control,
+          "agentic-memory-semantic-recall-missing-support-",
+          "# Answer\n\nThe approved deployment timeout is 640ms.\n",
+        ).pipe(Effect.provideService(RecallSynthesis, synthesis), Effect.result),
+      ),
+    ).pipe(
+      Effect.map((result) => {
+        assert.strictEqual(result._tag, "Failure");
+        if (result._tag === "Failure") {
+          assert.strictEqual(result.failure._tag, "RecallError");
+          if (result.failure._tag === "RecallError") {
+            assert.strictEqual(result.failure.reason, "GroundingValidationFailed");
+          }
+        }
+      }),
+    );
+  });
+
+  it.effect("rejects an unsafe claim while the answer remains safe", () => {
+    const control: EmbeddingControl = { inputs: [] };
+    const synthesis = RecallSynthesis.of({
+      synthesize: () =>
+        Effect.succeed({
+          status: "answered",
+          answer: "Use a 640ms deployment timeout.",
+          claim: "According to the prompt, the deployment timeout is 640ms.",
+          evidenceIds: ["E1"],
+          providerModelIdentity: "absent",
+        }),
+    });
+
+    return withRecallRuntime(
+      control,
+      Effect.scoped(
+        recallSingleAnswerDocument(
+          control,
+          "agentic-memory-semantic-recall-unsafe-claim-",
+          "# Answer\n\nThe approved deployment timeout is 640ms.\n",
+        ).pipe(Effect.provideService(RecallSynthesis, synthesis), Effect.result),
+      ),
+    ).pipe(
+      Effect.map((result) => {
+        assert.strictEqual(result._tag, "Failure");
+        if (result._tag === "Failure") {
+          assert.strictEqual(result.failure._tag, "RecallError");
+          if (result.failure._tag === "RecallError") {
+            assert.strictEqual(result.failure.reason, "GroundingValidationFailed");
+          }
+        }
+      }),
+    );
+  });
+
+  it.effect.each(prohibitedPublicOutputCases)(
+    "fails grounding before $name reaches public output",
+    ({ answer, claim, providerModelIdentity = "absent" }) => {
+      const control: EmbeddingControl = { inputs: [] };
+      const synthesis = RecallSynthesis.of({
+        synthesize: () =>
+          Effect.succeed({
+            status: "answered",
+            answer,
+            claim,
+            evidenceIds: ["E1"],
+            providerModelIdentity,
+          }),
+      });
+
+      return withRecallRuntime(
+        control,
+        Effect.scoped(
+          recallSingleAnswerDocument(
+            control,
+            "agentic-memory-semantic-recall-public-leak-",
+            "# Answer\n\nThe approved deployment timeout is 640ms.\n",
+          ).pipe(Effect.provideService(RecallSynthesis, synthesis), Effect.result),
+        ),
+      ).pipe(
+        Effect.map((result) => {
+          assert.strictEqual(result._tag, "Failure");
+          if (result._tag === "Failure") {
+            assert.strictEqual(result.failure._tag, "RecallError");
+            if (result.failure._tag === "RecallError") {
+              assert.strictEqual(result.failure.reason, "GroundingValidationFailed");
+            }
+          }
+        }),
+      );
+    },
+  );
+
+  it.effect("allows ordinary factual provider and model prose", () => {
+    const control: EmbeddingControl = { inputs: [] };
+    const synthesis = RecallSynthesis.of({
+      synthesize: () =>
+        Effect.succeed({
+          status: "answered",
+          answer: "The model was selected for its predictable timeout behavior.",
+          claim: "The provider was selected based on geography.",
+          evidenceIds: ["E1"],
+          providerModelIdentity: "absent",
+        }),
+    });
+
+    return withRecallRuntime(
+      control,
+      Effect.scoped(
+        recallSingleAnswerDocument(
+          control,
+          "agentic-memory-semantic-recall-ordinary-provider-model-",
+          "# Answer\n\nThe approved deployment timeout is 640ms.\n",
+        ).pipe(Effect.provideService(RecallSynthesis, synthesis)),
+      ),
+    ).pipe(
+      Effect.map((response) => {
+        assert.strictEqual(response.status, "answered");
+        assert.strictEqual(
+          response.answer,
+          "The model was selected for its predictable timeout behavior.",
+        );
+      }),
+    );
+  });
+
+  it.effect.each([
+    "The Gemini constellation is visible in winter.",
+    "Mistral winds shape the local climate.",
+    "Anthropic researches reliable artificial intelligence.",
+    "Teams cohere around a shared goal.",
+    "The project uses Node.js for command-line tools.",
+  ])("allows ordinary factual prose: %s", (answer) => {
+    const control: EmbeddingControl = { inputs: [] };
+    const synthesis = RecallSynthesis.of({
+      synthesize: () =>
+        Effect.succeed({
+          status: "answered",
+          answer,
+          claim: answer,
+          evidenceIds: ["E1"],
+          providerModelIdentity: "absent",
+        }),
+    });
+
+    return withRecallRuntime(
+      control,
+      Effect.scoped(
+        recallSingleAnswerDocument(
+          control,
+          "agentic-memory-semantic-recall-ordinary-fact-",
+          "# Answer\n\nThe approved deployment timeout is 640ms.\n",
+        ).pipe(Effect.provideService(RecallSynthesis, synthesis)),
+      ),
+    ).pipe(
+      Effect.map((response) => {
+        assert.strictEqual(response.status, "answered");
+        assert.strictEqual(response.answer, answer);
+      }),
+    );
+  });
+
+  it.effect.each([
+    "Retrieval placed the deployment note in the working context.",
+    "Retrieval placed the first deployment note in the working context.",
+    "Retrieval placed the first family in temporary housing.",
+    "Retrieval placed the first assembly in the main hall.",
+    "Retrieval placed another first family in temporary housing.",
+    "Retrieval placed the very first family in temporary housing.",
+    "Retrieval placed this first family in temporary housing.",
+    "Retrieval placed that first assembly in the main hall.",
+    "Retrieval placed this very first family in temporary housing.",
+    "Retrieval placed this first family.",
+    "Retrieval placed that first assembly.",
+    "Retrieval placed this very first family.",
+    "Retrieval placed this first family",
+    "Retrieval placed that first assembly;",
+    "Retrieval placed this very first family and sheltered them.",
+    "Retrieval placed this first tally in the ledger.",
+    "Retrieval placed this first rally in the schedule.",
+    "Retrieval placed this **first family** in temporary housing.",
+    "Retrieval placed this `first family` in temporary housing.",
+    "Retrieval ordered the contacts by first name.",
+    "Retrieval positioned the first note in the working context.",
+    "Retrieval placed the note in context while the team reviewed the checklist first.",
+    "Retrieval placed the note in context after the team reviewed the checklist first.",
+    "Retrieval ordered the note after they reviewed the checklist first.",
+    "Retrieval placed the note while Alice reviewed the checklist first.",
+    "Retrieval placed the note while engineers reviewed the checklist first.",
+    "Retrieval placed the note while she reviews the checklist first.",
+    "Retrieval placed the note while the team is reviewing the checklist first.",
+    "Retrieval placed the note while they will review the checklist first.",
+    "Retrieval placed the note while the team arrived first.",
+    "Retrieval placed the note while the busy team arrived first.",
+    "Retrieval placed the note while the busy team ran first.",
+    "Retrieval placed the note while the busy team reviews the checklist first.",
+    "Retrieval placed the note after they finished last.",
+    "Retrieval placed the note while Alice arrived first.",
+    "Retrieval placed the note while engineers arrived first.",
+  ])("allows ordinary non-ranking retrieval prose: %s", (answer) => {
+    const control: EmbeddingControl = { inputs: [] };
+    const synthesis = RecallSynthesis.of({
+      synthesize: () =>
+        Effect.succeed({
+          status: "answered",
+          answer,
+          claim: "The requested information was available for the answer.",
+          evidenceIds: ["E1"],
+          providerModelIdentity: "absent",
+        }),
+    });
+
+    return withRecallRuntime(
+      control,
+      Effect.scoped(
+        recallSingleAnswerDocument(
+          control,
+          "agentic-memory-semantic-recall-ordinary-retrieval-",
+          "# Answer\n\nThe requested information was available for the answer.\n",
+        ).pipe(Effect.provideService(RecallSynthesis, synthesis)),
+      ),
+    ).pipe(
+      Effect.map((response) => {
+        assert.strictEqual(response.status, "answered");
+        assert.strictEqual(response.answer, answer);
+      }),
+    );
+  });
+
+  it.effect.each([
+    "Retrieval placed another first family in temporary housing.",
+    "Retrieval placed the very first family in temporary housing.",
+    "Retrieval placed this first family in temporary housing.",
+    "Retrieval placed that first assembly in the main hall.",
+    "Retrieval placed this very first family in temporary housing.",
+    "Retrieval placed this first family.",
+    "Retrieval placed that first assembly.",
+    "Retrieval placed this very first family.",
+    "Retrieval placed this first family",
+    "Retrieval placed that first assembly;",
+    "Retrieval placed this very first family and sheltered them.",
+    "Retrieval placed this first tally in the ledger.",
+    "Retrieval placed this first rally in the schedule.",
+    "Retrieval placed this **first family** in temporary housing.",
+    "Retrieval placed this `first family` in temporary housing.",
+    "Retrieval placed the note while the team arrived first.",
+    "Retrieval placed the note while the busy team arrived first.",
+    "Retrieval placed the note while the busy team ran first.",
+    "Retrieval placed the note while the busy team reviews the checklist first.",
+    "Retrieval placed the note after they finished last.",
+    "Retrieval placed the note while Alice arrived first.",
+    "Retrieval placed the note while engineers arrived first.",
+  ])("allows ordinary non-ranking retrieval prose in the independent claim: %s", (claim) => {
+    const control: EmbeddingControl = { inputs: [] };
+    const synthesis = RecallSynthesis.of({
+      synthesize: () =>
+        Effect.succeed({
+          status: "answered",
+          answer: "The requested information was available for the answer.",
+          claim,
+          evidenceIds: ["E1"],
+          providerModelIdentity: "absent",
+        }),
+    });
+
+    return withRecallRuntime(
+      control,
+      Effect.scoped(
+        recallSingleAnswerDocument(
+          control,
+          "agentic-memory-semantic-recall-ordinary-ordinal-claim-",
+          "# Answer\n\nThe requested information was available for the answer.\n",
+        ).pipe(Effect.provideService(RecallSynthesis, synthesis)),
+      ),
+    ).pipe(
+      Effect.map((response) => {
+        assert.strictEqual(response.status, "answered");
+        assert.strictEqual(
+          response.answer,
+          "The requested information was available for the answer.",
+        );
+      }),
+    );
+  });
+
+  it.effect("allows an ordinary factual future-perfect-progressive serve-as role", () => {
+    const control: EmbeddingControl = { inputs: [] };
+    const answer = "The clinic will have been serving as the care provider.";
+    const synthesis = RecallSynthesis.of({
+      synthesize: () =>
+        Effect.succeed({
+          status: "answered",
+          answer,
+          claim: "The clinic has an established care role.",
+          evidenceIds: ["E1"],
+          providerModelIdentity: "absent",
+        }),
+    });
+
+    return withRecallRuntime(
+      control,
+      Effect.scoped(
+        recallSingleAnswerDocument(
+          control,
+          "agentic-memory-semantic-recall-future-perfect-progressive-role-",
+          "# Answer\n\nThe clinic has an established care role.\n",
+        ).pipe(Effect.provideService(RecallSynthesis, synthesis)),
+      ),
+    ).pipe(
+      Effect.map((response) => {
+        assert.strictEqual(response.status, "answered");
+        assert.strictEqual(response.answer, answer);
+      }),
+    );
+  });
+
+  it.effect("allows an object-first article-prefixed generic role in the answer", () => {
+    const control: EmbeddingControl = { inputs: [] };
+    const answer = "The clinic served as the provider.";
+    const synthesis = RecallSynthesis.of({
+      synthesize: () =>
+        Effect.succeed({
+          status: "answered",
+          answer,
+          claim: "The clinic fulfilled a provider role.",
+          evidenceIds: ["E1"],
+          providerModelIdentity: "absent",
+        }),
+    });
+
+    return withRecallRuntime(
+      control,
+      Effect.scoped(
+        recallSingleAnswerDocument(
+          control,
+          "agentic-memory-semantic-recall-object-first-role-answer-",
+          "# Answer\n\nThe clinic fulfilled a provider role.\n",
+        ).pipe(Effect.provideService(RecallSynthesis, synthesis)),
+      ),
+    ).pipe(
+      Effect.map((response) => {
+        assert.strictEqual(response.status, "answered");
+        assert.strictEqual(response.answer, answer);
+      }),
+    );
+  });
+
+  it.effect("allows an object-first article-prefixed generic role in the claim", () => {
+    const control: EmbeddingControl = { inputs: [] };
+    const answer = "The clinic fulfilled a provider role.";
+    const synthesis = RecallSynthesis.of({
+      synthesize: () =>
+        Effect.succeed({
+          status: "answered",
+          answer,
+          claim: "The clinic served as the provider.",
+          evidenceIds: ["E1"],
+          providerModelIdentity: "absent",
+        }),
+    });
+
+    return withRecallRuntime(
+      control,
+      Effect.scoped(
+        recallSingleAnswerDocument(
+          control,
+          "agentic-memory-semantic-recall-object-first-role-claim-",
+          "# Answer\n\nThe clinic fulfilled a provider role.\n",
+        ).pipe(Effect.provideService(RecallSynthesis, synthesis)),
+      ),
+    ).pipe(
+      Effect.map((response) => {
+        assert.strictEqual(response.status, "answered");
+        assert.strictEqual(response.answer, answer);
+      }),
+    );
+  });
+
+  it.effect("answers from indexed object-first generic serve-as evidence", () => {
+    const control: EmbeddingControl = { inputs: [] };
+    return withRecallRuntime(
+      control,
+      Effect.scoped(
+        recallSingleAnswerDocument(
+          control,
+          "agentic-memory-semantic-recall-object-first-role-evidence-",
+          "# Answer\n\nThe clinic served as the provider.\n",
+        ),
+      ),
+    ).pipe(
+      Effect.map((response) => {
+        assert.strictEqual(response.status, "answered");
+        assert.strictEqual(response.answer, "The clinic served as the provider.");
+      }),
+    );
+  });
+
+  it.effect("allows article-prefixed generic provider and model serve-as roles", () => {
+    const control: EmbeddingControl = { inputs: [] };
+    const answer = "The model served as a teaching aid.";
+    const synthesis = RecallSynthesis.of({
+      synthesize: () =>
+        Effect.succeed({
+          status: "answered",
+          answer,
+          claim: "The provider is serving as a fallback.",
+          evidenceIds: ["E1"],
+          providerModelIdentity: "absent",
+        }),
+    });
+
+    return withRecallRuntime(
+      control,
+      Effect.scoped(
+        recallSingleAnswerDocument(
+          control,
+          "agentic-memory-semantic-recall-generic-serve-as-role-",
+          "# Answer\n\nThe approved deployment timeout is 640ms.\n",
+        ).pipe(Effect.provideService(RecallSynthesis, synthesis)),
+      ),
+    ).pipe(
+      Effect.map((response) => {
+        assert.strictEqual(response.status, "answered");
+        assert.strictEqual(response.answer, answer);
+      }),
+    );
+  });
+
+  it.effect("allows bare generic serve-as roles after a sentence-initial descriptor", () => {
+    const control: EmbeddingControl = { inputs: [] };
+    const answer = "Model serves as backup.";
+    const synthesis = RecallSynthesis.of({
+      synthesize: () =>
+        Effect.succeed({
+          status: "answered",
+          answer,
+          claim: "The provider is serving as fallback.",
+          evidenceIds: ["E1"],
+          providerModelIdentity: "absent",
+        }),
+    });
+
+    return withRecallRuntime(
+      control,
+      Effect.scoped(
+        recallSingleAnswerDocument(
+          control,
+          "agentic-memory-semantic-recall-bare-generic-serve-as-role-",
+          "# Answer\n\nThe approved deployment timeout is 640ms.\n",
+        ).pipe(Effect.provideService(RecallSynthesis, synthesis)),
+      ),
+    ).pipe(
+      Effect.map((response) => {
+        assert.strictEqual(response.status, "answered");
+        assert.strictEqual(response.answer, answer);
+      }),
+    );
+  });
+
+  it.effect("allows numbered and hyphenated generic model and provider roles", () => {
+    const control: EmbeddingControl = { inputs: [] };
+    const answer = "The model served as a tier-2 statistical model.";
+    const synthesis = RecallSynthesis.of({
+      synthesize: () =>
+        Effect.succeed({
+          status: "answered",
+          answer,
+          claim: "The provider served as a 24-hour backup provider.",
+          evidenceIds: ["E1"],
+          providerModelIdentity: "absent",
+        }),
+    });
+
+    return withRecallRuntime(
+      control,
+      Effect.scoped(
+        recallSingleAnswerDocument(
+          control,
+          "agentic-memory-semantic-recall-numbered-generic-serve-as-role-",
+          "# Answer\n\nThe approved deployment timeout is 640ms.\n",
+        ).pipe(Effect.provideService(RecallSynthesis, synthesis)),
+      ),
+    ).pipe(
+      Effect.map((response) => {
+        assert.strictEqual(response.status, "answered");
+        assert.strictEqual(response.answer, answer);
+      }),
+    );
+  });
+
+  it.effect("allows an article-prefixed answer and a bare generic-role claim", () => {
+    const control: EmbeddingControl = { inputs: [] };
+    const answer = "The model served as an evaluation baseline.";
+    const synthesis = RecallSynthesis.of({
+      synthesize: () =>
+        Effect.succeed({
+          status: "answered",
+          answer,
+          claim: "Provider served as local inference gateway.",
+          evidenceIds: ["E1"],
+          providerModelIdentity: "absent",
+        }),
+    });
+
+    return withRecallRuntime(
+      control,
+      Effect.scoped(
+        recallSingleAnswerDocument(
+          control,
+          "agentic-memory-semantic-recall-new-article-generic-role-",
+          "# Answer\n\nThe approved deployment timeout is 640ms.\n",
+        ).pipe(Effect.provideService(RecallSynthesis, synthesis)),
+      ),
+    ).pipe(
+      Effect.map((response) => {
+        assert.strictEqual(response.status, "answered");
+        assert.strictEqual(response.answer, answer);
+      }),
+    );
+  });
+
+  it.effect("allows a bare answer and an article-prefixed generic-role claim", () => {
+    const control: EmbeddingControl = { inputs: [] };
+    const answer = "Model serves as decision-support system.";
+    const synthesis = RecallSynthesis.of({
+      synthesize: () =>
+        Effect.succeed({
+          status: "answered",
+          answer,
+          claim: "The provider serves as a local inference gateway.",
+          evidenceIds: ["E1"],
+          providerModelIdentity: "absent",
+        }),
+    });
+
+    return withRecallRuntime(
+      control,
+      Effect.scoped(
+        recallSingleAnswerDocument(
+          control,
+          "agentic-memory-semantic-recall-new-bare-generic-role-",
+          "# Answer\n\nThe approved deployment timeout is 640ms.\n",
+        ).pipe(Effect.provideService(RecallSynthesis, synthesis)),
+      ),
+    ).pipe(
+      Effect.map((response) => {
+        assert.strictEqual(response.status, "answered");
+        assert.strictEqual(response.answer, answer);
+      }),
+    );
+  });
+
+  it.effect("allows bare two-word generic roles in answer and claim fields", () => {
+    const control: EmbeddingControl = { inputs: [] };
+    const answer = "The model served as evaluation baseline.";
+    const synthesis = RecallSynthesis.of({
+      synthesize: () =>
+        Effect.succeed({
+          status: "answered",
+          answer,
+          claim: "The provider served as operational safeguard.",
+          evidenceIds: ["E1"],
+          providerModelIdentity: "absent",
+        }),
+    });
+
+    return withRecallRuntime(
+      control,
+      Effect.scoped(
+        recallSingleAnswerDocument(
+          control,
+          "agentic-memory-semantic-recall-two-word-role-answer-",
+          "# Answer\n\nThe approved deployment timeout is 640ms.\n",
+        ).pipe(Effect.provideService(RecallSynthesis, synthesis)),
+      ),
+    ).pipe(
+      Effect.map((response) => {
+        assert.strictEqual(response.status, "answered");
+        assert.strictEqual(response.answer, answer);
+      }),
+    );
+  });
+
+  it.effect("allows a bare two-word generic role in the independent claim", () => {
+    const control: EmbeddingControl = { inputs: [] };
+    const answer = "The model served as comparison target.";
+    const synthesis = RecallSynthesis.of({
+      synthesize: () =>
+        Effect.succeed({
+          status: "answered",
+          answer,
+          claim: "The provider served as evaluation baseline.",
+          evidenceIds: ["E1"],
+          providerModelIdentity: "absent",
+        }),
+    });
+
+    return withRecallRuntime(
+      control,
+      Effect.scoped(
+        recallSingleAnswerDocument(
+          control,
+          "agentic-memory-semantic-recall-two-word-role-claim-",
+          "# Answer\n\nThe approved deployment timeout is 640ms.\n",
+        ).pipe(Effect.provideService(RecallSynthesis, synthesis)),
+      ),
+    ).pipe(
+      Effect.map((response) => {
+        assert.strictEqual(response.status, "answered");
+        assert.strictEqual(response.answer, answer);
+      }),
+    );
+  });
+
+  it.effect("allows ordinary multiline factual prose", () => {
+    const control: EmbeddingControl = { inputs: [] };
+    const answer = "Deployment details:\nUse a 640ms timeout for predictable behavior.";
+    const synthesis = RecallSynthesis.of({
+      synthesize: () =>
+        Effect.succeed({
+          status: "answered",
+          answer,
+          claim: "The deployment timeout is 640ms.\nIt keeps behavior predictable.",
+          evidenceIds: ["E1"],
+          providerModelIdentity: "absent",
+        }),
+    });
+
+    return withRecallRuntime(
+      control,
+      Effect.scoped(
+        recallSingleAnswerDocument(
+          control,
+          "agentic-memory-semantic-recall-ordinary-multiline-",
+          "# Answer\n\nThe approved deployment timeout is 640ms.\n",
+        ).pipe(Effect.provideService(RecallSynthesis, synthesis)),
+      ),
+    ).pipe(
+      Effect.map((response) => {
+        assert.strictEqual(response.status, "answered");
+        assert.strictEqual(response.answer, answer);
+      }),
+    );
+  });
+
+  it.effect("allows slash-delimited terms in ordinary factual prose", () => {
+    const control: EmbeddingControl = { inputs: [] };
+    const answer = "The rollout strategy is documented in blue/green terms.";
+    const synthesis = RecallSynthesis.of({
+      synthesize: () =>
+        Effect.succeed({
+          status: "answered",
+          answer,
+          claim: "The rollout strategy uses blue and green terminology.",
+          evidenceIds: ["E1"],
+          providerModelIdentity: "absent",
+        }),
+    });
+
+    return withRecallRuntime(
+      control,
+      Effect.scoped(
+        recallSingleAnswerDocument(
+          control,
+          "agentic-memory-semantic-recall-slash-terms-",
+          "# Answer\n\nThe rollout strategy uses blue and green terminology.\n",
+        ).pipe(Effect.provideService(RecallSynthesis, synthesis)),
+      ),
+    ).pipe(
+      Effect.map((response) => {
+        assert.strictEqual(response.status, "answered");
+        assert.strictEqual(response.answer, answer);
+      }),
+    );
+  });
+
   it.effect("renders deterministic not_found wording when synthesis abstains", () => {
     const control: EmbeddingControl = { inputs: [] };
     const synthesis = RecallSynthesis.of({
@@ -177,6 +1622,40 @@ describe("semantic recall", () => {
           control,
           "agentic-memory-semantic-recall-abstention-",
           "# Answer\n\nThe deployment timeout might be 640ms.\n",
+        ).pipe(Effect.provideService(RecallSynthesis, synthesis)),
+      ),
+    ).pipe(
+      Effect.map((response) => {
+        assert.strictEqual(response.status, "not_found");
+        assert.strictEqual(response.answer, "I don't know based on the available Agentic Memory.");
+      }),
+    );
+  });
+
+  it.effect("renders deterministic not_found wording for unresolved conflicting evidence", () => {
+    const control: EmbeddingControl = { inputs: [] };
+    const synthesis = RecallSynthesis.of({
+      synthesize: (input) => {
+        const evidence = input.evidence.passages.map(({ text }) => text).join("\n");
+        assert.include(evidence, "640ms");
+        assert.include(evidence, "900ms");
+        return Effect.succeed({ status: "not_found" });
+      },
+    });
+
+    return withRecallRuntime(
+      control,
+      Effect.scoped(
+        recallSingleAnswerDocument(
+          control,
+          "agentic-memory-semantic-recall-conflict-abstention-",
+          [
+            "# Answer",
+            "",
+            "The approved deployment timeout is 640ms.",
+            "The approved deployment timeout is 900ms.",
+            "",
+          ].join("\n"),
         ).pipe(Effect.provideService(RecallSynthesis, synthesis)),
       ),
     ).pipe(
