@@ -1,4 +1,5 @@
 import { AbsolutePath, LinkConfig } from "@urban/agentic-memory-core/link/LinkConfig";
+import { SynthesisReadiness } from "@urban/agentic-memory-core/recall/SynthesisReadiness";
 import { SemanticIndexReadiness } from "@urban/agentic-memory-core/semantic/SemanticIndex";
 import { VaultHealth } from "@urban/agentic-memory-core/vault/VaultStatus";
 import { Schema } from "effect";
@@ -10,6 +11,8 @@ export const ValidLinkedProjectStatus = Schema.TaggedStruct("valid-link", {
   }),
   projectRoute: VaultHealth,
   semanticReadiness: SemanticIndexReadiness,
+  synthesisReadiness: SynthesisReadiness,
+  recallReady: Schema.Boolean,
 }).annotate({ identifier: "ValidLinkedProjectStatus" });
 export type ValidLinkedProjectStatus = typeof ValidLinkedProjectStatus.Type;
 
@@ -22,7 +25,7 @@ export const InvalidLinkedProjectStatus = Schema.TaggedStruct("invalid-link", {
 export type InvalidLinkedProjectStatus = typeof InvalidLinkedProjectStatus.Type;
 
 export const LinkedProjectStatusResult = Schema.TaggedStruct("linked-project", {
-  version: Schema.Literal(1),
+  version: Schema.Literal(2),
   status: Schema.Literals(["healthy", "unhealthy"]),
   directory: AbsolutePath,
   inspection: Schema.Union([ValidLinkedProjectStatus, InvalidLinkedProjectStatus]),
@@ -31,14 +34,18 @@ export const LinkedProjectStatusResult = Schema.TaggedStruct("linked-project", {
 export type LinkedProjectStatusResult = typeof LinkedProjectStatusResult.Type;
 
 export const VaultStatusResult = Schema.TaggedStruct("vault", {
-  version: Schema.Literal(1),
+  version: Schema.Literal(2),
+  status: Schema.Literals(["ready", "not_ready", "invalid"]),
   directory: AbsolutePath,
-  readiness: SemanticIndexReadiness,
+  semanticReadiness: SemanticIndexReadiness,
+  synthesisReadiness: SynthesisReadiness,
+  recallReady: Schema.Boolean,
+  warnings: Schema.Array(Schema.String),
 }).annotate({ identifier: "VaultStatusResult" });
 export type VaultStatusResult = typeof VaultStatusResult.Type;
 
 export const UnconfiguredStatusResult = Schema.TaggedStruct("unconfigured", {
-  version: Schema.Literal(1),
+  version: Schema.Literal(2),
   status: Schema.Literal("unconfigured"),
   directory: AbsolutePath,
   expectedLinkPath: AbsolutePath,

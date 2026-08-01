@@ -94,6 +94,30 @@ describe("agentic-memory recall command", () => {
     ),
   );
 
+  it.effect("maps blank questions to stable invalid-question guidance", () =>
+    withCliRuntime(
+      runCapturedEffect([
+        "recall",
+        "   ",
+        "--vault",
+        "/vault/that/should/not-be-inspected",
+        "--json",
+      ]),
+    ).pipe(
+      Effect.flatMap((output) =>
+        decodeCliFailureResultJson(output.stdout).pipe(
+          Effect.map((failure) => ({ failure, output })),
+        ),
+      ),
+      Effect.map(({ failure, output }) => {
+        assert.strictEqual(output.exitCode, 1);
+        assert.strictEqual(failure.error.code, "InvalidRecallQuestion");
+        assert.include(failure.error.message, "must not be empty");
+        assert.notInclude(failure.error.message, "/vault/that/should/not-be-inspected");
+      }),
+    ),
+  );
+
   it.effect("emits public recall success JSON for answered recall", () =>
     withCliRuntime(
       withIndexedRecallFixture((vaultPath) =>
@@ -810,6 +834,40 @@ describe("agentic-memory recall command", () => {
           assert.notInclude(failure.error.message, ".agentic-memory");
           assert.notInclude(failure.error.message, "recall.db");
           assert.notInclude(failure.error.message, "libSQL");
+        }),
+      ),
+    ),
+  );
+
+  it.effect("maps evidence hydration failure without exposing provenance internals", () =>
+    withCliRuntime(
+      withIndexedRecallFixture((vaultPath) =>
+        Effect.gen(function* () {
+          const path = yield* Path.Path;
+          const databasePath = path.join(vaultPath, ".agentic-memory", "index", "recall.db");
+          const databaseUrl = yield* path.toFileUrl(databasePath);
+          yield* Effect.acquireUseRelease(
+            Effect.sync(() => createClient({ url: databaseUrl.href })),
+            (client) =>
+              Effect.promise(() => client.execute("UPDATE chunks SET ordinal = ordinal + 1000")),
+            (client) => Effect.sync(() => client.close()),
+          );
+
+          const output = yield* runCapturedEffect([
+            "recall",
+            recallQuestion,
+            "--vault",
+            vaultPath,
+            "--json",
+          ]);
+          const failure = yield* decodeCliFailureResultJson(output.stdout);
+
+          assert.strictEqual(output.exitCode, 1);
+          assert.strictEqual(failure.error.code, "EvidenceHydrationFailed");
+          assert.include(failure.error.message, `agentic-memory status --vault ${vaultPath}`);
+          assert.notInclude(failure.error.message, "ordinal");
+          assert.notInclude(failure.error.message, "999");
+          assert.notInclude(failure.error.message, "chunks");
         }),
       ),
     ),

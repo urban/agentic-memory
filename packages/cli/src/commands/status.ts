@@ -1,4 +1,5 @@
 import { decodeAbsolutePath, loadLinkConfig } from "@urban/agentic-memory-core/link/LinkConfig";
+import { inspectConfiguredSynthesisReadiness } from "@urban/agentic-memory-core/recall/SynthesisReadiness";
 import { inspectSemanticIndex } from "@urban/agentic-memory-core/semantic/SemanticIndex";
 import { checkVaultHealth } from "@urban/agentic-memory-core/vault/VaultStatus";
 import { Console, Effect, FileSystem, Option, Path } from "effect";
@@ -11,6 +12,8 @@ import { encodeStatusCommandResultJson, StatusCommandResult } from "./status-out
 type AbsolutePath = import("@urban/agentic-memory-core/link/LinkConfig").AbsolutePath;
 type SemanticIndexReadiness =
   import("@urban/agentic-memory-core/semantic/SemanticIndex").SemanticIndexReadiness;
+type SynthesisReadiness =
+  import("@urban/agentic-memory-core/recall/SynthesisReadiness").SynthesisReadiness;
 type StatusResult = import("./status-output.ts").StatusCommandResult;
 
 const inspectReadiness = (vaultPath: AbsolutePath) =>
@@ -34,12 +37,19 @@ const decodeStatusAbsolutePath = (input: string) =>
   );
 
 const inspectVault = Effect.fnUntraced(function* (vaultPath: AbsolutePath) {
-  const readiness = yield* inspectReadiness(vaultPath);
+  const semanticReadiness = yield* inspectReadiness(vaultPath);
+  const synthesisReadiness = yield* inspectConfiguredSynthesisReadiness;
+  const recallReady = semanticReadiness.recallReady && synthesisReadiness.status === "ready";
   return StatusCommandResult.make({
     _tag: "vault",
-    version: 1,
+    version: 2,
+    status:
+      semanticReadiness.status === "invalid" ? "invalid" : recallReady ? "ready" : "not_ready",
     directory: vaultPath,
-    readiness,
+    semanticReadiness,
+    synthesisReadiness,
+    recallReady,
+    warnings: [...semanticReadiness.warnings, ...synthesisReadiness.warnings],
   });
 });
 
@@ -58,7 +68,7 @@ const inspectWorkingContext = Effect.fnUntraced(function* (directory: AbsolutePa
   if (loaded._tag === "invalid") {
     return StatusCommandResult.make({
       _tag: "linked-project",
-      version: 1,
+      version: 2,
       status: "unhealthy",
       directory,
       inspection: {
@@ -87,13 +97,15 @@ const inspectWorkingContext = Effect.fnUntraced(function* (directory: AbsolutePa
       projectSlug: loaded.config.projectSlug,
     });
     const semanticReadiness = yield* inspectReadiness(loaded.config.vaultPath);
+    const synthesisReadiness = yield* inspectConfiguredSynthesisReadiness;
     const warnings = [
       ...(projectRoute.healthy ? [] : ["Linked vault project route is unhealthy."]),
       ...semanticReadiness.warnings,
+      ...synthesisReadiness.warnings,
     ];
     return StatusCommandResult.make({
       _tag: "linked-project",
-      version: 1,
+      version: 2,
       status: projectRoute.healthy ? "healthy" : "unhealthy",
       directory,
       inspection: {
@@ -104,6 +116,8 @@ const inspectWorkingContext = Effect.fnUntraced(function* (directory: AbsolutePa
         },
         projectRoute,
         semanticReadiness,
+        synthesisReadiness,
+        recallReady: semanticReadiness.recallReady && synthesisReadiness.status === "ready",
       },
       warnings,
     });
@@ -115,7 +129,7 @@ const inspectWorkingContext = Effect.fnUntraced(function* (directory: AbsolutePa
 
   return StatusCommandResult.make({
     _tag: "unconfigured",
-    version: 1,
+    version: 2,
     status: "unconfigured",
     directory,
     expectedLinkPath: yield* decodeStatusAbsolutePath(loaded.paths.configFile),
@@ -125,18 +139,25 @@ const inspectWorkingContext = Effect.fnUntraced(function* (directory: AbsolutePa
 
 const formatReadiness = (readiness: SemanticIndexReadiness): string =>
   [
-    `Agentic Memory vault status: ${readiness.status}`,
+    `Semantic: ${readiness.status}`,
     `Vault: ${readiness.vault.status}`,
     `Model: ${readiness.model.status}`,
     `Index: ${readiness.index.status} (${readiness.index.newFiles} new, ${readiness.index.changedFiles} changed, ${readiness.index.deletedFiles} deleted, ${readiness.index.unchangedFiles} unchanged)`,
-    `Recall ready: ${readiness.recallReady ? "yes" : "no"}`,
-    ...readiness.warnings.map((warning) => `Warning: ${warning}`),
   ].join("\n");
+
+const formatSynthesisReadiness = (readiness: SynthesisReadiness): string =>
+  `Synthesis: ${readiness.status}`;
 
 const formatHuman = (result: StatusResult): string => {
   switch (result._tag) {
     case "vault":
-      return formatReadiness(result.readiness);
+      return [
+        `Agentic Memory vault status: ${result.status}`,
+        formatReadiness(result.semanticReadiness),
+        formatSynthesisReadiness(result.synthesisReadiness),
+        `Recall ready: ${result.recallReady ? "yes" : "no"}`,
+        ...result.warnings.map((warning) => `Warning: ${warning}`),
+      ].join("\n");
     case "unconfigured":
       return `Agentic Memory status: unconfigured\nDirectory: ${result.directory}`;
     case "linked-project":
@@ -147,7 +168,8 @@ const formatHuman = (result: StatusResult): string => {
         `Agentic Memory linked-project status: ${result.status}`,
         `Project route: ${result.inspection.projectRoute.healthy ? "healthy" : "unhealthy"}`,
         `Linked vault semantic status: ${result.inspection.semanticReadiness.status}`,
-        `Recall ready: ${result.inspection.semanticReadiness.recallReady ? "yes" : "no"}`,
+        formatSynthesisReadiness(result.inspection.synthesisReadiness),
+        `Recall ready: ${result.inspection.recallReady ? "yes" : "no"}`,
         ...result.warnings.map((warning) => `Warning: ${warning}`),
       ].join("\n");
   }

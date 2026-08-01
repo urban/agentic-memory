@@ -15,6 +15,7 @@ import {
 import { Layer } from "effect";
 import { Command } from "effect/unstable/cli";
 import { FetchHttpClient } from "effect/unstable/http";
+type HttpClient = import("effect/unstable/http/HttpClient").HttpClient;
 import { commandInit } from "./commands/init.ts";
 import { commandIndex } from "./commands/index.ts";
 import { commandLink } from "./commands/link.ts";
@@ -44,18 +45,22 @@ const baseAppLayer: Layer.Layer<CliRequirements> = Layer.mergeAll(
 export const makeAppLayer = (
   embeddingModelLayer: Layer.Layer<EmbeddingModel, never, BunServices.BunServices>,
   recallSynthesisLayer: Layer.Layer<RecallSynthesis>,
-): Layer.Layer<CliRequirements | EmbeddingModel | RecallSynthesis> =>
+  httpClientLayer: Layer.Layer<HttpClient> = FetchHttpClient.layer,
+): Layer.Layer<CliRequirements | EmbeddingModel | RecallSynthesis | HttpClient> =>
   Layer.mergeAll(
     baseAppLayer,
     embeddingModelLayer.pipe(Layer.provide(BunServices.layer)),
     recallSynthesisLayer.pipe(Layer.provide(BunServices.layer)),
+    httpClientLayer,
   );
 
-export const appLayer: Layer.Layer<CliRequirements | EmbeddingModel | RecallSynthesis> =
-  makeAppLayer(
-    EmbeddingModelLive,
-    LocalRecallSynthesisLive.pipe(Layer.provide(FetchHttpClient.layer)),
-  );
+export const appLayer: Layer.Layer<
+  CliRequirements | EmbeddingModel | RecallSynthesis | HttpClient
+> = makeAppLayer(
+  EmbeddingModelLive,
+  LocalRecallSynthesisLive.pipe(Layer.provide(FetchHttpClient.layer)),
+  FetchHttpClient.layer,
+);
 
 export const agenticMemoryCommand = commandRoot.pipe(
   Command.withSubcommands([
