@@ -58,7 +58,7 @@ const removeSelectedOverlap = (
     const existing = normalizeWhitespace(passage.text);
     const normalizedRemaining = normalizeWhitespace(remaining);
     if (existing.includes(normalizedRemaining)) return undefined;
-    if (normalizedRemaining.includes(existing)) {
+    if (isMeaningfulOverlap(existing) && normalizedRemaining.includes(existing)) {
       remaining = normalizeWhitespace(normalizedRemaining.replace(existing, " "));
       continue;
     }

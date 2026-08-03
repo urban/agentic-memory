@@ -12,6 +12,7 @@ import {
   Path,
   PlatformError,
 } from "effect";
+import { prepareRecallEvidencePacket } from "../src/recall/EvidencePacket.ts";
 import { isSafeRecallPublicText } from "../src/recall/EvidenceSafety.ts";
 import { encodeRecallSuccessJson, recall } from "../src/recall/Recall.ts";
 import {
@@ -832,6 +833,18 @@ const prohibitedPublicOutputCases: ReadonlyArray<ProhibitedPublicOutputCase> = [
 ];
 
 describe("semantic recall", () => {
+  it("preserves short lexical substrings when deduplicating evidence", () => {
+    const packet = prepareRecallEvidencePacket([
+      { documentPath: "notes/short.md", text: "not" },
+      { documentPath: "notes/decision.md", text: "Deployment is not approved." },
+    ]);
+
+    assert.deepStrictEqual(packet.passages, [
+      { id: "E1", text: "not" },
+      { id: "E2", text: "Deployment is not approved." },
+    ]);
+  });
+
   it("rejects adversarial ranking text within a bounded duration", () => {
     const adversarialSubject = `${Array.from({ length: 8 }, () => "busy").join(" ")} team xyz`;
     const startedAt = performance.now();
