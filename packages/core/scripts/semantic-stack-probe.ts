@@ -17,6 +17,7 @@ import {
   Stream,
 } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+import { decodeSemanticStackProbeVaultStatus } from "./SemanticStackProbeStatus.ts";
 import { decodeRecallSuccessJson } from "../src/recall/Recall.ts";
 import {
   EMBEDDING_MODEL_DIMENSIONS,
@@ -24,7 +25,7 @@ import {
   EMBEDDING_MODEL_SHA256,
   EMBEDDING_MODEL_URI,
 } from "../src/semantic/EmbeddingModel.ts";
-import { SemanticIndexReadiness, SemanticIndexResult } from "../src/semantic/SemanticIndex.ts";
+import { SemanticIndexResult } from "../src/semantic/SemanticIndex.ts";
 
 class ProbePrerequisiteError extends Schema.TaggedErrorClass<ProbePrerequisiteError>()(
   "ProbePrerequisiteError",
@@ -47,13 +48,6 @@ class ProbeOperationError extends Schema.TaggedErrorClass<ProbeOperationError>()
 const IndexResultJson = Schema.fromJsonString(SemanticIndexResult).annotate({
   identifier: "SemanticStackProbeIndexResultJson",
 });
-const VaultStatusJson = Schema.fromJsonString(
-  Schema.TaggedStruct("vault", {
-    version: Schema.Literal(1),
-    directory: Schema.String,
-    readiness: SemanticIndexReadiness,
-  }),
-).annotate({ identifier: "SemanticStackProbeVaultStatusJson" });
 const IndexCountRow = Schema.Struct({
   document_count: Schema.Int,
   chunk_count: Schema.Int,
@@ -66,7 +60,6 @@ const VectorJson = Schema.fromJsonString(Schema.Array(Schema.Finite)).annotate({
 });
 
 const decodeIndexResult = Schema.decodeUnknownEffect(IndexResultJson);
-const decodeVaultStatus = Schema.decodeUnknownEffect(VaultStatusJson);
 const decodeIndexCountRow = Schema.decodeUnknownEffect(IndexCountRow);
 const decodeVectorRow = Schema.decodeUnknownEffect(VectorRow);
 const decodeVector = Schema.decodeUnknownEffect(VectorJson);
@@ -309,12 +302,12 @@ const program = Effect.scoped(
     const status = yield* runCli(["status", "--vault", vaultPath, "--json"]).pipe(
       Effect.flatMap((result) => requireCommandSuccess("status", result)),
     );
-    const statusResult = yield* decodeVaultStatus(status.stdout.trim()).pipe(
+    const statusResult = yield* decodeSemanticStackProbeVaultStatus(status.stdout.trim()).pipe(
       operation("Status command output was invalid"),
     );
     yield* requireProbe(
-      statusResult.readiness.index.status === "current" && statusResult.readiness.recallReady,
-      `Post-index readiness was ${statusResult.readiness.index.status}/${statusResult.readiness.recallReady}`,
+      statusResult.semanticReadiness.index.status === "current" && statusResult.recallReady,
+      `Post-index readiness was ${statusResult.semanticReadiness.index.status}/${statusResult.recallReady}`,
     );
     const lockPath = path.join(vaultPath, ".agentic-memory", "index.lock");
     yield* requireProbe(
@@ -369,8 +362,8 @@ const program = Effect.scoped(
         `managedDocuments=${stored.documentCount}`,
         `embeddingInputs=${indexResult.chunks.embedded}`,
         `validatedStoredVectors=${stored.validatedVectorCount}`,
-        `indexStatus=${statusResult.readiness.index.status}`,
-        `recallReady=${statusResult.readiness.recallReady}`,
+        `indexStatus=${statusResult.semanticReadiness.index.status}`,
+        `recallReady=${statusResult.recallReady}`,
         "indexLockPresent=false",
         `indexLifecycle=${expectedLifecycle.join("->")}`,
         `recallRuntime=${recallRuntime}`,
