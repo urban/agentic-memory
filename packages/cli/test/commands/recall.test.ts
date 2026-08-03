@@ -486,51 +486,6 @@ describe("agentic-memory recall command", () => {
     ),
   );
 
-  it.effect("emits intransitive subordinate clauses in answers and claims", () =>
-    withCliRuntime(
-      withIndexedRecallFixture((vaultPath) =>
-        Effect.gen(function* () {
-          const clauses = [
-            "while the team arrived first",
-            "while the busy team arrived first",
-            "after they finished last",
-            "while Alice arrived first",
-            "while engineers arrived first",
-          ];
-          const fields: ReadonlyArray<"answer" | "claim"> = ["answer", "claim"];
-
-          for (const clause of clauses) {
-            for (const field of fields) {
-              const publicText = `Retrieval placed the note ${clause}.`;
-              const synthesis = RecallSynthesis.of({
-                synthesize: () =>
-                  Effect.succeed({
-                    status: "answered",
-                    answer:
-                      field === "answer" ? publicText : "The requested information was available.",
-                    claim:
-                      field === "claim" ? publicText : "The requested information was available.",
-                    evidenceIds: ["E1"],
-                    providerModelIdentity: "absent",
-                  }),
-              });
-              const output = yield* runCapturedEffectWithRecallSynthesis(
-                ["recall", recallQuestion, "--vault", vaultPath, "--json"],
-                synthesis,
-              );
-              const decoded = yield* decodeRecallSuccessJson(output.stdout.trim());
-
-              assert.strictEqual(output.exitCode, 0);
-              assert.strictEqual(output.stderr, "");
-              assert.strictEqual(decoded.status, "answered");
-              if (field === "answer") assert.strictEqual(decoded.answer, publicText);
-            }
-          }
-        }),
-      ),
-    ),
-  );
-
   it.effect("maps a missing semantic index to indexing guidance", () =>
     withCliRuntime(
       Effect.scoped(

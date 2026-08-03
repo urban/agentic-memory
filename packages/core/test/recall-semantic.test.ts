@@ -131,6 +131,9 @@ const recallSingleAnswerDocument = Effect.fnUntraced(function* (
   });
 });
 
+const groundedMemoryContent = (...statements: ReadonlyArray<string>): string =>
+  ["# Answer", "", ...statements.flatMap((statement) => [statement, ""])].join("\n");
+
 interface ProhibitedPublicOutputCase {
   readonly name: string;
   readonly answer: string;
@@ -881,7 +884,10 @@ describe("semantic recall", () => {
         recallSingleAnswerDocument(
           control,
           "agentic-memory-semantic-recall-synthesis-",
-          "# Answer\n\nThe approved deployment timeout is 640ms.\n",
+          groundedMemoryContent(
+            "Use a 640ms deployment timeout.",
+            "The deployment timeout is 640ms.",
+          ),
         ).pipe(Effect.provideService(RecallSynthesis, synthesis)),
       ),
     ).pipe(
@@ -930,6 +936,42 @@ describe("semantic recall", () => {
       );
     },
   );
+
+  it.effect("rejects a synthesized claim that contradicts its cited evidence", () => {
+    const control: EmbeddingControl = { inputs: [] };
+    const synthesis = RecallSynthesis.of({
+      synthesize: () =>
+        Effect.succeed({
+          status: "answered",
+          answer: "The launch code is scarlet-99.",
+          claim: "The launch code is scarlet-99.",
+          evidenceIds: ["E1"],
+          providerModelIdentity: "absent",
+        }),
+    });
+
+    return withRecallRuntime(
+      control,
+      Effect.scoped(
+        recallSingleAnswerDocument(
+          control,
+          "agentic-memory-semantic-recall-unsupported-claim-",
+          "# Answer\n\nThe launch code is azure-17.\n",
+        ).pipe(Effect.provideService(RecallSynthesis, synthesis), Effect.result),
+      ),
+    ).pipe(
+      Effect.map((result) => {
+        assert.strictEqual(result._tag, "Failure");
+        if (result._tag === "Failure") {
+          assert.strictEqual(result.failure._tag, "RecallError");
+          if (result.failure._tag === "RecallError") {
+            assert.strictEqual(result.failure.reason, "GroundingValidationFailed");
+            assert.include(result.failure.message, "not quoted");
+          }
+        }
+      }),
+    );
+  });
 
   it.effect("fails grounding when an answered synthesis has no supporting evidence", () => {
     const control: EmbeddingControl = { inputs: [] };
@@ -1058,7 +1100,10 @@ describe("semantic recall", () => {
         recallSingleAnswerDocument(
           control,
           "agentic-memory-semantic-recall-ordinary-provider-model-",
-          "# Answer\n\nThe approved deployment timeout is 640ms.\n",
+          groundedMemoryContent(
+            "The model was selected for its predictable timeout behavior.",
+            "The provider was selected based on geography.",
+          ),
         ).pipe(Effect.provideService(RecallSynthesis, synthesis)),
       ),
     ).pipe(
@@ -1097,7 +1142,7 @@ describe("semantic recall", () => {
         recallSingleAnswerDocument(
           control,
           "agentic-memory-semantic-recall-ordinary-fact-",
-          "# Answer\n\nThe approved deployment timeout is 640ms.\n",
+          groundedMemoryContent(answer),
         ).pipe(Effect.provideService(RecallSynthesis, synthesis)),
       ),
     ).pipe(
@@ -1164,7 +1209,7 @@ describe("semantic recall", () => {
         recallSingleAnswerDocument(
           control,
           "agentic-memory-semantic-recall-ordinary-retrieval-",
-          "# Answer\n\nThe requested information was available for the answer.\n",
+          groundedMemoryContent(answer, "The requested information was available for the answer."),
         ).pipe(Effect.provideService(RecallSynthesis, synthesis)),
       ),
     ).pipe(
@@ -1217,7 +1262,7 @@ describe("semantic recall", () => {
         recallSingleAnswerDocument(
           control,
           "agentic-memory-semantic-recall-ordinary-ordinal-claim-",
-          "# Answer\n\nThe requested information was available for the answer.\n",
+          groundedMemoryContent("The requested information was available for the answer.", claim),
         ).pipe(Effect.provideService(RecallSynthesis, synthesis)),
       ),
     ).pipe(
@@ -1251,7 +1296,7 @@ describe("semantic recall", () => {
         recallSingleAnswerDocument(
           control,
           "agentic-memory-semantic-recall-future-perfect-progressive-role-",
-          "# Answer\n\nThe clinic has an established care role.\n",
+          groundedMemoryContent(answer, "The clinic has an established care role."),
         ).pipe(Effect.provideService(RecallSynthesis, synthesis)),
       ),
     ).pipe(
@@ -1282,7 +1327,7 @@ describe("semantic recall", () => {
         recallSingleAnswerDocument(
           control,
           "agentic-memory-semantic-recall-object-first-role-answer-",
-          "# Answer\n\nThe clinic fulfilled a provider role.\n",
+          groundedMemoryContent(answer, "The clinic fulfilled a provider role."),
         ).pipe(Effect.provideService(RecallSynthesis, synthesis)),
       ),
     ).pipe(
@@ -1313,7 +1358,7 @@ describe("semantic recall", () => {
         recallSingleAnswerDocument(
           control,
           "agentic-memory-semantic-recall-object-first-role-claim-",
-          "# Answer\n\nThe clinic fulfilled a provider role.\n",
+          groundedMemoryContent(answer, "The clinic served as the provider."),
         ).pipe(Effect.provideService(RecallSynthesis, synthesis)),
       ),
     ).pipe(
@@ -1363,7 +1408,7 @@ describe("semantic recall", () => {
         recallSingleAnswerDocument(
           control,
           "agentic-memory-semantic-recall-generic-serve-as-role-",
-          "# Answer\n\nThe approved deployment timeout is 640ms.\n",
+          groundedMemoryContent(answer, "The provider is serving as a fallback."),
         ).pipe(Effect.provideService(RecallSynthesis, synthesis)),
       ),
     ).pipe(
@@ -1394,7 +1439,7 @@ describe("semantic recall", () => {
         recallSingleAnswerDocument(
           control,
           "agentic-memory-semantic-recall-bare-generic-serve-as-role-",
-          "# Answer\n\nThe approved deployment timeout is 640ms.\n",
+          groundedMemoryContent(answer, "The provider is serving as fallback."),
         ).pipe(Effect.provideService(RecallSynthesis, synthesis)),
       ),
     ).pipe(
@@ -1425,7 +1470,7 @@ describe("semantic recall", () => {
         recallSingleAnswerDocument(
           control,
           "agentic-memory-semantic-recall-numbered-generic-serve-as-role-",
-          "# Answer\n\nThe approved deployment timeout is 640ms.\n",
+          groundedMemoryContent(answer, "The provider served as a 24-hour backup provider."),
         ).pipe(Effect.provideService(RecallSynthesis, synthesis)),
       ),
     ).pipe(
@@ -1456,7 +1501,7 @@ describe("semantic recall", () => {
         recallSingleAnswerDocument(
           control,
           "agentic-memory-semantic-recall-new-article-generic-role-",
-          "# Answer\n\nThe approved deployment timeout is 640ms.\n",
+          groundedMemoryContent(answer, "Provider served as local inference gateway."),
         ).pipe(Effect.provideService(RecallSynthesis, synthesis)),
       ),
     ).pipe(
@@ -1487,7 +1532,7 @@ describe("semantic recall", () => {
         recallSingleAnswerDocument(
           control,
           "agentic-memory-semantic-recall-new-bare-generic-role-",
-          "# Answer\n\nThe approved deployment timeout is 640ms.\n",
+          groundedMemoryContent(answer, "The provider serves as a local inference gateway."),
         ).pipe(Effect.provideService(RecallSynthesis, synthesis)),
       ),
     ).pipe(
@@ -1518,7 +1563,7 @@ describe("semantic recall", () => {
         recallSingleAnswerDocument(
           control,
           "agentic-memory-semantic-recall-two-word-role-answer-",
-          "# Answer\n\nThe approved deployment timeout is 640ms.\n",
+          groundedMemoryContent(answer, "The provider served as operational safeguard."),
         ).pipe(Effect.provideService(RecallSynthesis, synthesis)),
       ),
     ).pipe(
@@ -1549,7 +1594,7 @@ describe("semantic recall", () => {
         recallSingleAnswerDocument(
           control,
           "agentic-memory-semantic-recall-two-word-role-claim-",
-          "# Answer\n\nThe approved deployment timeout is 640ms.\n",
+          groundedMemoryContent(answer, "The provider served as evaluation baseline."),
         ).pipe(Effect.provideService(RecallSynthesis, synthesis)),
       ),
     ).pipe(
@@ -1580,7 +1625,10 @@ describe("semantic recall", () => {
         recallSingleAnswerDocument(
           control,
           "agentic-memory-semantic-recall-ordinary-multiline-",
-          "# Answer\n\nThe approved deployment timeout is 640ms.\n",
+          groundedMemoryContent(
+            answer,
+            "The deployment timeout is 640ms.\nIt keeps behavior predictable.",
+          ),
         ).pipe(Effect.provideService(RecallSynthesis, synthesis)),
       ),
     ).pipe(
@@ -1611,7 +1659,7 @@ describe("semantic recall", () => {
         recallSingleAnswerDocument(
           control,
           "agentic-memory-semantic-recall-slash-terms-",
-          "# Answer\n\nThe rollout strategy uses blue and green terminology.\n",
+          groundedMemoryContent(answer, "The rollout strategy uses blue and green terminology."),
         ).pipe(Effect.provideService(RecallSynthesis, synthesis)),
       ),
     ).pipe(

@@ -9,11 +9,18 @@ export class RecallGroundingError extends Schema.TaggedErrorClass<RecallGroundin
     reason: Schema.Literals([
       "MissingSupportingEvidence",
       "UnknownEvidenceId",
+      "UnsupportedClaim",
       "UnsafePublicOutput",
     ]),
     message: Schema.String,
   },
 ) {}
+
+const normalizeGroundedText = (text: string): string =>
+  text
+    .replace(/[*_~`]/gu, "")
+    .replace(/\s+/gu, " ")
+    .trim();
 
 export const validateRecallGrounding = Effect.fnUntraced(function* (
   evidence: RecallEvidencePacket,
@@ -33,6 +40,20 @@ export const validateRecallGrounding = Effect.fnUntraced(function* (
     return yield* new RecallGroundingError({
       reason: "UnknownEvidenceId",
       message: "The synthesized answer referenced evidence outside the supplied packet",
+    });
+  }
+
+  const citedEvidence = evidence.passages
+    .filter(({ id }) => output.evidenceIds.includes(id))
+    .map(({ text }) => text)
+    .join("\n\n");
+  const citedEvidenceText = normalizeGroundedText(citedEvidence);
+  const answer = normalizeGroundedText(output.answer);
+  const claim = normalizeGroundedText(output.claim);
+  if (!citedEvidenceText.includes(answer) || !citedEvidenceText.includes(claim)) {
+    return yield* new RecallGroundingError({
+      reason: "UnsupportedClaim",
+      message: "The synthesized answer was not quoted from its cited evidence",
     });
   }
 
