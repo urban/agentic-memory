@@ -13,7 +13,7 @@ import {
   PlatformError,
 } from "effect";
 import { prepareRecallEvidencePacket } from "../src/recall/EvidencePacket.ts";
-import { isSafeRecallPublicText } from "../src/recall/EvidenceSafety.ts";
+import { isSafeRecallPublicText, prepareSafeRecallEvidence } from "../src/recall/EvidenceSafety.ts";
 import { encodeRecallSuccessJson, recall } from "../src/recall/Recall.ts";
 import {
   EvidenceEchoRecallSynthesisLayer,
@@ -836,6 +836,14 @@ const prohibitedPublicOutputCases: ReadonlyArray<ProhibitedPublicOutputCase> = [
 ];
 
 describe("semantic recall", () => {
+  it("rejects numeral-prefixed internal paths while preserving actual rates", () => {
+    const internalPath = "There are 5 private/alpha documents.";
+
+    assert.isFalse(isSafeRecallPublicText(internalPath));
+    assert.deepStrictEqual(prepareSafeRecallEvidence(internalPath), { _tag: "ineligible" });
+    assert.isTrue(isSafeRecallPublicText("The service handles 100 requests/second."));
+  });
+
   it("preserves short lexical substrings when deduplicating evidence", () => {
     const packet = prepareRecallEvidencePacket([
       { documentPath: "notes/short.md", text: "not" },

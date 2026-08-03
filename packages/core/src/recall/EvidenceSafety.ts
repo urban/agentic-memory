@@ -24,6 +24,8 @@ const relativePathTokenPattern =
   /(?<![\p{L}\p{N}_-])(`?(?:[^\s/\\)"'`:]+[\\/])+[^\s/\\).,;!?"'`:]+`?)(?=$|[\s).,;:!?"'`])/giu;
 
 const ordinarySlashTerms = new Set(["blue/green", "read/write"]);
+const rateDenominatorPattern =
+  /^(?:d|day|days|h|hour|hours|min|minute|minutes|s|sec|second|seconds)$/u;
 
 const containsRelativePath = (block: string): boolean =>
   Array.from(block.matchAll(relativePathTokenPattern)).some((match) => {
@@ -35,7 +37,12 @@ const containsRelativePath = (block: string): boolean =>
     const isNumericNotation = components.every((component) => /^\d+$/u.test(component));
     const tokenIndex = match.index;
     const precedingText = block.slice(0, tokenIndex);
-    const isRate = /\d+\s+$/u.test(precedingText);
+    const denominator = components[1];
+    const isRate =
+      components.length === 2 &&
+      denominator !== undefined &&
+      rateDenominatorPattern.test(denominator) &&
+      /\d+\s+$/u.test(precedingText);
     return !ordinarySlashTerms.has(token) && !isNumericNotation && !isRate;
   });
 
