@@ -1,27 +1,24 @@
 import { OpenAiClient, OpenAiLanguageModel } from "@effect/ai-openai-compat";
 import { Effect, Schema } from "effect";
 import { AiError, LanguageModel } from "effect/unstable/ai";
+import {
+  LOCAL_SYNTHESIS_MODEL_ALIAS,
+  LOCAL_SYNTHESIS_TIMEOUT,
+  SynthesisEndpointError,
+  validateLocalSynthesisEndpoint,
+} from "../recall/LocalSynthesisEndpoint.ts";
+import {
+  AnsweredRecallSynthesis,
+  NotFoundRecallSynthesis,
+  RecallSynthesisOutput,
+} from "../recall/RecallSynthesis.ts";
 
 type HttpClient = import("effect/unstable/http/HttpClient").HttpClient;
 
-export const LOCAL_SYNTHESIS_MODEL_ALIAS = "agentic-memory-qwen3-4b";
-export const LOCAL_SYNTHESIS_TIMEOUT = "60 seconds";
+const AnsweredCompatibilityOutput = AnsweredRecallSynthesis;
+const NotFoundCompatibilityOutput = NotFoundRecallSynthesis;
 
-const AnsweredCompatibilityOutput = Schema.Struct({
-  status: Schema.Literal("answered"),
-  answer: Schema.NonEmptyString,
-  claim: Schema.NonEmptyString,
-  evidenceIds: Schema.Array(Schema.NonEmptyString).check(Schema.isMinLength(1)),
-});
-
-const NotFoundCompatibilityOutput = Schema.Struct({
-  status: Schema.Literal("not_found"),
-});
-
-export const SynthesisCompatibilityOutput = Schema.Union([
-  AnsweredCompatibilityOutput,
-  NotFoundCompatibilityOutput,
-]).annotate({ identifier: "SynthesisCompatibilityOutput" });
+export const SynthesisCompatibilityOutput = RecallSynthesisOutput;
 export type SynthesisCompatibilityOutput = typeof SynthesisCompatibilityOutput.Type;
 
 export const SynthesisCompatibilityReport = Schema.Struct({
@@ -34,21 +31,6 @@ export const SynthesisCompatibilityReport = Schema.Struct({
   requestCount: Schema.Literal(2),
 }).annotate({ identifier: "SynthesisCompatibilityReport" });
 export type SynthesisCompatibilityReport = typeof SynthesisCompatibilityReport.Type;
-
-export class SynthesisEndpointError extends Schema.TaggedErrorClass<SynthesisEndpointError>()(
-  "SynthesisEndpointError",
-  {
-    reason: Schema.Literals([
-      "InvalidUrl",
-      "HttpRequired",
-      "CredentialsNotAllowed",
-      "QueryNotAllowed",
-      "FragmentNotAllowed",
-      "NonLoopbackHost",
-    ]),
-    message: Schema.String,
-  },
-) {}
 
 export class SynthesisServerUnavailableError extends Schema.TaggedErrorClass<SynthesisServerUnavailableError>()(
   "SynthesisServerUnavailableError",
@@ -81,62 +63,12 @@ type SynthesisGenerationError =
 
 export type SynthesisCompatibilityError = SynthesisEndpointError | SynthesisGenerationError;
 
-const decodeUrl = Schema.decodeUnknownEffect(Schema.URLFromString);
-
-const isLoopbackHost = (hostname: string): boolean =>
-  hostname === "localhost" || hostname === "[::1]" || /^127(?:\.[0-9]{1,3}){3}$/.test(hostname);
-
-const normalizeEndpoint = (url: URL): string => {
-  const pathname = url.pathname === "/" ? "" : url.pathname.replace(/\/+$/, "");
-  return `${url.origin}${pathname}`;
+export {
+  LOCAL_SYNTHESIS_MODEL_ALIAS,
+  LOCAL_SYNTHESIS_TIMEOUT,
+  SynthesisEndpointError,
+  validateLocalSynthesisEndpoint,
 };
-
-export const validateLocalSynthesisEndpoint = Effect.fnUntraced(function* (
-  input: unknown,
-): Effect.fn.Return<string, SynthesisEndpointError> {
-  const url = yield* decodeUrl(input).pipe(
-    Effect.mapError(
-      () =>
-        new SynthesisEndpointError({
-          reason: "InvalidUrl",
-          message: "AGENTIC_MEMORY_SYNTHESIS_URL must be a valid absolute URL",
-        }),
-    ),
-  );
-
-  if (url.protocol !== "http:") {
-    return yield* new SynthesisEndpointError({
-      reason: "HttpRequired",
-      message: "The local synthesis endpoint must use HTTP",
-    });
-  }
-  if (url.username.length > 0 || url.password.length > 0) {
-    return yield* new SynthesisEndpointError({
-      reason: "CredentialsNotAllowed",
-      message: "The local synthesis endpoint must not contain credentials",
-    });
-  }
-  if (url.search.length > 0) {
-    return yield* new SynthesisEndpointError({
-      reason: "QueryNotAllowed",
-      message: "The local synthesis endpoint must not contain a query string",
-    });
-  }
-  if (url.hash.length > 0) {
-    return yield* new SynthesisEndpointError({
-      reason: "FragmentNotAllowed",
-      message: "The local synthesis endpoint must not contain a fragment",
-    });
-  }
-  if (!isLoopbackHost(url.hostname)) {
-    return yield* new SynthesisEndpointError({
-      reason: "NonLoopbackHost",
-      message: "The local synthesis endpoint must use localhost, 127.0.0.0/8, or ::1",
-    });
-  }
-
-  return normalizeEndpoint(url);
-});
 
 const mapAiError = (error: AiError.AiError): SynthesisGenerationError => {
   switch (error.reason._tag) {

@@ -43,7 +43,7 @@ EmbeddingGemma is subject to terms and use restrictions separate from Agentic Me
 - Embedding calls within the layer are serialized through that context.
 - Closing the CLI runtime finalizes the context, model, and runtime once, in dependency order.
 
-The opt-in probe exercises the real CLI entry point and production `EmbeddingModelLive`, semantic-index, Recall, and `ManagedRuntime` composition. It verifies that:
+The opt-in probe exercises the real CLI entry point and production `EmbeddingModelLive`, semantic-index, local Qwen synthesis, Recall, and `ManagedRuntime` composition. It verifies that:
 
 - Bun loads the pinned Metal/arm64 node-llama-cpp and native libSQL binaries.
 - `init` validates the cached artifact without acquiring an inference session.
@@ -51,14 +51,15 @@ The opt-in probe exercises the real CLI entry point and production `EmbeddingMod
 - Native resources are acquired and finalized in the expected order.
 - Stored vectors are finite and 768-dimensional.
 - The resulting index is current and Recall-ready, with no remaining `index.lock`.
-- A separate Recall process embeds a query, performs exact-cosine search, returns an answer, and finalizes its native session.
+- A separate Recall process embeds a query, performs exact-cosine search, synthesizes a grounded answer through the configured loopback Qwen server, and finalizes its native session.
 
 ## Running the opt-in probe
 
-The probe downloads the approximately 334 MB model only when it is absent from the XDG-compatible cache. Run it with `GGML_METAL_NO_RESIDENCY` absent; the probe rejects a guarded environment rather than silently changing Metal behavior.
+The probe downloads the approximately 334 MB embedding model only when it is absent from the XDG-compatible cache. Before running it, start the pinned local Qwen server described in the [local synthesis setup guide](recall-local-synthesis-setup.md). Run the probe with `GGML_METAL_NO_RESIDENCY` absent; it rejects a guarded environment or a missing/invalid synthesis endpoint before loading the embedding model.
 
 ```sh
 unset GGML_METAL_NO_RESIDENCY
+export AGENTIC_MEMORY_SYNTHESIS_URL=http://127.0.0.1:8080/v1
 AGENTIC_MEMORY_SEMANTIC_PROBE=1 bun run --cwd packages/core probe:semantic-stack
 ```
 

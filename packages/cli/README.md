@@ -88,14 +88,16 @@ agentic-memory index --vault /absolute/path/to/agentic-memory-vault --delete
 
 Deletion preserves Markdown and the shared model and is safe to repeat. Use the delete flag, then run `index` again to recover when vault status reports an incompatible or invalid index.
 
-### Check vault semantic readiness
+### Check Recall readiness
 
 ```sh
 agentic-memory status --vault /absolute/path/to/agentic-memory-vault
 agentic-memory status --vault /absolute/path/to/agentic-memory-vault --json
 ```
 
-Vault mode inspects vault, model, and index state without downloading, loading the model for inference, or modifying the database. It reports `ready` only when all local state is valid and current. A completed inspection exits successfully even for `not_ready` or `invalid`; execution or encoding failures are nonzero.
+Vault mode inspects the vault, embedding model, semantic index, and configured local synthesis server without downloading, loading a model for inference, sending memory evidence, or modifying the database. It reports `ready` only when the semantic index is current and synthesis is ready. Synthesis status distinguishes missing or invalid configuration, an unavailable server, an incompatible or missing fixed model alias, and ready. A completed inspection exits successfully even for `not_ready` or `invalid`; execution or encoding failures are nonzero.
+
+Synthesis checks call only the configured loopback server's `/v1/health` and `/v1/models` endpoints with a three-second timeout, no retries, and redirects disabled. Follow the repository's [local synthesis setup guide](../../docs/recall-local-synthesis-setup.md) before expecting Recall readiness.
 
 ### Link an external project
 
@@ -122,12 +124,17 @@ This is the separate project-link status mode. Use `--vault` for semantic readin
 
 ### Recall from a vault
 
+Start the pinned, user-managed local Qwen server and export its loopback endpoint as described in the [local synthesis setup guide](../../docs/recall-local-synthesis-setup.md). Then ask one singular factual question:
+
 ```sh
 agentic-memory recall "What should I remember about Example Project?" \
-  --vault /absolute/path/to/agentic-memory-vault
+  --vault /absolute/path/to/agentic-memory-vault \
+  --json
 ```
 
-Answers a natural-language question using eligible Agentic Memory content. Source files are always excluded; public JSON contains only `status`, `question`, `answer`, and `warnings`.
+Recall requires a current semantic index, embeds the question with EmbeddingGemma, searches through libSQL exact cosine ordering, hydrates current Markdown, prepares bounded safe evidence, and synthesizes at most one grounded claim through the local Qwen model. Source files are always excluded; there is no source-inclusion flag, lexical fallback, deterministic answer fallback, hosted fallback, or public provider/model selector.
+
+Public JSON contains only `status`, `question`, `answer`, and `warnings`. Absent, insufficient, or unresolvedly conflicting eligible evidence returns `not_found`. Multipart input and operational failures exit nonzero with actionable guidance.
 
 ### Build Steward context
 
@@ -163,7 +170,7 @@ agentic-memory -C /absolute/path/to/project run-steward \
 | `agentic-memory index --vault <vault>`                              | Create or incrementally update local derivative index state. |
 | `agentic-memory index --vault <vault> --delete`                     | Delete only local derivative index state.                    |
 | `agentic-memory -C <project> link --vault <vault> --project <slug>` | Link a project root to a vault project.                      |
-| `agentic-memory status --vault <vault>`                             | Inspect vault semantic readiness without mutation.           |
+| `agentic-memory status --vault <vault>`                             | Inspect semantic and local synthesis readiness.              |
 | `agentic-memory -C <project> status`                                | Inspect project-local link and vault health.                 |
 | `agentic-memory recall <question> --vault <vault>`                  | Answer a memory question from a vault.                       |
 | `agentic-memory steward-context --payload <path-or->`               | Build Steward context for a capture payload.                 |
@@ -171,7 +178,7 @@ agentic-memory -C /absolute/path/to/project run-steward \
 
 Add `--json` to supported commands when a script or integration needs machine-readable output.
 
-Human and JSON results use stdout. Model download progress and operational failures use stderr, preserving a single JSON document on stdout. Apart from model installation during `init`, semantic index commands are offline. Generated databases are under the Git-ignored `.agentic-memory/index/`; models never live in the vault.
+Human and JSON results use stdout. Model download progress and operational failures use stderr, preserving a single JSON document on stdout. Apart from model installation during `init`, semantic index commands are offline; status may contact only the configured loopback synthesis server. Generated databases are under the Git-ignored `.agentic-memory/index/`; models never live in the vault.
 
 ## Development
 

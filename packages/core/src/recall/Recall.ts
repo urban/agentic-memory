@@ -2,10 +2,18 @@ import { Effect, FileSystem, Path } from "effect";
 import { EmbeddingModel } from "../semantic/EmbeddingModel.ts";
 import { formatQueryEmbeddingInput } from "../semantic/MarkdownChunking.ts";
 import { requireCurrentSemanticIndex, searchSemanticIndex } from "../semantic/SemanticIndex.ts";
+import { hydrateSemanticRecallCandidate } from "./EvidenceHydration.ts";
+import { prepareRecallEvidencePacket } from "./EvidencePacket.ts";
+import { prepareSafeRecallEvidence } from "./EvidenceSafety.ts";
+import { isUnsupportedMultipartQuestion } from "./QuestionScope.ts";
 import { RecallError } from "./RecallContract.ts";
+import { validateRecallGrounding } from "./RecallGrounding.ts";
+import { RecallSynthesis } from "./RecallSynthesis.ts";
 type RecallRequest = import("./RecallContract.ts").RecallRequest;
 type RecallResponse = import("./RecallContract.ts").RecallResponse;
+type RecallEvidenceCandidate = import("./EvidencePacket.ts").RecallEvidenceCandidate;
 type SemanticIndexError = import("../semantic/SemanticIndex.ts").SemanticIndexError;
+type RecallSynthesisError = import("./RecallSynthesis.ts").RecallSynthesisError;
 
 export {
   decodeRecallRequest,
@@ -20,11 +28,19 @@ export {
 
 const validateRecallQuestion = (question: string): Effect.Effect<string, RecallError> => {
   const trimmed = question.trim();
-  return trimmed.length === 0
+  if (trimmed.length === 0) {
+    return Effect.fail(
+      new RecallError({
+        reason: "InvalidQuestion",
+        message: "Recall question must not be empty or whitespace.",
+      }),
+    );
+  }
+  return isUnsupportedMultipartQuestion(trimmed)
     ? Effect.fail(
         new RecallError({
-          reason: "InvalidQuestion",
-          message: "Recall question must not be empty or whitespace.",
+          reason: "UnsupportedMultipartQuestion",
+          message: "Recall supports one factual question at a time; use separate recall commands.",
         }),
       )
     : Effect.succeed(trimmed);
@@ -56,12 +72,28 @@ const toRecallReadinessError = (cause: SemanticIndexError): RecallError => {
   });
 };
 
+const toRecallSynthesisError = (cause: RecallSynthesisError): RecallError => {
+  const reason =
+    cause.reason === "MissingConfiguration"
+      ? "SynthesisConfigurationMissing"
+      : cause.reason === "InvalidConfiguration"
+        ? "SynthesisConfigurationInvalid"
+        : cause.reason === "NonLoopbackEndpoint"
+          ? "SynthesisEndpointNotLoopback"
+          : cause.reason === "ServerUnavailable"
+            ? "SynthesisServerUnavailable"
+            : cause.reason === "ServerIncompatible"
+              ? "SynthesisServerIncompatible"
+              : "SynthesisStructuredOutputFailed";
+  return new RecallError({ reason, message: cause.message, cause });
+};
+
 export const recall = Effect.fnUntraced(function* (
   request: RecallRequest,
 ): Effect.fn.Return<
   RecallResponse,
   RecallError,
-  EmbeddingModel | FileSystem.FileSystem | Path.Path
+  EmbeddingModel | FileSystem.FileSystem | Path.Path | RecallSynthesis
 > {
   const question = yield* validateRecallQuestion(request.question);
   yield* requireCurrentSemanticIndex(request.vaultPath).pipe(
@@ -98,18 +130,57 @@ export const recall = Effect.fnUntraced(function* (
   yield* requireCurrentSemanticIndex(request.vaultPath).pipe(
     Effect.mapError(toRecallReadinessError),
   );
-  const bestHit = hits[0];
-  return bestHit === undefined
+  const candidates: Array<RecallEvidenceCandidate> = [];
+  for (const hit of hits) {
+    const hydrated = yield* hydrateSemanticRecallCandidate(request.vaultPath, hit).pipe(
+      Effect.mapError(
+        (cause) =>
+          new RecallError({
+            reason: "EvidenceHydrationFailed",
+            message: cause.message,
+            cause,
+          }),
+      ),
+    );
+    const prepared = prepareSafeRecallEvidence(hydrated);
+    if (prepared._tag === "eligible") {
+      candidates.push({ documentPath: hit.documentPath, text: prepared.text });
+    }
+  }
+  const packet = prepareRecallEvidencePacket(candidates);
+  if (packet.passages.length === 0) {
+    return {
+      status: "not_found",
+      question: request.question,
+      answer: notFoundAnswer,
+      warnings: [],
+    };
+  }
+  const synthesis = yield* RecallSynthesis;
+  const result = yield* synthesis
+    .synthesize({ question, evidence: packet })
+    .pipe(Effect.mapError(toRecallSynthesisError));
+  const grounded = yield* validateRecallGrounding(packet, result).pipe(
+    Effect.mapError(
+      (cause) =>
+        new RecallError({
+          reason: "GroundingValidationFailed",
+          message: cause.message,
+          cause,
+        }),
+    ),
+  );
+  return grounded.status === "answered"
     ? {
-        status: "not_found",
+        status: "answered",
         question: request.question,
-        answer: notFoundAnswer,
+        answer: grounded.answer,
         warnings: [],
       }
     : {
-        status: "answered",
+        status: "not_found",
         question: request.question,
-        answer: bestHit.text,
+        answer: notFoundAnswer,
         warnings: [],
       };
 });

@@ -71,6 +71,7 @@ const SearchRow = Schema.Struct({
   document_path: Schema.String,
   ordinal: Schema.Int,
   text: Schema.String,
+  text_hash: Schema.String,
   distance: Schema.Finite,
 }).annotate({ identifier: "SemanticIndexSearchRow" });
 
@@ -371,6 +372,7 @@ export const searchSemanticIndexExact = (
     readonly documentPath: string;
     readonly ordinal: number;
     readonly text: string;
+    readonly textHash: string;
     readonly distance: number;
   }>,
   SemanticIndexRepositoryError,
@@ -382,7 +384,7 @@ export const searchSemanticIndexExact = (
         "Failed to execute exact cosine semantic index search",
         () =>
           client.execute({
-            sql: `SELECT document_path, ordinal, text,
+            sql: `SELECT document_path, ordinal, text, text_hash,
               vector_distance_cos(embedding, vector32(?)) AS distance
               FROM chunks
               ${eligibility === "exclude_sources" ? "WHERE document_path NOT LIKE 'sources/%'" : ""}
@@ -406,6 +408,7 @@ export const searchSemanticIndexExact = (
         documentPath: row.document_path,
         ordinal: row.ordinal,
         text: row.text,
+        textHash: row.text_hash,
         distance: row.distance,
       }));
     }),

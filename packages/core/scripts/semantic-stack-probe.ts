@@ -17,6 +17,8 @@ import {
   Stream,
 } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+import { requireSemanticStackProbeSynthesisEndpoint } from "./SemanticStackProbeConfiguration.ts";
+import { decodeSemanticStackProbeVaultStatus } from "./SemanticStackProbeStatus.ts";
 import { decodeRecallSuccessJson } from "../src/recall/Recall.ts";
 import {
   EMBEDDING_MODEL_DIMENSIONS,
@@ -24,7 +26,7 @@ import {
   EMBEDDING_MODEL_SHA256,
   EMBEDDING_MODEL_URI,
 } from "../src/semantic/EmbeddingModel.ts";
-import { SemanticIndexReadiness, SemanticIndexResult } from "../src/semantic/SemanticIndex.ts";
+import { SemanticIndexResult } from "../src/semantic/SemanticIndex.ts";
 
 class ProbePrerequisiteError extends Schema.TaggedErrorClass<ProbePrerequisiteError>()(
   "ProbePrerequisiteError",
@@ -47,13 +49,6 @@ class ProbeOperationError extends Schema.TaggedErrorClass<ProbeOperationError>()
 const IndexResultJson = Schema.fromJsonString(SemanticIndexResult).annotate({
   identifier: "SemanticStackProbeIndexResultJson",
 });
-const VaultStatusJson = Schema.fromJsonString(
-  Schema.TaggedStruct("vault", {
-    version: Schema.Literal(1),
-    directory: Schema.String,
-    readiness: SemanticIndexReadiness,
-  }),
-).annotate({ identifier: "SemanticStackProbeVaultStatusJson" });
 const IndexCountRow = Schema.Struct({
   document_count: Schema.Int,
   chunk_count: Schema.Int,
@@ -66,7 +61,6 @@ const VectorJson = Schema.fromJsonString(Schema.Array(Schema.Finite)).annotate({
 });
 
 const decodeIndexResult = Schema.decodeUnknownEffect(IndexResultJson);
-const decodeVaultStatus = Schema.decodeUnknownEffect(VaultStatusJson);
 const decodeIndexCountRow = Schema.decodeUnknownEffect(IndexCountRow);
 const decodeVectorRow = Schema.decodeUnknownEffect(VectorRow);
 const decodeVector = Schema.decodeUnknownEffect(VectorJson);
@@ -139,12 +133,16 @@ Probe document ${sequence} confirms that durable Agentic Memory notes are embedd
 const cliMainPath = fileURLToPath(new URL("../../cli/src/main.ts", import.meta.url));
 const repositoryRoot = fileURLToPath(new URL("../../../", import.meta.url));
 
-const runCli = Effect.fnUntraced(function* (args: ReadonlyArray<string>) {
+const runCli = Effect.fnUntraced(function* (
+  args: ReadonlyArray<string>,
+  synthesisEndpoint: string,
+) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const command = ChildProcess.make("bun", [cliMainPath, ...args], {
     cwd: repositoryRoot,
     env: {
       AGENTIC_MEMORY_SEMANTIC_PROBE: "1",
+      AGENTIC_MEMORY_SYNTHESIS_URL: synthesisEndpoint,
       GGML_METAL_NO_RESIDENCY: undefined,
     },
     extendEnv: true,
@@ -264,6 +262,12 @@ const program = Effect.scoped(
         message: `The sustained lifecycle proof requires darwin-arm64; received ${process.platform}-${process.arch}.`,
       });
     }
+    const synthesisEndpointConfig = yield* Config.string("AGENTIC_MEMORY_SYNTHESIS_URL").pipe(
+      Config.option,
+    );
+    const synthesisEndpoint = yield* requireSemanticStackProbeSynthesisEndpoint(
+      Option.getOrUndefined(synthesisEndpointConfig),
+    ).pipe(Effect.mapError((cause) => new ProbePrerequisiteError({ message: cause.message })));
 
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -272,7 +276,7 @@ const program = Effect.scoped(
     });
     const vaultPath = path.join(tempRoot, "vault");
 
-    const init = yield* runCli(["init", vaultPath, "--yes", "--json"]).pipe(
+    const init = yield* runCli(["init", vaultPath, "--yes", "--json"], synthesisEndpoint).pipe(
       Effect.flatMap((result) => requireCommandSuccess("init", result)),
     );
     yield* Effect.forEach(
@@ -286,7 +290,7 @@ const program = Effect.scoped(
           .pipe(operation(`Failed to write sustained lifecycle note ${index}`)),
     );
 
-    const index = yield* runCli(["index", "--vault", vaultPath, "--json"]).pipe(
+    const index = yield* runCli(["index", "--vault", vaultPath, "--json"], synthesisEndpoint).pipe(
       Effect.flatMap((result) => requireCommandSuccess("index", result)),
     );
     const indexResult = yield* decodeIndexResult(index.stdout.trim()).pipe(
@@ -306,15 +310,16 @@ const program = Effect.scoped(
     );
     const indexRuntime = yield* validateLifecycle("index", index.stderr);
 
-    const status = yield* runCli(["status", "--vault", vaultPath, "--json"]).pipe(
-      Effect.flatMap((result) => requireCommandSuccess("status", result)),
-    );
-    const statusResult = yield* decodeVaultStatus(status.stdout.trim()).pipe(
+    const status = yield* runCli(
+      ["status", "--vault", vaultPath, "--json"],
+      synthesisEndpoint,
+    ).pipe(Effect.flatMap((result) => requireCommandSuccess("status", result)));
+    const statusResult = yield* decodeSemanticStackProbeVaultStatus(status.stdout.trim()).pipe(
       operation("Status command output was invalid"),
     );
     yield* requireProbe(
-      statusResult.readiness.index.status === "current" && statusResult.readiness.recallReady,
-      `Post-index readiness was ${statusResult.readiness.index.status}/${statusResult.readiness.recallReady}`,
+      statusResult.semanticReadiness.index.status === "current" && statusResult.recallReady,
+      `Post-index readiness was ${statusResult.semanticReadiness.index.status}/${statusResult.recallReady}`,
     );
     const lockPath = path.join(vaultPath, ".agentic-memory", "index.lock");
     yield* requireProbe(
@@ -329,13 +334,16 @@ const program = Effect.scoped(
       `Stored proof was too small: ${stored.documentCount} documents and ${stored.chunkCount} chunks`,
     );
 
-    const recall = yield* runCli([
-      "recall",
-      "How does the sustained lifecycle probe embed durable notes?",
-      "--vault",
-      vaultPath,
-      "--json",
-    ]).pipe(Effect.flatMap((result) => requireCommandSuccess("recall", result)));
+    const recall = yield* runCli(
+      [
+        "recall",
+        "How does the sustained lifecycle probe embed durable notes?",
+        "--vault",
+        vaultPath,
+        "--json",
+      ],
+      synthesisEndpoint,
+    ).pipe(Effect.flatMap((result) => requireCommandSuccess("recall", result)));
     const recallResult = yield* decodeRecallSuccessJson(recall.stdout.trim()).pipe(
       operation("Recall command output was invalid"),
     );
@@ -369,8 +377,8 @@ const program = Effect.scoped(
         `managedDocuments=${stored.documentCount}`,
         `embeddingInputs=${indexResult.chunks.embedded}`,
         `validatedStoredVectors=${stored.validatedVectorCount}`,
-        `indexStatus=${statusResult.readiness.index.status}`,
-        `recallReady=${statusResult.readiness.recallReady}`,
+        `indexStatus=${statusResult.semanticReadiness.index.status}`,
+        `recallReady=${statusResult.recallReady}`,
         "indexLockPresent=false",
         `indexLifecycle=${expectedLifecycle.join("->")}`,
         `recallRuntime=${recallRuntime}`,

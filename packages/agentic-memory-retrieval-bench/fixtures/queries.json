@@ -1,10 +1,10 @@
 [
   {
-    "id": "alpha-retry-latency-and-options",
-    "question": "In Alpha Product, I need to tune the retry scheduler. What latency budget decision should I follow, and how should I present options back to Urban?",
+    "id": "alpha-options-format-in-context",
+    "question": "In Alpha Product, how should I present prioritization options back to Urban?",
     "expected": {
       "status": "answered",
-      "answerMustContain": ["200ms p95", "stack-ranked", "capital-letter"],
+      "answerMustContain": ["stack-ranked", "capital-letter"],
       "answerMustNotContain": ["5 second batch retry window"]
     }
   },
@@ -150,11 +150,11 @@
     }
   },
   {
-    "id": "alpha-latency-and-options-consistency",
-    "question": "For Alpha Product retry scheduling, what latency budget should I use, and how should I present prioritization options?",
+    "id": "alpha-latency-consistency",
+    "question": "For Alpha Product retry scheduling, what latency budget should I use?",
     "expected": {
       "status": "answered",
-      "answerMustContain": ["200ms p95", "stack-ranked", "capital-letter"],
+      "answerMustContain": ["200ms p95"],
       "answerMustNotContain": ["5 second batch retry window"]
     }
   }

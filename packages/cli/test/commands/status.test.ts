@@ -1,5 +1,7 @@
 import { assert, describe, it } from "@effect/vitest";
+import { LOCAL_SYNTHESIS_MODEL_ALIAS } from "@urban/agentic-memory-core/recall/SynthesisReadiness";
 import { Effect, FileSystem, Path, PlatformError } from "effect";
+import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 import { afterAll } from "vitest";
 import {
   decodeStatusCommandResultJson,
@@ -9,8 +11,17 @@ import { decodeCliFailureResultJson } from "../../src/output.ts";
 import { fakeFileInfo, makeCliTestRuntime } from "../cli-test-support.ts";
 
 const decodeVaultReadiness = (json: string) =>
-  decodeVaultStatusResultJson(json).pipe(Effect.map((result) => result.readiness));
-const { dispose, runCapturedEffect, withCliRuntime } = makeCliTestRuntime();
+  decodeVaultStatusResultJson(json).pipe(Effect.map((result) => result.semanticReadiness));
+type HttpClientRequest = import("effect/unstable/http/HttpClientRequest").HttpClientRequest;
+
+const statusResponse = (request: HttpClientRequest, body: string, status = 200) =>
+  HttpClientResponse.fromWeb(
+    request,
+    new Response(body, { status, headers: { "content-type": "application/json" } }),
+  );
+
+const { dispose, runCapturedEffect, runCapturedEffectWithSynthesisStatus, withCliRuntime } =
+  makeCliTestRuntime();
 
 describe("agentic-memory status command", () => {
   afterAll(dispose);
@@ -30,7 +41,7 @@ describe("agentic-memory status command", () => {
       Effect.map(({ human, json }) => {
         assert.strictEqual(json.exitCode, 0);
         assert.include(json.stdout, '"_tag":"unconfigured"');
-        assert.include(json.stdout, '"version":1');
+        assert.include(json.stdout, '"version":2');
         assert.include(json.stdout, ".agentic-memory-link/config.json");
         assert.strictEqual(json.stderr, "");
         assert.strictEqual(human.exitCode, 0);
@@ -55,7 +66,7 @@ describe("agentic-memory status command", () => {
           assert.strictEqual(result._tag, "vault");
           if (result._tag === "vault") {
             assert.strictEqual(result.directory, yield* fs.realPath(vaultPath));
-            assert.strictEqual(result.readiness.status, "not_ready");
+            assert.strictEqual(result.semanticReadiness.status, "not_ready");
           }
           assert.strictEqual(output.stderr, "");
         }),
@@ -297,6 +308,100 @@ describe("agentic-memory status command", () => {
           );
           assert.include(staleOutput.stdout, "Recall ready: no");
           assert.strictEqual(staleOutput.stderr, "");
+        }),
+      ),
+    ),
+  );
+
+  it.effect("reports every synthesis readiness state and composes final Recall readiness", () =>
+    withCliRuntime(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const vaultPath = yield* fs.makeTempDirectoryScoped({
+            prefix: "agentic-memory-status-synthesis-",
+          });
+          yield* runCapturedEffect(["init", vaultPath, "--json"]);
+
+          const noRequestClient = HttpClient.make(() => Effect.die("Unexpected HTTP request"));
+          const unavailableClient = HttpClient.make((request) =>
+            Effect.succeed(statusResponse(request, "{}", 503)),
+          );
+          const incompatibleClient = HttpClient.make((request) =>
+            Effect.succeed(
+              statusResponse(
+                request,
+                request.url.endsWith("/models") ? '{"data":[{"id":"other-model"}]}' : "{}",
+              ),
+            ),
+          );
+          const readyClient = HttpClient.make((request) =>
+            Effect.succeed(
+              statusResponse(
+                request,
+                request.url.endsWith("/models")
+                  ? `{"data":[{"id":"${LOCAL_SYNTHESIS_MODEL_ALIAS}"}]}`
+                  : "{}",
+              ),
+            ),
+          );
+          const cases = [
+            {
+              endpoint: undefined,
+              client: noRequestClient,
+              expected: "missing_configuration",
+            },
+            {
+              endpoint: "https://example.com/v1",
+              client: noRequestClient,
+              expected: "invalid_configuration",
+            },
+            {
+              endpoint: "http://localhost:8080/v1",
+              client: unavailableClient,
+              expected: "server_unavailable",
+            },
+            {
+              endpoint: "http://localhost:8080/v1",
+              client: incompatibleClient,
+              expected: "server_incompatible",
+            },
+          ];
+
+          for (const testCase of cases) {
+            const output = yield* runCapturedEffectWithSynthesisStatus(
+              ["status", "--vault", vaultPath, "--json"],
+              testCase.endpoint,
+              testCase.client,
+            );
+            const result = yield* decodeVaultStatusResultJson(output.stdout);
+            assert.strictEqual(output.exitCode, 0);
+            assert.strictEqual(result.version, 2);
+            assert.strictEqual(result.synthesisReadiness.status, testCase.expected);
+            assert.strictEqual(result.status, "not_ready");
+            assert.isFalse(result.recallReady);
+          }
+
+          yield* runCapturedEffect(["index", "--vault", vaultPath, "--json"]);
+          const jsonOutput = yield* runCapturedEffectWithSynthesisStatus(
+            ["status", "--vault", vaultPath, "--json"],
+            "http://localhost:8080/v1",
+            readyClient,
+          );
+          const humanOutput = yield* runCapturedEffectWithSynthesisStatus(
+            ["status", "--vault", vaultPath],
+            "http://localhost:8080/v1",
+            readyClient,
+          );
+          const ready = yield* decodeVaultStatusResultJson(jsonOutput.stdout);
+
+          assert.strictEqual(jsonOutput.exitCode, 0);
+          assert.strictEqual(ready.semanticReadiness.status, "ready");
+          assert.strictEqual(ready.synthesisReadiness.status, "ready");
+          assert.strictEqual(ready.status, "ready");
+          assert.isTrue(ready.recallReady);
+          assert.include(humanOutput.stdout, "Synthesis: ready");
+          assert.include(humanOutput.stdout, "Recall ready: yes");
         }),
       ),
     ),

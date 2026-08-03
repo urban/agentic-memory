@@ -44,7 +44,7 @@ const answeredResponse = `{
   "object":"chat.completion",
   "model":"agentic-memory-qwen3-4b",
   "created":1,
-  "choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"{\\"status\\":\\"answered\\",\\"answer\\":\\"azure-17\\",\\"claim\\":\\"The compatibility code is azure-17.\\",\\"evidenceIds\\":[\\"E1\\"]}"}}]
+  "choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"{\\"status\\":\\"answered\\",\\"answer\\":\\"azure-17\\",\\"claim\\":\\"The compatibility code is azure-17.\\",\\"evidenceIds\\":[\\"E1\\"],\\"providerModelIdentity\\":\\"absent\\"}"}}]
 }`;
 
 const notFoundResponse = `{
@@ -68,7 +68,7 @@ const reasoningResponse = `{
   "object":"chat.completion",
   "model":"agentic-memory-qwen3-4b",
   "created":1,
-  "choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","reasoning_content":"I should think first.","content":"{\\"status\\":\\"answered\\",\\"answer\\":\\"azure-17\\",\\"claim\\":\\"The compatibility code is azure-17.\\",\\"evidenceIds\\":[\\"E1\\"]}"}}]
+  "choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","reasoning_content":"I should think first.","content":"{\\"status\\":\\"answered\\",\\"answer\\":\\"azure-17\\",\\"claim\\":\\"The compatibility code is azure-17.\\",\\"evidenceIds\\":[\\"E1\\"],\\"providerModelIdentity\\":\\"absent\\"}"}}]
 }`;
 
 const jsonResponse = (

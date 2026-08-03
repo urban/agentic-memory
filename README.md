@@ -111,17 +111,16 @@ Other patterns, such as Reflection, migration, human browsing in Obsidian, or mu
 
      This writes `.agentic-memory-link/config.json` using the `projectSlug` contract, ensures the target project file exists in the vault, ensures `MEMORY.md` routes to it, and validates the link health.
 
-7. **Build and inspect the local semantic index.** Indexing is explicit; `init` and `recall` do not index managed Markdown automatically:
+7. **Build the local semantic index.** Indexing is explicit; `init` and `recall` do not index managed Markdown automatically:
 
    ```sh
    agentic-memory index --vault /absolute/path/to/agentic-memory-vault
-   agentic-memory status --vault /absolute/path/to/agentic-memory-vault
    ```
 
    Vault-oriented commands resolve relative paths from `-C`, so the equivalent contextual form
    is `agentic-memory -C /absolute/path/to index --vault agentic-memory-vault`.
 
-   A current index reports `Agentic Memory vault status: ready` and `Recall ready: yes`. Add `--json` to `status` for the typed readiness report. Run `index` again after changing managed memory; unchanged files are skipped. To safely remove all per-vault derivative index state while preserving Markdown and the shared model, run:
+   Run `index` again after changing managed memory; unchanged files are skipped. To safely remove all per-vault derivative index state while preserving Markdown and the shared model, run:
 
    ```sh
    agentic-memory index --vault /absolute/path/to/agentic-memory-vault --delete
@@ -129,38 +128,56 @@ Other patterns, such as Reflection, migration, human browsing in Obsidian, or mu
 
    Rebuild with the explicit delete command followed by `index`. This is also the recovery sequence when status reports an incompatible or invalid index.
 
-8. **Start using the vault with an agent.** Pick one of the two supported entry points:
+8. **Configure local synthesis and inspect complete Recall readiness.** Recall also requires the separately managed, loopback-only Qwen server described in the [local synthesis setup guide](docs/recall-local-synthesis-setup.md). Start the pinned server, export its endpoint, and inspect both prerequisites:
+
+   ```sh
+   export AGENTIC_MEMORY_SYNTHESIS_URL=http://127.0.0.1:8080/v1
+   agentic-memory status --vault /absolute/path/to/agentic-memory-vault
+   agentic-memory status --vault /absolute/path/to/agentic-memory-vault --json
+   ```
+
+   A ready result reports semantic status `ready`, synthesis status `ready`, and `Recall ready: yes`. Missing or invalid configuration, an unavailable server, and an incompatible model alias are normal not-ready status results. Status sends no memory evidence and performs no inference.
+
+   Recall accepts one singular factual question, retrieves only through EmbeddingGemma and libSQL exact-cosine search, hydrates current Markdown, and asks the local Qwen model for one structured grounded claim. Source files are excluded. Unsupported multipart questions and operational failures exit nonzero; absent, insufficient, or conflicting eligible evidence returns `not_found`.
+
+   ```sh
+   agentic-memory recall "What latency constraint applies to Alpha retry scheduling?" \
+     --vault /absolute/path/to/agentic-memory-vault \
+     --json
+   ```
+
+9. **Start using the vault with an agent.** Pick one of the two supported entry points:
    - **Vault-local use:** start your coding harness with the vault as the current working directory. The harness should read the root `AGENTS.md`, which routes it into `.agentic-memory/LLM-vault-local.md` and then to the right memory files.
    - **Outside-vault use:** install the adapter route above when you want startup-time durable memory routing outside the vault. Use the project-local link route above when a concrete external project should persist into one specific vault project and tooling such as Pi capture should manage that link.
 
-9. **Optional: add the Pi capture extension to an external project.** From this repository root:
+10. **Optional: add the Pi capture extension to an external project.** From this repository root:
 
-   ```sh
-   pi install /absolute/path/to/agentic-memory-repo/packages/pi-memory-capture
-   ```
+```sh
+pi install /absolute/path/to/agentic-memory-repo/packages/pi-memory-capture
+```
 
-   Or install it only for one project:
+Or install it only for one project:
 
-   ```sh
-   pi install -l /absolute/path/to/agentic-memory-repo/packages/pi-memory-capture
-   ```
+```sh
+pi install -l /absolute/path/to/agentic-memory-repo/packages/pi-memory-capture
+```
 
-   Then, inside the target project in Pi:
+Then, inside the target project in Pi:
 
-   ```text
-   /memory-capture-init /absolute/path/to/agentic-memory-vault example-project
-   /memory-capture-status
-   ```
+```text
+/memory-capture-init /absolute/path/to/agentic-memory-vault example-project
+/memory-capture-status
+```
 
-   `[[projects/example-project]]` is still accepted by `/memory-capture-init`, but the canonical `0.4.0` identifier is the bare slug `example-project`. The extension uses the same `.agentic-memory-link/config.json` contract as `agentic-memory link` and sends capture runs through `agentic-memory run-steward`.
+`[[projects/example-project]]` is still accepted by `/memory-capture-init`, but the canonical `0.4.0` identifier is the bare slug `example-project`. The extension uses the same `.agentic-memory-link/config.json` contract as `agentic-memory link` and sends capture runs through `agentic-memory run-steward`.
 
-10. **Let memory grow through use.** During work, ask the agent to create or update maps, projects, notes, people, sources, and records only when the information is durable enough to help future sessions. Review the Markdown changes, commit useful memory, and prune or revise anything that should not persist.
+11. **Let memory grow through use.** During work, ask the agent to create or update maps, projects, notes, people, sources, and records only when the information is durable enough to help future sessions. Review the Markdown changes, commit useful memory, and prune or revise anything that should not persist.
 
 ## Semantic index operating notes
 
 - Markdown remains the source of truth. The per-vault `.agentic-memory/index/` database is generated, disposable, and Git-ignored; the shared model is outside the vault, so neither artifact should appear in vault Git status.
 - The model cache is `$XDG_CACHE_HOME/agentic-memory/models/` when `XDG_CACHE_HOME` is an absolute path, otherwise `~/.cache/agentic-memory/models/`. The approved `embeddinggemma-300M-Q8_0.gguf` artifact is 333,590,944 bytes (about 334 MB decimal).
-- `init` is the only semantic-index command that may use the network. `index` and `status --vault` resolve existing local state only; offline initialization succeeds only when the model is already cached.
+- `init` is the only semantic-index command that may use the network. `index` resolves existing local state only; offline initialization succeeds only when the model is already cached. `status --vault` additionally probes the configured loopback synthesis server but never performs inference or sends memory evidence.
 - The verified initial native target is Apple silicon macOS (`darwin-arm64`, Metal). Other operating-system and architecture combinations are not yet verified as supported targets. See [semantic stack compatibility](docs/semantic-stack-compatibility.md) for pinned native packages and probe evidence.
 - Human-readable results and JSON results go to stdout. Model download progress and operational failures go to stderr, so `--json` stdout remains one machine-readable document.
 
@@ -185,5 +202,6 @@ packages/vault-template/                   # canonical clean copyable Agentic Me
 - [Cross-project persistence](docs/cross-project-persistence.md) — how agents preserve durable memory while working in other repos.
 - [Memory adapter](docs/memory-adapter.md) — how to connect outside-vault agents to a central Agentic Memory vault.
 - [Capture observability](docs/capture-observability.md) — opt-in local traces and logs for Pi capture and Steward diagnostics.
+- [Recall local synthesis setup](docs/recall-local-synthesis-setup.md) — pinned Apple-silicon Qwen server setup and compatibility proof.
 - [Reflection workflow](docs/reflection-workflow.md) — maintenance, compaction, graph health, and promotion review.
 - [Migration](docs/migration.md) — migration philosophy and versioned migration structure.

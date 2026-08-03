@@ -221,6 +221,28 @@ Promotion keeps project files concise and makes atomic notes the single source o
 
 ## Semantic recall
 
-Production recall requires a current semantic index before query embedding or retrieval. It formats the question for EmbeddingGemma, embeds it through the shared local model service, and selects the nearest eligible chunk using libSQL exact-cosine ordering. Source chunks are excluded before the top-10 result budget.
+Production Recall answers one singular factual question through a semantic-only, locally synthesized pipeline:
 
-The semantic-index module owns database paths, vector encoding, SQL schema, and exact-search details. Recall composes its public operations without learning those implementation details. During the progressive semantic cutover, the selected indexed chunk is the temporary public answer; current-Markdown hydration and grounded local synthesis are subsequent implementation stages. Approximate indexing and public search commands remain deferred.
+```text
+deterministic question-scope validation
+→ require a current semantic index
+→ EmbeddingGemma query embedding
+→ libSQL exact-cosine search
+→ hydrate current Markdown by chunk ordinal
+→ filter and bound eligible evidence
+→ local Qwen structured synthesis
+→ grounding and public-output validation
+→ answered or not_found
+```
+
+The semantic-index module owns database paths, vector encoding, SQL schema, and exact-search details. Recall uses its public current-index and exact-search operations without learning those internals. Semantic ordering is preserved: there is no lexical, heuristic, model-based reranking, or fallback. `sources/` chunks are excluded before the top-10 result budget, and route-only material is discarded rather than expanded.
+
+Indexed snippets are locators, not answer evidence. Each selected hit is reproduced from its authoritative current Markdown document. Evidence preparation deduplicates passages and caps the packet at five passages, five documents, two passages per document, and approximately 4,500 tokens.
+
+Synthesis uses the separately managed loopback Qwen3-4B Q4_K_M server documented in the [local synthesis setup guide](recall-local-synthesis-setup.md). The model may return one structured grounded claim or abstain. Agentic Memory validates evidence IDs, answer shape, grounding, and public-output safety before returning only `status`, `question`, `answer`, and `warnings`; paths, passages, scores, evidence IDs, provider details, and model details remain private.
+
+Only absent, insufficient, or unresolvedly conflicting eligible memory produces `not_found`. Invalid or multipart questions, index problems, embedding or search failures, hydration failures, synthesis configuration or server problems, malformed structured output, and grounding failures are typed operational failures with nonzero CLI guidance.
+
+Recall readiness composes semantic-index readiness with local synthesis readiness. Status distinguishes missing or invalid synthesis configuration, an unavailable server, an incompatible or missing fixed model alias, and ready. Its loopback health and model probes have a three-second timeout, no retries, disabled redirects, no evidence, and no inference.
+
+Slice 1 deliberately excludes source retrieval, link expansion, current-versus-stale conflict resolution, historical policy, approximate search, server-backed embeddings, multipart answering, server lifecycle management, hosted synthesis, and live answer-quality benchmarking.

@@ -16,6 +16,8 @@
     "./semantic/EmbeddingModelLive": "./src/semantic/EmbeddingModelLive.ts",
     "./semantic/SemanticIndex": "./src/semantic/SemanticIndex.ts",
     "./recall/Recall": "./src/recall/Recall.ts",
+    "./recall/RecallSynthesis": "./src/recall/RecallSynthesis.ts",
+    "./recall/SynthesisReadiness": "./src/recall/SynthesisReadiness.ts",
     "./vault/VaultStatus": "./src/vault/VaultStatus.ts",
     "./vault/VaultTemplate": "./src/vault/VaultTemplate.ts",
     "./vault/VaultGitIgnore": "./src/vault/VaultGitIgnore.ts",
