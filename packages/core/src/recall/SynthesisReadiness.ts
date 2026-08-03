@@ -33,6 +33,16 @@ const ModelsResponse = Schema.Struct({
   ),
 }).annotate({ identifier: "LocalSynthesisModelsResponse" });
 
+type ModelsInspection =
+  | { readonly _tag: "incompatible" }
+  | { readonly _tag: "decoded"; readonly models: typeof ModelsResponse.Type };
+
+const incompatibleModels = (): ModelsInspection => ({ _tag: "incompatible" });
+const decodedModels = (models: typeof ModelsResponse.Type): ModelsInspection => ({
+  _tag: "decoded",
+  models,
+});
+
 const readiness = (status: SynthesisReadinessStatus, warning?: string): SynthesisReadiness => ({
   status,
   modelAlias: LOCAL_SYNTHESIS_MODEL_ALIAS,
@@ -41,14 +51,12 @@ const readiness = (status: SynthesisReadinessStatus, warning?: string): Synthesi
 
 const request = Effect.fnUntraced(function* (url: string) {
   const client = yield* HttpClient.HttpClient;
-  return yield* client.get(url).pipe(
-    Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
-    Effect.timeoutOrElse({
-      duration: SYNTHESIS_READINESS_TIMEOUT,
-      orElse: () => Effect.fail("timeout"),
-    }),
-  );
+  return yield* client
+    .get(url)
+    .pipe(Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }));
 });
+
+const withReadinessTimeout = Effect.timeoutOption(SYNTHESIS_READINESS_TIMEOUT);
 
 export const inspectLocalSynthesisReadiness = Effect.fnUntraced(function* (
   endpointInput: unknown,
@@ -69,11 +77,15 @@ export const inspectLocalSynthesisReadiness = Effect.fnUntraced(function* (
   }
   const endpoint = endpointResult.success;
 
-  const healthResult = yield* request(`${endpoint}/health`).pipe(Effect.result);
+  const healthResult = yield* request(`${endpoint}/health`).pipe(
+    withReadinessTimeout,
+    Effect.result,
+  );
   if (
     healthResult._tag === "Failure" ||
-    healthResult.success.status < 200 ||
-    healthResult.success.status >= 300
+    Option.isNone(healthResult.success) ||
+    healthResult.success.value.status < 200 ||
+    healthResult.success.value.status >= 300
   ) {
     return readiness(
       "server_unavailable",
@@ -81,22 +93,24 @@ export const inspectLocalSynthesisReadiness = Effect.fnUntraced(function* (
     );
   }
 
-  const modelsResponseResult = yield* request(`${endpoint}/models`).pipe(Effect.result);
-  if (modelsResponseResult._tag === "Failure") {
+  const modelsResult = yield* request(`${endpoint}/models`).pipe(
+    Effect.flatMap((response) =>
+      response.status < 200 || response.status >= 300
+        ? Effect.succeed(incompatibleModels())
+        : HttpClientResponse.schemaBodyJson(ModelsResponse)(response).pipe(
+            Effect.match({ onFailure: incompatibleModels, onSuccess: decodedModels }),
+          ),
+    ),
+    withReadinessTimeout,
+    Effect.result,
+  );
+  if (modelsResult._tag === "Failure" || Option.isNone(modelsResult.success)) {
     return readiness("server_unavailable", "The configured local synthesis server is unavailable.");
   }
-  if (modelsResponseResult.success.status < 200 || modelsResponseResult.success.status >= 300) {
-    return readiness(
-      "server_incompatible",
-      `The local synthesis server must expose the ${LOCAL_SYNTHESIS_MODEL_ALIAS} model alias.`,
-    );
-  }
-  const modelsResult = yield* HttpClientResponse.schemaBodyJson(ModelsResponse)(
-    modelsResponseResult.success,
-  ).pipe(Effect.result);
+  const modelsInspection = modelsResult.success.value;
   if (
-    modelsResult._tag === "Failure" ||
-    !modelsResult.success.data.some(({ id }) => id === LOCAL_SYNTHESIS_MODEL_ALIAS)
+    modelsInspection._tag === "incompatible" ||
+    !modelsInspection.models.data.some(({ id }) => id === LOCAL_SYNTHESIS_MODEL_ALIAS)
   ) {
     return readiness(
       "server_incompatible",

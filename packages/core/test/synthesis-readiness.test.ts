@@ -137,6 +137,33 @@ describe("local synthesis readiness", () => {
     });
   });
 
+  it.effect("times out when the models response body stalls", () => {
+    let requests = 0;
+    const client = makeHttpClient((request) => {
+      requests += 1;
+      if (request.url.endsWith("/health")) return Effect.succeed(response(request, "{}"));
+      return Effect.succeed(
+        HttpClientResponse.fromWeb(
+          request,
+          new Response(new ReadableStream({ start() {} }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+        ),
+      );
+    });
+
+    return Effect.gen(function* () {
+      const fiber = yield* inspectWith("http://localhost:8080/v1", client).pipe(Effect.forkChild);
+      yield* Effect.yieldNow;
+      yield* TestClock.adjust("3 seconds");
+      const result = yield* Fiber.join(fiber);
+
+      assert.strictEqual(result.status, "server_unavailable");
+      assert.strictEqual(requests, 2);
+    });
+  });
+
   it.effect("disables redirects for both observational requests", () => {
     const redirects: Array<RequestRedirect | undefined> = [];
     const fakeFetch = Object.assign(
