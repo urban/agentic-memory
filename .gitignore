@@ -46,7 +46,7 @@ storybook-static
 CONTEXT.md
 TODO.md
 docs/adr/
-specs/
+/specs/archive/
 /.ralph-tm/HANDOFF.md
 /.ralph-tm/HANDOFF.md.tmp
 /.ralph-snapshot-*/
