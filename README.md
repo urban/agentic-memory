@@ -203,5 +203,6 @@ packages/vault-template/                   # canonical clean copyable Agentic Me
 - [Memory adapter](docs/memory-adapter.md) — how to connect outside-vault agents to a central Agentic Memory vault.
 - [Capture observability](docs/capture-observability.md) — opt-in local traces and logs for Pi capture and Steward diagnostics.
 - [Recall local synthesis setup](docs/recall-local-synthesis-setup.md) — pinned Apple-silicon Qwen server setup and compatibility proof.
+- [Recall and retrieval roadmap](docs/recall-and-retrieval-roadmap.md) — stack-ranked future batches beyond the Slice 1 Recall MVP.
 - [Reflection workflow](docs/reflection-workflow.md) — maintenance, compaction, graph health, and promotion review.
 - [Migration](docs/migration.md) — migration philosophy and versioned migration structure.
