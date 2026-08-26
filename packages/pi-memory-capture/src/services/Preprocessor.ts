@@ -19,10 +19,10 @@ type CaptureTriggerKind =
 type UserVisibleBlock = TextContent | ImageContent;
 type AssistantVisibleBlock = TextContent | ThinkingContent | ToolCall;
 
-interface ObservedPayloadMessage {
+type ObservedPayloadMessage = {
   readonly entryId: string;
   readonly message: CapturePayloadMessage;
-}
+};
 
 export type BuildPayloadResult =
   | {

@@ -116,7 +116,9 @@ describe("local synthesis readiness", () => {
       ),
     );
     return inspectWith("http://localhost:8080/v1", client).pipe(
-      Effect.map((result) => assert.strictEqual(result.status, "server_incompatible")),
+      Effect.map((result) => {
+        assert.strictEqual(result.status, "server_incompatible");
+      }),
     );
   });
 
@@ -141,7 +143,9 @@ describe("local synthesis readiness", () => {
     let requests = 0;
     const client = makeHttpClient((request) => {
       requests += 1;
-      if (request.url.endsWith("/health")) return Effect.succeed(response(request, "{}"));
+      if (request.url.endsWith("/health")) {
+        return Effect.succeed(response(request, "{}"));
+      }
       return Effect.succeed(
         HttpClientResponse.fromWeb(
           request,

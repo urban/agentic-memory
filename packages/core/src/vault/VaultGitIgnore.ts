@@ -2,7 +2,7 @@ import { Effect, FileSystem, Path, Schema } from "effect";
 
 export const SEMANTIC_INDEX_GITIGNORE_ENTRY = ".agentic-memory/index/";
 
-export class VaultGitIgnoreError extends Schema.TaggedErrorClass<VaultGitIgnoreError>()(
+export class VaultGitIgnoreError extends Schema.TaggedError<VaultGitIgnoreError>()(
   "VaultGitIgnoreError",
   {
     reason: Schema.Literals(["unsafe_symlink", "inspection_failed", "read_failed", "write_failed"]),
@@ -25,7 +25,7 @@ const ensureGitIgnorePathSafe = Effect.fnUntraced(function* (
           return Effect.void;
         }
         return Effect.fail(
-          new VaultGitIgnoreError({
+          VaultGitIgnoreError.make({
             reason: "inspection_failed",
             message: `Failed to inspect vault Git ignore path: ${ignorePath}`,
             cause,
@@ -34,7 +34,7 @@ const ensureGitIgnorePathSafe = Effect.fnUntraced(function* (
       },
       onSuccess: () =>
         Effect.fail(
-          new VaultGitIgnoreError({
+          VaultGitIgnoreError.make({
             reason: "unsafe_symlink",
             message: `Vault Git ignore file must not be a symlink: ${ignorePath}`,
           }),
@@ -54,13 +54,12 @@ export const ensureSemanticIndexGitIgnore = Effect.fnUntraced(function* (
     Effect.catchTag("PlatformError", (error) =>
       error.reason._tag === "NotFound" ? Effect.succeed("") : Effect.fail(error),
     ),
-    Effect.mapError(
-      (cause) =>
-        new VaultGitIgnoreError({
-          reason: "read_failed",
-          message: `Failed to read vault Git ignore file: ${ignorePath}`,
-          cause,
-        }),
+    Effect.mapError((cause) =>
+      VaultGitIgnoreError.make({
+        reason: "read_failed",
+        message: `Failed to read vault Git ignore file: ${ignorePath}`,
+        cause,
+      }),
     ),
   );
 
@@ -78,13 +77,12 @@ export const ensureSemanticIndexGitIgnore = Effect.fnUntraced(function* (
   const separator = existing.length === 0 || existing.endsWith("\n") ? "" : "\n";
   const next = `${existing}${separator}${SEMANTIC_INDEX_GITIGNORE_ENTRY}\n`;
   yield* fs.writeFileString(ignorePath, next).pipe(
-    Effect.mapError(
-      (cause) =>
-        new VaultGitIgnoreError({
-          reason: "write_failed",
-          message: `Failed to update vault Git ignore file: ${ignorePath}`,
-          cause,
-        }),
+    Effect.mapError((cause) =>
+      VaultGitIgnoreError.make({
+        reason: "write_failed",
+        message: `Failed to update vault Git ignore file: ${ignorePath}`,
+        cause,
+      }),
     ),
   );
   return true;

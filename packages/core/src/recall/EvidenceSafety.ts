@@ -30,7 +30,9 @@ const rateDenominatorPattern =
 const containsRelativePath = (block: string): boolean =>
   Array.from(block.matchAll(relativePathTokenPattern)).some((match) => {
     const rawToken = match[1];
-    if (rawToken === undefined) return false;
+    if (rawToken === undefined) {
+      return false;
+    }
 
     const token = rawToken.replaceAll("`", "").toLowerCase();
     const components = token.split(/[\\/]/u);
@@ -149,7 +151,7 @@ const routeOnlyGuidancePattern =
   /^\s*(?:[-*+]\s*)?(?:read|open|load|follow|see|refer to|use)\b.*\b(?:route|link|map|project|note|record|source|file|document)\b/iu;
 
 const normalizeMarkdownForRankingSafetyMatching = (text: string): string =>
-  text.replace(/[*_~`]/gu, "");
+  text.replaceAll(/[*_~`]/gu, "");
 
 const containsInternalDetail = (block: string): boolean =>
   markdownRoutePattern.test(block) ||
@@ -170,10 +172,10 @@ export const isSafeRecallPublicText = (text: string): boolean =>
 
 const normalizeMarkdownFormatting = (text: string): string =>
   text
-    .replace(/`+/gu, " ")
-    .replace(/[*_~]/gu, "")
-    .replace(/ +([.,!?;:])/gu, "$1")
-    .replace(/ {2,}/gu, " ")
+    .replaceAll(/`+/gu, " ")
+    .replaceAll(/[*_~]/gu, "")
+    .replaceAll(/ +([.,!?;:])/gu, "$1")
+    .replaceAll(/ {2,}/gu, " ")
     .trim();
 
 const stripMarkdownLinePrefix = (line: string): string =>

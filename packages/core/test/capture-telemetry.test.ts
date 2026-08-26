@@ -30,7 +30,7 @@ describe("capture telemetry attributes", () => {
   it.effect("keeps resolved project telemetry for a manual run without correlation", () =>
     Effect.gen(function* () {
       const projectSlug = yield* decodeProjectSlug("agentic-memory");
-      assert.deepStrictEqual(captureTelemetryContextAttributes(projectSlug, undefined), {
+      assert.deepStrictEqual(captureTelemetryContextAttributes(projectSlug), {
         "capture.project_slug": "agentic-memory",
       });
     }),
@@ -69,6 +69,6 @@ describe("capture telemetry attributes", () => {
   });
 
   it("omits steward session attributes when the session is absent", () => {
-    assert.deepStrictEqual(captureStewardSessionAttributes(undefined), {});
+    assert.deepStrictEqual(captureStewardSessionAttributes(), {});
   });
 });

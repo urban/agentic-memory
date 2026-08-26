@@ -3,7 +3,7 @@ import { Effect, Schema } from "effect";
 export const LOCAL_SYNTHESIS_MODEL_ALIAS = "agentic-memory-qwen3-4b";
 export const LOCAL_SYNTHESIS_TIMEOUT = "60 seconds";
 
-export class SynthesisEndpointError extends Schema.TaggedErrorClass<SynthesisEndpointError>()(
+export class SynthesisEndpointError extends Schema.TaggedError<SynthesisEndpointError>()(
   "SynthesisEndpointError",
   {
     reason: Schema.Literals([
@@ -32,40 +32,39 @@ export const validateLocalSynthesisEndpoint = Effect.fnUntraced(function* (
   input: unknown,
 ): Effect.fn.Return<string, SynthesisEndpointError> {
   const url = yield* decodeUrl(input).pipe(
-    Effect.mapError(
-      () =>
-        new SynthesisEndpointError({
-          reason: "InvalidUrl",
-          message: "AGENTIC_MEMORY_SYNTHESIS_URL must be a valid absolute URL",
-        }),
+    Effect.mapError(() =>
+      SynthesisEndpointError.make({
+        reason: "InvalidUrl",
+        message: "AGENTIC_MEMORY_SYNTHESIS_URL must be a valid absolute URL",
+      }),
     ),
   );
   if (url.protocol !== "http:") {
-    return yield* new SynthesisEndpointError({
+    return yield* SynthesisEndpointError.make({
       reason: "HttpRequired",
       message: "The local synthesis endpoint must use HTTP",
     });
   }
   if (url.username.length > 0 || url.password.length > 0) {
-    return yield* new SynthesisEndpointError({
+    return yield* SynthesisEndpointError.make({
       reason: "CredentialsNotAllowed",
       message: "The local synthesis endpoint must not contain credentials",
     });
   }
   if (url.search.length > 0) {
-    return yield* new SynthesisEndpointError({
+    return yield* SynthesisEndpointError.make({
       reason: "QueryNotAllowed",
       message: "The local synthesis endpoint must not contain a query string",
     });
   }
   if (url.hash.length > 0) {
-    return yield* new SynthesisEndpointError({
+    return yield* SynthesisEndpointError.make({
       reason: "FragmentNotAllowed",
       message: "The local synthesis endpoint must not contain a fragment",
     });
   }
   if (!isLoopbackHost(url.hostname)) {
-    return yield* new SynthesisEndpointError({
+    return yield* SynthesisEndpointError.make({
       reason: "NonLoopbackHost",
       message: "The local synthesis endpoint must use localhost, 127.0.0.0/8, or ::1",
     });

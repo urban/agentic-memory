@@ -105,7 +105,9 @@ const hasPlusOperatorSuffix = (
   markerIndex: number,
   markerLength: number,
 ): boolean => {
-  if (!normalizedQuestion.startsWith("plus", markerIndex)) return false;
+  if (!normalizedQuestion.startsWith("plus", markerIndex)) {
+    return false;
+  }
   const markerEnd = markerIndex + markerLength;
   const operatorStart = skipWhitespaceForward(question, markerEnd);
   const operatorEnd = operatorStart + "operator".length;
@@ -156,10 +158,14 @@ const hasAdditiveRequestClause = (question: string): boolean => {
 };
 
 const hasEllipticalAdditiveRequest = (question: string): boolean => {
-  if (!imperativeRequestStart.test(question)) return false;
+  if (!imperativeRequestStart.test(question)) {
+    return false;
+  }
   const normalizedQuestion = question.toLowerCase();
   for (const marker of question.matchAll(additiveMarker)) {
-    if (!isNamedAdditiveMarker(question, normalizedQuestion, marker)) return true;
+    if (!isNamedAdditiveMarker(question, normalizedQuestion, marker)) {
+      return true;
+    }
   }
   return false;
 };

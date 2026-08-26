@@ -2,7 +2,7 @@ import { assert, describe, it } from "@effect/vitest";
 import { Effect, Schema } from "effect";
 import { decodeSemanticStackProbeVaultStatus } from "../scripts/SemanticStackProbeStatus.ts";
 
-const encodeJson = Schema.encodeSync(Schema.UnknownFromJsonString);
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 describe("semantic stack probe status", () => {
   it.effect("decodes the current vault status contract", () =>

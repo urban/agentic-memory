@@ -26,22 +26,22 @@ export const SemanticChunk = Schema.Struct({
 }).annotate({ identifier: "SemanticChunk" });
 export type SemanticChunk = typeof SemanticChunk.Type;
 
-interface SourceUnit {
+type SourceUnit = {
   readonly text: string;
   readonly startLine: number;
   readonly endLine: number;
   readonly wordLines: ReadonlyArray<number>;
-}
+};
 
-interface Section {
+type Section = {
   readonly headingPath: ReadonlyArray<string>;
   readonly units: ReadonlyArray<SourceUnit>;
-}
+};
 
-interface FenceDelimiter {
+type FenceDelimiter = {
   readonly marker: "`" | "~";
   readonly length: number;
-}
+};
 
 const sha256 = (value: string): string => createHash("sha256").update(value).digest("hex");
 const approximateTokens = (text: string): number => Math.ceil(text.length / 4);
@@ -50,10 +50,16 @@ const openingFenceDelimiter = (line: string): FenceDelimiter | undefined => {
   const match = line.match(/^[ ]{0,3}(`{3,}|~{3,})/u);
   const sequence = match?.[1];
   const matchedPrefix = match?.[0];
-  if (sequence === undefined || matchedPrefix === undefined) return undefined;
+  if (sequence === undefined || matchedPrefix === undefined) {
+    return undefined;
+  }
   const marker = sequence[0];
-  if (marker !== "`" && marker !== "~") return undefined;
-  if (marker === "`" && line.slice(matchedPrefix.length).includes("`")) return undefined;
+  if (marker !== "`" && marker !== "~") {
+    return undefined;
+  }
+  if (marker === "`" && line.slice(matchedPrefix.length).includes("`")) {
+    return undefined;
+  }
   return { marker, length: sequence.length };
 };
 
@@ -73,7 +79,9 @@ const atxHeading = (
   const match = line.match(/^[ ]{0,3}(#{1,6})[\t ]+(.+?)[\t ]*$/u);
   const marker = match?.[1];
   const content = match?.[2];
-  if (marker === undefined || content === undefined) return undefined;
+  if (marker === undefined || content === undefined) {
+    return undefined;
+  }
   return {
     level: marker.length,
     content: content.replace(/[\t ]+#+[\t ]*$/u, "").trim(),
@@ -95,7 +103,9 @@ const parseSections = (document: ParsedManagedMemoryDocument): ReadonlyArray<Sec
   let activeFence: FenceDelimiter | undefined;
 
   const flushParagraph = (): void => {
-    if (paragraph.length === 0) return;
+    if (paragraph.length === 0) {
+      return;
+    }
     const wordLines = paragraph.flatMap(({ text, line }) =>
       text
         .split(/\s+/u)
@@ -116,7 +126,9 @@ const parseSections = (document: ParsedManagedMemoryDocument): ReadonlyArray<Sec
   const flushSection = (): void => {
     flushParagraph();
     const nonempty = units.filter((unit) => unit.text.length > 0);
-    if (nonempty.length > 0) sections.push({ headingPath: [...headings], units: nonempty });
+    if (nonempty.length > 0) {
+      sections.push({ headingPath: [...headings], units: nonempty });
+    }
     units = [];
   };
 
@@ -133,10 +145,16 @@ const parseSections = (document: ParsedManagedMemoryDocument): ReadonlyArray<Sec
       headings.push(heading.content);
       continue;
     }
-    if (line.trim().length === 0 && activeFence === undefined) flushParagraph();
-    else paragraph.push({ text: line, line: lineNumber });
-    if (openingFence !== undefined) activeFence = openingFence;
-    else if (closingFence) activeFence = undefined;
+    if (line.trim().length === 0 && activeFence === undefined) {
+      flushParagraph();
+    } else {
+      paragraph.push({ text: line, line: lineNumber });
+    }
+    if (openingFence !== undefined) {
+      activeFence = openingFence;
+    } else if (closingFence) {
+      activeFence = undefined;
+    }
   }
   flushSection();
   return sections;
@@ -189,11 +207,17 @@ const splitUnitAtTokenBudget = (
     prefixLength = index;
   }
   if (prefixLength === 0) {
-    if (preceding.length > 0) return { _tag: "none" };
+    if (preceding.length > 0) {
+      return { _tag: "none" };
+    }
     const [firstWord] = words;
-    if (firstWord === undefined) return { _tag: "none" };
+    if (firstWord === undefined) {
+      return { _tag: "none" };
+    }
     const prefix = sliceSourceUnit(unit, words, 0, 1);
-    if (words.length === 1) return { _tag: "irreducibleWhole", unit: prefix };
+    if (words.length === 1) {
+      return { _tag: "irreducibleWhole", unit: prefix };
+    }
     return {
       _tag: "irreducibleSplit",
       prefix,
@@ -258,7 +282,9 @@ const sectionWindows = (
   const overlapTarget = Math.ceil((payloadCapacity * overlapPercent) / 100);
   while (pending.length > 0) {
     const [unit, ...rest] = pending;
-    if (unit === undefined) break;
+    if (unit === undefined) {
+      break;
+    }
     const fitted = splitUnitAtTokenBudget(unit, current, targetTokens, formatEmbeddingInput);
     if (fitted._tag === "whole") {
       current.push(fitted.unit);
@@ -288,7 +314,9 @@ const sectionWindows = (
     current = [...overlappingSuffix(current, overlapTarget)];
     currentIsOverlap = true;
   }
-  if (current.length > 0) windows.push({ headingPath: section.headingPath, units: current });
+  if (current.length > 0) {
+    windows.push({ headingPath: section.headingPath, units: current });
+  }
   return windows;
 };
 

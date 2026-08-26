@@ -94,12 +94,11 @@ const makeArtifactResolver = (
   Effect.fnUntraced(function* (_uri, options) {
     const stagedPath = path.join(options.directory, options.fileName);
     yield* fs.writeFile(stagedPath, artifact).pipe(
-      Effect.mapError(
-        (cause) =>
-          new EmbeddingModelDownloadError({
-            message: "Failed to write the fake model download",
-            cause,
-          }),
+      Effect.mapError((cause) =>
+        EmbeddingModelDownloadError.make({
+          message: "Failed to write the fake model download",
+          cause,
+        }),
       ),
     );
     return stagedPath;
@@ -157,7 +156,7 @@ describe("embedding model provisioning", () => {
       }),
       embed: () =>
         Effect.fail(
-          new EmbeddingRuntimeError({
+          EmbeddingRuntimeError.make({
             message: "Adapter-specific embedding must not run for empty text",
           }),
         ),
@@ -200,30 +199,27 @@ describe("embedding model provisioning", () => {
               resolvedUri = uri;
               const stagedPath = path.join(options.directory, options.fileName);
               yield* fs.writeFile(stagedPath, validArtifact).pipe(
-                Effect.mapError(
-                  (cause) =>
-                    new EmbeddingModelDownloadError({
-                      message: "Failed to write the fake model download",
-                      cause,
-                    }),
+                Effect.mapError((cause) =>
+                  EmbeddingModelDownloadError.make({
+                    message: "Failed to write the fake model download",
+                    cause,
+                  }),
                 ),
               );
               stagedArtifactExisted = yield* fs.exists(stagedPath).pipe(
-                Effect.mapError(
-                  (cause) =>
-                    new EmbeddingModelDownloadError({
-                      message: "Failed to inspect the fake staged artifact",
-                      cause,
-                    }),
+                Effect.mapError((cause) =>
+                  EmbeddingModelDownloadError.make({
+                    message: "Failed to inspect the fake staged artifact",
+                    cause,
+                  }),
                 ),
               );
               canonicalArtifactExisted = yield* fs.exists(canonicalArtifact(path, cacheRoot)).pipe(
-                Effect.mapError(
-                  (cause) =>
-                    new EmbeddingModelDownloadError({
-                      message: "Failed to inspect the fake canonical artifact",
-                      cause,
-                    }),
+                Effect.mapError((cause) =>
+                  EmbeddingModelDownloadError.make({
+                    message: "Failed to inspect the fake canonical artifact",
+                    cause,
+                  }),
                 ),
               );
               return stagedPath;
@@ -354,16 +350,15 @@ describe("embedding model provisioning", () => {
           const cacheRoot = path.join(tempRoot, "cache");
           const resolver: ModelFileResolver = (_uri, options) =>
             fs.writeFileString(path.join(options.directory, "partial.download"), "partial").pipe(
-              Effect.mapError(
-                (cause) =>
-                  new EmbeddingModelDownloadError({
-                    message: "Failed to write the partial fake download",
-                    cause,
-                  }),
+              Effect.mapError((cause) =>
+                EmbeddingModelDownloadError.make({
+                  message: "Failed to write the partial fake download",
+                  cause,
+                }),
               ),
               Effect.andThen(
                 Effect.fail(
-                  new EmbeddingModelDownloadError({
+                  EmbeddingModelDownloadError.make({
                     message: "Failed to download the fake model",
                   }),
                 ),
@@ -406,12 +401,12 @@ describe("embedding model provisioning", () => {
           "abort",
           () => {
             cancellationStarted.resolve();
-            releaseCancellation.promise.then(() => {
+            void releaseCancellation.promise.then(() => {
               cancellationCompleted = true;
               cancellationSettled.resolve();
               resume(
                 Effect.fail(
-                  new EmbeddingModelDownloadError({
+                  EmbeddingModelDownloadError.make({
                     message: "Fake model download was interrupted",
                     cause: signal.reason,
                   }),
@@ -1207,7 +1202,7 @@ describe("embedding model provisioning", () => {
       ),
       makeFakeEmbeddingModelLayer({
         initiallyAvailable: false,
-        installError: new EmbeddingModelDownloadError({
+        installError: EmbeddingModelDownloadError.make({
           message: "Simulated interrupted model download",
         }),
       }),

@@ -4,7 +4,7 @@ import { EMBEDDING_MODEL_ID, EmbeddingModel } from "../semantic/EmbeddingModel.t
 import { VaultRepository } from "./VaultRepository.ts";
 import { inspectInitializedVaultStructure } from "./VaultStructure.ts";
 
-export class VaultTemplateError extends Schema.TaggedErrorClass<VaultTemplateError>()(
+export class VaultTemplateError extends Schema.TaggedError<VaultTemplateError>()(
   "VaultTemplateError",
   {
     message: Schema.String,
@@ -30,22 +30,21 @@ export const InitVaultResult = Schema.Struct({
 }).annotate({ identifier: "InitVaultResult" });
 export type InitVaultResult = typeof InitVaultResult.Type;
 
-export interface InitVaultOptions {
+export type InitVaultOptions = {
   readonly targetPath: string;
   readonly initializeGit: boolean;
   readonly yes: boolean;
-}
+};
 
 const isCompatibleVault = Effect.fnUntraced(function* (
   vaultPath: string,
 ): Effect.fn.Return<boolean, VaultTemplateError, FileSystem.FileSystem | Path.Path> {
   const structure = yield* inspectInitializedVaultStructure(vaultPath).pipe(
-    Effect.mapError(
-      (cause) =>
-        new VaultTemplateError({
-          message: `Failed to inspect existing vault structure: ${vaultPath}`,
-          cause,
-        }),
+    Effect.mapError((cause) =>
+      VaultTemplateError.make({
+        message: `Failed to inspect existing vault structure: ${vaultPath}`,
+        cause,
+      }),
     ),
   );
   return structure.initialized;
@@ -56,12 +55,11 @@ const isDirectoryEmpty = Effect.fnUntraced(function* (
 ): Effect.fn.Return<boolean, VaultTemplateError, FileSystem.FileSystem> {
   const fs = yield* FileSystem.FileSystem;
   const entries = yield* fs.readDirectory(directoryPath).pipe(
-    Effect.mapError(
-      (cause) =>
-        new VaultTemplateError({
-          message: `Failed to inspect target directory: ${directoryPath}`,
-          cause,
-        }),
+    Effect.mapError((cause) =>
+      VaultTemplateError.make({
+        message: `Failed to inspect target directory: ${directoryPath}`,
+        cause,
+      }),
     ),
   );
   return entries.length === 0;
@@ -79,29 +77,27 @@ export const initVaultFromTemplate = Effect.fnUntraced(function* (
   const embeddingModel = yield* EmbeddingModel;
   const vaultRepository = yield* VaultRepository;
   if (!path.isAbsolute(options.targetPath)) {
-    return yield* new VaultTemplateError({
+    return yield* VaultTemplateError.make({
       message: `Vault target path must be absolute: ${options.targetPath}`,
     });
   }
 
   const targetExists = yield* fs.exists(options.targetPath).pipe(
-    Effect.mapError(
-      (cause) =>
-        new VaultTemplateError({
-          message: `Failed to inspect target path: ${options.targetPath}`,
-          cause,
-        }),
+    Effect.mapError((cause) =>
+      VaultTemplateError.make({
+        message: `Failed to inspect target path: ${options.targetPath}`,
+        cause,
+      }),
     ),
   );
 
   if (targetExists && (yield* isCompatibleVault(options.targetPath))) {
     const model = yield* embeddingModel.install.pipe(
-      Effect.mapError(
-        (cause) =>
-          new VaultTemplateError({
-            message: cause.message,
-            cause,
-          }),
+      Effect.mapError((cause) =>
+        VaultTemplateError.make({
+          message: cause.message,
+          cause,
+        }),
       ),
     );
     const repository = yield* vaultRepository
@@ -110,12 +106,11 @@ export const initVaultFromTemplate = Effect.fnUntraced(function* (
         initializeGit: options.initializeGit,
       })
       .pipe(
-        Effect.mapError(
-          (cause) =>
-            new VaultTemplateError({
-              message: cause.message,
-              cause,
-            }),
+        Effect.mapError((cause) =>
+          VaultTemplateError.make({
+            message: cause.message,
+            cause,
+          }),
         ),
       );
     return {
@@ -135,7 +130,7 @@ export const initVaultFromTemplate = Effect.fnUntraced(function* (
   if (targetExists) {
     const empty = yield* isDirectoryEmpty(options.targetPath);
     if (!empty) {
-      return yield* new VaultTemplateError({
+      return yield* VaultTemplateError.make({
         message:
           "Target exists and is not an initialized Agentic Memory vault or empty directory; refusing to overwrite.",
       });
@@ -143,43 +138,39 @@ export const initVaultFromTemplate = Effect.fnUntraced(function* (
   }
 
   const model = yield* embeddingModel.install.pipe(
-    Effect.mapError(
-      (cause) =>
-        new VaultTemplateError({
-          message: cause.message,
-          cause,
-        }),
+    Effect.mapError((cause) =>
+      VaultTemplateError.make({
+        message: cause.message,
+        cause,
+      }),
     ),
   );
 
   if (!targetExists) {
     yield* fs.makeDirectory(options.targetPath, { recursive: true }).pipe(
-      Effect.mapError(
-        (cause) =>
-          new VaultTemplateError({
-            message: `Failed to create vault target directory: ${options.targetPath}`,
-            cause,
-          }),
+      Effect.mapError((cause) =>
+        VaultTemplateError.make({
+          message: `Failed to create vault target directory: ${options.targetPath}`,
+          cause,
+        }),
       ),
     );
   }
 
   const templatePath = yield* bundledVaultTemplatePath().pipe(
-    Effect.mapError(
-      (cause) =>
-        new VaultTemplateError({
-          message: "Failed to resolve bundled Agentic Memory template path",
-          cause,
-        }),
+    Effect.mapError((cause) =>
+      VaultTemplateError.make({
+        message: "Failed to resolve bundled Agentic Memory template path",
+        cause,
+      }),
     ),
   );
   yield* fs.copy(templatePath, options.targetPath, { overwrite: false }).pipe(
-    Effect.mapError(
-      (cause) =>
-        new VaultTemplateError({
-          message: `Failed to copy bundled Agentic Memory template into: ${options.targetPath}`,
-          cause,
-        }),
+    Effect.mapError((cause) =>
+      VaultTemplateError.make({
+        message: `Failed to copy bundled Agentic Memory template into: ${options.targetPath}`,
+        cause,
+      }),
     ),
   );
 
@@ -189,12 +180,11 @@ export const initVaultFromTemplate = Effect.fnUntraced(function* (
       initializeGit: options.initializeGit,
     })
     .pipe(
-      Effect.mapError(
-        (cause) =>
-          new VaultTemplateError({
-            message: cause.message,
-            cause,
-          }),
+      Effect.mapError((cause) =>
+        VaultTemplateError.make({
+          message: cause.message,
+          cause,
+        }),
       ),
     );
 

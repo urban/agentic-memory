@@ -34,26 +34,26 @@ export const decodeCaptureRunId = Schema.decodeUnknownEffect(CaptureRunId);
 export const decodeCaptureAttemptId = Schema.decodeUnknownEffect(CaptureAttemptId);
 export const decodeCaptureCorrelation = Schema.decodeUnknownEffect(CaptureCorrelation);
 
-export interface CaptureObservabilityOptions {
+export type CaptureObservabilityOptions = {
   readonly serviceName: string;
   readonly serviceVersion: string;
   readonly component: string;
   readonly harness?: string;
-}
+};
 
-export interface CaptureDecisionReportInput {
+export type CaptureDecisionReportInput = {
   readonly durability: string;
   readonly selectedDestinations: ReadonlyArray<unknown>;
   readonly skippedDestinations: ReadonlyArray<unknown>;
   readonly decisionSummary: string;
-}
+};
 
-export interface CaptureStewardSessionInput {
+export type CaptureStewardSessionInput = {
   readonly sessionId: string;
   readonly name: string;
   readonly cwd: string;
   readonly startedAt: string;
-}
+};
 
 const defaultOtelBaseUrl = "http://127.0.0.1:27686";
 
@@ -131,7 +131,7 @@ export const makeCaptureObservabilityLayer = (
 
 export const captureTelemetryContextAttributes = (
   projectSlug: ProjectSlug,
-  correlation: CaptureCorrelation | undefined,
+  correlation?: CaptureCorrelation,
 ): Record<string, unknown> => ({
   "capture.project_slug": projectSlug,
   ...(correlation === undefined
@@ -153,7 +153,7 @@ export const captureDecisionReportAttributes = (
 });
 
 export const captureStewardSessionAttributes = (
-  stewardSession: CaptureStewardSessionInput | undefined,
+  stewardSession?: CaptureStewardSessionInput,
 ): Record<string, string> =>
   stewardSession === undefined
     ? {}

@@ -19,18 +19,20 @@ const mergeAbortSignals = (
   if (execSignal === undefined) {
     return {
       signal: effectSignal,
-      cleanup: () => undefined,
+      cleanup: () => {},
     };
   }
 
   const controller = new AbortController();
-  const abort = () => controller.abort();
+  const abort = () => {
+    controller.abort();
+  };
 
   if (effectSignal.aborted || execSignal.aborted) {
     controller.abort();
     return {
       signal: controller.signal,
-      cleanup: () => undefined,
+      cleanup: () => {},
     };
   }
 
@@ -62,7 +64,7 @@ const makeStewardExecutorLayer = (pi: ExtensionAPI) =>
             return pi.exec(command, [...args], execOptions).finally(merged.cleanup);
           },
           catch: (cause) =>
-            new MemoryStewardError({
+            MemoryStewardError.make({
               message: `Failed to launch Memory Steward command: ${command}`,
               cause,
             }),

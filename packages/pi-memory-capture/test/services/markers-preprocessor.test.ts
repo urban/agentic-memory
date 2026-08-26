@@ -216,7 +216,7 @@ describe("Preprocessor", () => {
           makeCompactionEntry("c1", "u0", "ignored"),
           makeBranchSummaryEntry("b1", "u0", "ignored"),
           makeUserEntry("u1", [
-            { type: "text", text: `Token ${"sk-ant-1234567890abcdefghijklmnopqrstuvwxyz"}` },
+            { type: "text", text: `Token sk-ant-1234567890abcdefghijklmnopqrstuvwxyz` },
             { type: "image", data: "abc", mimeType: "image/png" },
           ]),
           makeAssistantEntry("a1", [

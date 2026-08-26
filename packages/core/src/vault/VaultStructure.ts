@@ -1,9 +1,9 @@
 import { Effect, FileSystem, Path, PlatformError } from "effect";
 
-export interface InitializedVaultStructure {
+export type InitializedVaultStructure = {
   readonly initialized: boolean;
   readonly violations: ReadonlyArray<InitializedVaultStructureViolation>;
-}
+};
 
 type InitializedVaultEntryType = "File" | "Directory";
 
@@ -22,11 +22,11 @@ export type InitializedVaultStructureViolation =
       readonly actualType: FileSystem.File.Type;
     };
 
-interface RequiredInitializedVaultEntry {
+type RequiredInitializedVaultEntry = {
   readonly label: string;
   readonly relativePath: string;
   readonly expectedType: InitializedVaultEntryType;
-}
+};
 
 const requiredInitializedVaultEntries = (
   path: Path.Path,

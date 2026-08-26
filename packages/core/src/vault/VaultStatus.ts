@@ -18,15 +18,12 @@ export const VaultHealth = Schema.Struct({
 }).annotate({ identifier: "VaultHealth" });
 export type VaultHealth = typeof VaultHealth.Type;
 
-export class VaultStatusError extends Schema.TaggedErrorClass<VaultStatusError>()(
-  "VaultStatusError",
-  {
-    message: Schema.String,
-    cause: Schema.optional(Schema.Unknown),
-  },
-) {}
+export class VaultStatusError extends Schema.TaggedError<VaultStatusError>()("VaultStatusError", {
+  message: Schema.String,
+  cause: Schema.optional(Schema.Unknown),
+}) {}
 
-export interface VaultPaths {
+export type VaultPaths = {
   readonly root: string;
   readonly memoryFile: string;
   readonly userFile: string;
@@ -34,7 +31,7 @@ export interface VaultPaths {
   readonly projectFile: string;
   readonly outsideVaultInstructions: string;
   readonly sessionCaptureInstructions: string;
-}
+};
 
 export const resolveVaultPaths = Effect.fnUntraced(function* (input: {
   readonly vaultPath: string;
@@ -121,7 +118,7 @@ export const validateVaultForLink = Effect.fnUntraced(function* (
 ): Effect.fn.Return<void, VaultStatusError, FileSystem.FileSystem | Path.Path> {
   const path = yield* Path.Path;
   if (!path.isAbsolute(vaultPath)) {
-    return yield* new VaultStatusError({ message: `Vault path must be absolute: ${vaultPath}` });
+    return yield* VaultStatusError.make({ message: `Vault path must be absolute: ${vaultPath}` });
   }
 
   const memoryFile = path.join(vaultPath, "MEMORY.md");
@@ -146,7 +143,7 @@ export const validateVaultForLink = Effect.fnUntraced(function* (
   for (const entry of required) {
     const exists = yield* existsOrFalse(entry.path);
     if (!exists) {
-      return yield* new VaultStatusError({
+      return yield* VaultStatusError.make({
         message: `Vault is missing ${entry.label}: ${entry.path}`,
       });
     }
@@ -159,7 +156,7 @@ export const validateVaultForSteward = Effect.fnUntraced(function* (input: {
 }): Effect.fn.Return<void, VaultStatusError, FileSystem.FileSystem | Path.Path> {
   const health = yield* checkVaultHealth(input);
   if (!health.healthy) {
-    return yield* new VaultStatusError({
+    return yield* VaultStatusError.make({
       message: `Linked vault is unhealthy for project ${input.projectSlug}`,
     });
   }

@@ -178,7 +178,15 @@ const stewardDurationFromString = SchemaTransformation.transformOrFail<Duration.
   decode: (input) => {
     const nanosMatch = Option.fromNullOr(/^([+-]?\d+)\s*(ns|nano|nanos)$/.exec(input));
     if (Option.isSome(nanosMatch)) {
-      return Effect.succeed(Duration.nanos(BigInt(nanosMatch.value[1])));
+      const valueToken = nanosMatch.value[1];
+      return valueToken === undefined
+        ? Effect.fail(
+            new SchemaIssue.InvalidValue(
+              { message: `Invalid Steward duration string: ${input}` },
+              input,
+            ),
+          )
+        : Effect.succeed(Duration.nanos(BigInt(valueToken)));
     }
 
     const match = Option.fromNullOr(
@@ -188,22 +196,32 @@ const stewardDurationFromString = SchemaTransformation.transformOrFail<Duration.
     );
     if (Option.isNone(match)) {
       return Effect.fail(
-        new SchemaIssue.InvalidValue(Option.some(input), {
-          message: `Invalid Steward duration string: ${input}`,
-        }),
+        new SchemaIssue.InvalidValue(
+          { message: `Invalid Steward duration string: ${input}` },
+          input,
+        ),
       );
     }
     const valueToken = match.value[1];
     const unit = match.value[2];
+    if (valueToken === undefined || unit === undefined) {
+      return Effect.fail(
+        new SchemaIssue.InvalidValue(
+          { message: `Invalid Steward duration string: ${input}` },
+          input,
+        ),
+      );
+    }
     const nanosPerUnit = durationUnitNanos(unit);
     if (
       Option.isNone(nanosPerUnit) ||
       !isWithinMaximumStewardTimeout(valueToken, nanosPerUnit.value)
     ) {
       return Effect.fail(
-        new SchemaIssue.InvalidValue(Option.some(input), {
-          message: `Invalid Steward duration string: ${input}`,
-        }),
+        new SchemaIssue.InvalidValue(
+          { message: `Invalid Steward duration string: ${input}` },
+          input,
+        ),
       );
     }
 
@@ -235,9 +253,10 @@ const stewardDurationFromString = SchemaTransformation.transformOrFail<Duration.
         return Effect.succeed(Duration.weeks(value));
       default:
         return Effect.fail(
-          new SchemaIssue.InvalidValue(Option.some(input), {
-            message: `Invalid Steward duration string: ${input}`,
-          }),
+          new SchemaIssue.InvalidValue(
+            { message: `Invalid Steward duration string: ${input}` },
+            input,
+          ),
         );
     }
   },
@@ -256,25 +275,25 @@ export const decodeStewardDuration = Schema.decodeUnknownEffect(StewardDuration)
 export const decodeStewardDurationSync = Schema.decodeUnknownSync(StewardDuration);
 export const encodeStewardDurationSync = Schema.encodeSync(StewardDuration);
 
-export interface StewardRunOptions {
+export type StewardRunOptions = {
   readonly provider?: StewardProvider;
   readonly model?: StewardModel;
   readonly thinking?: StewardThinkingLevel;
   readonly timeout?: StewardDuration;
-}
+};
 
-export interface StewardRunnerRequest {
+export type StewardRunnerRequest = {
   readonly context: StewardContextResult;
   readonly options: StewardRunOptions;
   readonly correlation?: CaptureCorrelation;
-}
+};
 
-export interface StewardRunnerOutcome {
+export type StewardRunnerOutcome = {
   readonly result: StewardResultValue;
   readonly stewardSession?: StewardSessionPointer;
-}
+};
 
-export class StewardRunnerError extends Schema.TaggedErrorClass<StewardRunnerError>()(
+export class StewardRunnerError extends Schema.TaggedError<StewardRunnerError>()(
   "StewardRunnerError",
   {
     message: Schema.String,
@@ -295,8 +314,8 @@ export class StewardRunner extends Context.Service<
 
 export const normalizeRetryFailureReason = (message: string): string => {
   const words = message
-    .replace(/\s+/g, " ")
-    .replace(/Cause\([^)]*\)/g, "")
+    .replaceAll(/\s+/g, " ")
+    .replaceAll(/Cause\([^)]*\)/g, "")
     .trim()
     .split(" ")
     .filter((word) => word.length > 0);
@@ -461,7 +480,7 @@ export const stewardRunnerFailureLayer = (message: string): Layer.Layer<StewardR
     StewardRunner.of({
       name: "pi-process",
       run: Effect.fnUntraced(function* (_request: StewardRunnerRequest) {
-        return yield* new StewardRunnerError({ message });
+        return yield* StewardRunnerError.make({ message });
       }),
     }),
   );
@@ -477,7 +496,7 @@ export const scriptedStewardRunnerLayer = (
         const index = yield* Ref.getAndUpdate(indexRef, (value) => value + 1);
         const response = responses.at(index) ?? responses.at(responses.length - 1);
         if (response === undefined) {
-          return yield* new StewardRunnerError({ message: "No scripted steward runner response" });
+          return yield* StewardRunnerError.make({ message: "No scripted steward runner response" });
         }
         return yield* response;
       });

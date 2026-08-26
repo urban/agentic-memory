@@ -9,29 +9,29 @@ import { validateVaultForLink } from "@urban/agentic-memory-core/vault/VaultStat
 import { Clock, DateTime, Effect, FileSystem } from "effect";
 import { CaptureConfig, CaptureConfigState } from "../services/CaptureConfig.ts";
 
-export interface InitializationInputs {
+export type InitializationInputs = {
   readonly cwd: string;
   readonly vaultPath: string;
   readonly projectSlug: string;
-}
+};
 
-export interface InitializationOverwriteConflict {
+export type InitializationOverwriteConflict = {
   readonly current: LinkConfig;
   readonly next: LinkConfig;
-}
+};
 
-export interface InitializationPlan {
+export type InitializationPlan = {
   readonly config: LinkConfig;
   readonly overwriteConflict: InitializationOverwriteConflict | undefined;
   readonly projectMissing: boolean;
-}
+};
 
-export interface InitializationResult {
+export type InitializationResult = {
   readonly config: LinkConfig;
   readonly projectCreated: boolean;
   readonly routeAdded: boolean;
   readonly gitExcludeUpdated: boolean;
-}
+};
 
 const nowValues = Clock.clockWith((clock) =>
   Effect.sync(() => ({

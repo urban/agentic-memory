@@ -13,7 +13,7 @@ const benchLauncherDirectoryFileUrl = new URL("../bin/", import.meta.url);
 const repoRootFileUrl = new URL("../../..", import.meta.url);
 const benchRunnerName = "agentic-memory recall";
 
-const fileUrlToKnownPath = (path: Path.Path, url: URL): Effect.Effect<string, never> =>
+const fileUrlToKnownPath = (path: Path.Path, url: URL): Effect.Effect<string> =>
   path.fromFileUrl(url).pipe(Effect.catchTag("BadArgument", (error) => Effect.die(error)));
 
 const optionalEnvironmentVariable = Effect.fn("BenchmarkRunner.optionalEnvironmentVariable")(
@@ -96,7 +96,7 @@ const resolveCliPaths = Effect.fnUntraced(function* (): Effect.fn.Return<
   };
 });
 
-const decodeRecallOutput = (stdout: string): Effect.Effect<DecodedRecallOutput, never> =>
+const decodeRecallOutput = (stdout: string): Effect.Effect<DecodedRecallOutput> =>
   decodeRecallSuccessJson(stdout.trim()).pipe(
     Effect.map(
       (response) =>

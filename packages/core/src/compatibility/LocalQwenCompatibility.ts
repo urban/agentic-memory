@@ -10,6 +10,7 @@ import {
 import {
   AnsweredRecallSynthesis,
   NotFoundRecallSynthesis,
+  RecallSynthesisGenerationOutput,
   RecallSynthesisOutput,
 } from "../recall/RecallSynthesis.ts";
 
@@ -32,7 +33,7 @@ export const SynthesisCompatibilityReport = Schema.Struct({
 }).annotate({ identifier: "SynthesisCompatibilityReport" });
 export type SynthesisCompatibilityReport = typeof SynthesisCompatibilityReport.Type;
 
-export class SynthesisServerUnavailableError extends Schema.TaggedErrorClass<SynthesisServerUnavailableError>()(
+export class SynthesisServerUnavailableError extends Schema.TaggedError<SynthesisServerUnavailableError>()(
   "SynthesisServerUnavailableError",
   {
     message: Schema.String,
@@ -40,7 +41,7 @@ export class SynthesisServerUnavailableError extends Schema.TaggedErrorClass<Syn
   },
 ) {}
 
-export class SynthesisServerIncompatibleError extends Schema.TaggedErrorClass<SynthesisServerIncompatibleError>()(
+export class SynthesisServerIncompatibleError extends Schema.TaggedError<SynthesisServerIncompatibleError>()(
   "SynthesisServerIncompatibleError",
   {
     message: Schema.String,
@@ -48,7 +49,7 @@ export class SynthesisServerIncompatibleError extends Schema.TaggedErrorClass<Sy
   },
 ) {}
 
-export class SynthesisStructuredOutputError extends Schema.TaggedErrorClass<SynthesisStructuredOutputError>()(
+export class SynthesisStructuredOutputError extends Schema.TaggedError<SynthesisStructuredOutputError>()(
   "SynthesisStructuredOutputError",
   {
     message: Schema.String,
@@ -74,17 +75,17 @@ const mapAiError = (error: AiError.AiError): SynthesisGenerationError => {
   switch (error.reason._tag) {
     case "NetworkError":
     case "InternalProviderError":
-      return new SynthesisServerUnavailableError({
+      return SynthesisServerUnavailableError.make({
         message: "The local Qwen synthesis server is unavailable",
         cause: error,
       });
     case "StructuredOutputError":
-      return new SynthesisStructuredOutputError({
+      return SynthesisStructuredOutputError.make({
         message: "Qwen output did not decode through the required Effect Schema",
         cause: error,
       });
     default:
-      return new SynthesisServerIncompatibleError({
+      return SynthesisServerIncompatibleError.make({
         message: "The local server is incompatible with the required Effect AI structured request",
         cause: error,
       });
@@ -124,14 +125,14 @@ const generateCompatibilityCase = Effect.fnUntraced(function* (
   const response = yield* LanguageModel.generateObject({
     objectName: "agentic_memory_recall_result",
     prompt,
-    schema: SynthesisCompatibilityOutput,
+    schema: RecallSynthesisGenerationOutput,
   }).pipe(
     Effect.mapError(mapAiError),
     Effect.timeoutOrElse({
       duration: LOCAL_SYNTHESIS_TIMEOUT,
       orElse: () =>
         Effect.fail(
-          new SynthesisServerUnavailableError({
+          SynthesisServerUnavailableError.make({
             message: "The local Qwen synthesis server did not respond within 60 seconds",
           }),
         ),
@@ -139,17 +140,27 @@ const generateCompatibilityCase = Effect.fnUntraced(function* (
   );
 
   if (response.reasoning.length > 0) {
-    return yield* new SynthesisServerIncompatibleError({
+    return yield* SynthesisServerIncompatibleError.make({
       message: "The local Qwen server returned reasoning despite non-thinking mode",
     });
   }
-  if (response.value.status !== expectedStatus) {
-    return yield* new SynthesisServerIncompatibleError({
-      message: `The compatibility case expected ${expectedStatus} but received ${response.value.status}`,
+  const value = yield* Schema.decodeUnknownEffect(SynthesisCompatibilityOutput)(
+    response.value,
+  ).pipe(
+    Effect.mapError((cause) =>
+      SynthesisStructuredOutputError.make({
+        message: "Qwen output did not decode through the required Effect Schema",
+        cause,
+      }),
+    ),
+  );
+  if (value.status !== expectedStatus) {
+    return yield* SynthesisServerIncompatibleError.make({
+      message: `The compatibility case expected ${expectedStatus} but received ${value.status}`,
     });
   }
 
-  return response.value;
+  return value;
 });
 
 export const runLocalQwenCompatibility = Effect.fnUntraced(function* (
@@ -165,7 +176,7 @@ export const runLocalQwenCompatibility = Effect.fnUntraced(function* (
   }).pipe(Effect.provideService(LanguageModel.LanguageModel, model));
 
   if (results.answered.status !== "answered" || results.notFound.status !== "not_found") {
-    return yield* new SynthesisServerIncompatibleError({
+    return yield* SynthesisServerIncompatibleError.make({
       message: "The local server returned incompatible compatibility-case variants",
     });
   }

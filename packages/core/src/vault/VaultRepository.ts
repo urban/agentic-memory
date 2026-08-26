@@ -2,17 +2,17 @@ import { Context, Effect, FileSystem, Layer, Path, Schema, Stream } from "effect
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { ensureSemanticIndexGitIgnore, VaultGitIgnoreError } from "./VaultGitIgnore.ts";
 
-export interface VaultRepositorySetupOptions {
+export type VaultRepositorySetupOptions = {
   readonly vaultPath: string;
   readonly initializeGit: boolean;
-}
+};
 
-export interface VaultRepositorySetupResult {
+export type VaultRepositorySetupResult = {
   readonly initializedGit: boolean;
   readonly updatedGitIgnore: boolean;
-}
+};
 
-export class VaultGitInitializationError extends Schema.TaggedErrorClass<VaultGitInitializationError>()(
+export class VaultGitInitializationError extends Schema.TaggedError<VaultGitInitializationError>()(
   "VaultGitInitializationError",
   {
     reason: Schema.Literals([
@@ -45,13 +45,12 @@ const makeVaultRepository = Effect.gen(function* () {
 
   const runGitInit = Effect.fnUntraced(function* (vaultPath: string) {
     const gitDirectoryExists = yield* fs.exists(path.join(vaultPath, ".git")).pipe(
-      Effect.mapError(
-        (cause) =>
-          new VaultGitInitializationError({
-            reason: "InspectionFailed",
-            message: `Failed to inspect git directory for vault: ${vaultPath}`,
-            cause,
-          }),
+      Effect.mapError((cause) =>
+        VaultGitInitializationError.make({
+          reason: "InspectionFailed",
+          message: `Failed to inspect git directory for vault: ${vaultPath}`,
+          cause,
+        }),
       ),
     );
     if (gitDirectoryExists) {
@@ -67,13 +66,12 @@ const makeVaultRepository = Effect.gen(function* () {
     return yield* Effect.scoped(
       Effect.gen(function* () {
         const handle = yield* spawner.spawn(command).pipe(
-          Effect.mapError(
-            (cause) =>
-              new VaultGitInitializationError({
-                reason: "LaunchFailed",
-                message: "Failed to launch git init",
-                cause,
-              }),
+          Effect.mapError((cause) =>
+            VaultGitInitializationError.make({
+              reason: "LaunchFailed",
+              message: "Failed to launch git init",
+              cause,
+            }),
           ),
         );
         const result = yield* Effect.all(
@@ -84,18 +82,17 @@ const makeVaultRepository = Effect.gen(function* () {
           },
           { concurrency: 3 },
         ).pipe(
-          Effect.mapError(
-            (cause) =>
-              new VaultGitInitializationError({
-                reason: "ExecutionFailed",
-                message: "Failed while running git init",
-                cause,
-              }),
+          Effect.mapError((cause) =>
+            VaultGitInitializationError.make({
+              reason: "ExecutionFailed",
+              message: "Failed while running git init",
+              cause,
+            }),
           ),
         );
 
         if (result.exitCode !== ChildProcessSpawner.ExitCode(0)) {
-          return yield* new VaultGitInitializationError({
+          return yield* VaultGitInitializationError.make({
             reason: "CommandFailed",
             message: "git init failed for new Agentic Memory vault",
             cause: result.stderr.trim(),

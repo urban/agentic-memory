@@ -3,7 +3,7 @@ import { isSafeRecallPublicText } from "./EvidenceSafety.ts";
 type RecallEvidencePacket = import("./EvidencePacket.ts").RecallEvidencePacket;
 type RecallSynthesisOutput = import("./RecallSynthesis.ts").RecallSynthesisOutput;
 
-export class RecallGroundingError extends Schema.TaggedErrorClass<RecallGroundingError>()(
+export class RecallGroundingError extends Schema.TaggedError<RecallGroundingError>()(
   "RecallGroundingError",
   {
     reason: Schema.Literals([
@@ -18,18 +18,20 @@ export class RecallGroundingError extends Schema.TaggedErrorClass<RecallGroundin
 
 const normalizeGroundedText = (text: string): string =>
   text
-    .replace(/[*_~`]/gu, "")
-    .replace(/\s+/gu, " ")
+    .replaceAll(/[*_~`]/gu, "")
+    .replaceAll(/\s+/gu, " ")
     .trim();
 
 export const validateRecallGrounding = Effect.fnUntraced(function* (
   evidence: RecallEvidencePacket,
   output: RecallSynthesisOutput,
 ): Effect.fn.Return<RecallSynthesisOutput, RecallGroundingError> {
-  if (output.status === "not_found") return output;
+  if (output.status === "not_found") {
+    return output;
+  }
 
   if (output.evidenceIds.length === 0) {
-    return yield* new RecallGroundingError({
+    return yield* RecallGroundingError.make({
       reason: "MissingSupportingEvidence",
       message: "The synthesized answer did not reference supporting evidence",
     });
@@ -37,7 +39,7 @@ export const validateRecallGrounding = Effect.fnUntraced(function* (
 
   const suppliedEvidenceIds = new Set(evidence.passages.map(({ id }) => id));
   if (output.evidenceIds.some((id) => !suppliedEvidenceIds.has(id))) {
-    return yield* new RecallGroundingError({
+    return yield* RecallGroundingError.make({
       reason: "UnknownEvidenceId",
       message: "The synthesized answer referenced evidence outside the supplied packet",
     });
@@ -51,7 +53,7 @@ export const validateRecallGrounding = Effect.fnUntraced(function* (
   const answer = normalizeGroundedText(output.answer);
   const claim = normalizeGroundedText(output.claim);
   if (!citedEvidenceText.includes(answer) || !citedEvidenceText.includes(claim)) {
-    return yield* new RecallGroundingError({
+    return yield* RecallGroundingError.make({
       reason: "UnsupportedClaim",
       message: "The synthesized answer was not quoted from its cited evidence",
     });
@@ -62,7 +64,7 @@ export const validateRecallGrounding = Effect.fnUntraced(function* (
     !isSafeRecallPublicText(output.answer) ||
     !isSafeRecallPublicText(output.claim)
   ) {
-    return yield* new RecallGroundingError({
+    return yield* RecallGroundingError.make({
       reason: "UnsafePublicOutput",
       message: "The synthesized answer contained prohibited internal details",
     });

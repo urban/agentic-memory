@@ -173,7 +173,7 @@ describe("agentic-memory recall command", () => {
             const synthesis = RecallSynthesis.of({
               synthesize: () =>
                 Effect.fail(
-                  new RecallSynthesisError({
+                  RecallSynthesisError.make({
                     reason,
                     message: "Private prompt, evidence E1, provider response, and /tmp/model.gguf",
                   }),
@@ -599,7 +599,7 @@ describe("agentic-memory recall command", () => {
                 ...fakeModel,
                 embed: () =>
                   Effect.fail(
-                    new EmbeddingRuntimeError({ message: "Rejected embedding for test" }),
+                    EmbeddingRuntimeError.make({ message: "Rejected embedding for test" }),
                   ),
               }),
             ),
@@ -651,7 +651,10 @@ describe("agentic-memory recall command", () => {
               Effect.promise(() =>
                 client.execute("CREATE TABLE private_database_details (id TEXT)"),
               ),
-            (client) => Effect.sync(() => client.close()),
+            (client) =>
+              Effect.sync(() => {
+                client.close();
+              }),
           );
 
           const output = yield* runCapturedEffect([
@@ -693,7 +696,10 @@ describe("agentic-memory recall command", () => {
                   "UPDATE index_metadata SET compatibility_fingerprint = 'private-old-fingerprint' WHERE id = 1",
                 ),
               ),
-            (client) => Effect.sync(() => client.close()),
+            (client) =>
+              Effect.sync(() => {
+                client.close();
+              }),
           );
 
           const output = yield* runCapturedEffect([
@@ -728,7 +734,7 @@ describe("agentic-memory recall command", () => {
           ...fakeModel,
           embed: () =>
             Effect.fail(
-              new EmbeddingRuntimeError({
+              EmbeddingRuntimeError.make({
                 message: "Private vector dimension 768 failed in provider /tmp/model.gguf",
               }),
             ),
@@ -765,12 +771,11 @@ describe("agentic-memory recall command", () => {
               fakeModel.embed(texts).pipe(
                 Effect.tap(() =>
                   fs.remove(databasePath).pipe(
-                    Effect.mapError(
-                      (cause) =>
-                        new EmbeddingRuntimeError({
-                          message: "Failed to prepare the search failure fixture",
-                          cause,
-                        }),
+                    Effect.mapError((cause) =>
+                      EmbeddingRuntimeError.make({
+                        message: "Failed to prepare the search failure fixture",
+                        cause,
+                      }),
                     ),
                   ),
                 ),
@@ -805,7 +810,10 @@ describe("agentic-memory recall command", () => {
             Effect.sync(() => createClient({ url: databaseUrl.href })),
             (client) =>
               Effect.promise(() => client.execute("UPDATE chunks SET ordinal = ordinal + 1000")),
-            (client) => Effect.sync(() => client.close()),
+            (client) =>
+              Effect.sync(() => {
+                client.close();
+              }),
           );
 
           const output = yield* runCapturedEffect([

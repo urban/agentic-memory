@@ -9,7 +9,7 @@ import {
   SynthesisCompatibilityReport,
 } from "../src/compatibility/LocalQwenCompatibility.ts";
 
-class CompatibilityPrerequisiteError extends Schema.TaggedErrorClass<CompatibilityPrerequisiteError>()(
+class CompatibilityPrerequisiteError extends Schema.TaggedError<CompatibilityPrerequisiteError>()(
   "CompatibilityPrerequisiteError",
   { message: Schema.String },
 ) {}
@@ -20,17 +20,16 @@ const encodeCompatibilityReport = Schema.encodeUnknownEffect(CompatibilityReport
 const program = Effect.gen(function* () {
   const optIn = yield* Config.string("AGENTIC_MEMORY_QWEN_COMPATIBILITY").pipe(Config.option);
   if (!Option.contains(optIn, "1")) {
-    return yield* new CompatibilityPrerequisiteError({
+    return yield* CompatibilityPrerequisiteError.make({
       message: "Set AGENTIC_MEMORY_QWEN_COMPATIBILITY=1 to run the live local-Qwen probe",
     });
   }
 
   const endpoint = yield* Config.string("AGENTIC_MEMORY_SYNTHESIS_URL").pipe(
-    Effect.mapError(
-      () =>
-        new CompatibilityPrerequisiteError({
-          message: "Set AGENTIC_MEMORY_SYNTHESIS_URL to the loopback llama-server /v1 endpoint",
-        }),
+    Effect.mapError(() =>
+      CompatibilityPrerequisiteError.make({
+        message: "Set AGENTIC_MEMORY_SYNTHESIS_URL to the loopback llama-server /v1 endpoint",
+      }),
     ),
   );
   const report = yield* runLocalQwenCompatibility(endpoint);

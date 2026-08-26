@@ -32,7 +32,7 @@ export const LoadLinkConfigResult = Schema.TaggedUnion({
 }).annotate({ identifier: "LoadLinkConfigResult" });
 export type LoadLinkConfigResult = typeof LoadLinkConfigResult.Type;
 
-export class LinkConfigError extends Schema.TaggedErrorClass<LinkConfigError>()("LinkConfigError", {
+export class LinkConfigError extends Schema.TaggedError<LinkConfigError>()("LinkConfigError", {
   message: Schema.String,
   cause: Schema.optional(Schema.Unknown),
 }) {}
@@ -64,14 +64,14 @@ const ensureNotSymlink = Effect.fnUntraced(function* (
         hasErrnoCode(cause.cause, "EINVAL")
           ? Effect.void
           : Effect.fail(
-              new LinkConfigError({
+              LinkConfigError.make({
                 message: `Failed to inspect ${label}: ${pathValue}`,
                 cause,
               }),
             ),
       onSuccess: () =>
         Effect.fail(
-          new LinkConfigError({
+          LinkConfigError.make({
             message: `${label} must not be a symlink: ${pathValue}`,
           }),
         ),
@@ -104,7 +104,7 @@ export const loadLinkConfig = Effect.fnUntraced(function* (
   const pathSafety = yield* ensureLocalLinkPathsSafe(paths).pipe(
     Effect.match({
       onFailure: (error) => error,
-      onSuccess: () => undefined,
+      onSuccess: () => {},
     }),
   );
 
@@ -155,33 +155,30 @@ export const writeLinkConfig = Effect.fnUntraced(function* (
   const paths = yield* localLinkPaths(projectRoot);
   yield* ensureLocalLinkPathsSafe(paths);
   const encoded = yield* encodeLinkConfigJson(config).pipe(
-    Effect.mapError(
-      (cause) =>
-        new LinkConfigError({
-          message: "Failed to encode link config JSON",
-          cause,
-        }),
+    Effect.mapError((cause) =>
+      LinkConfigError.make({
+        message: "Failed to encode link config JSON",
+        cause,
+      }),
     ),
   );
 
   yield* fs.makeDirectory(paths.directory, { recursive: true }).pipe(
-    Effect.mapError(
-      (cause) =>
-        new LinkConfigError({
-          message: `Failed to create link directory: ${paths.directory}`,
-          cause,
-        }),
+    Effect.mapError((cause) =>
+      LinkConfigError.make({
+        message: `Failed to create link directory: ${paths.directory}`,
+        cause,
+      }),
     ),
   );
   yield* ensureLocalLinkPathsSafe(paths);
 
   yield* fs.writeFileString(paths.configFile, `${encoded}\n`).pipe(
-    Effect.mapError(
-      (cause) =>
-        new LinkConfigError({
-          message: `Failed to write link config: ${paths.configFile}`,
-          cause,
-        }),
+    Effect.mapError((cause) =>
+      LinkConfigError.make({
+        message: `Failed to write link config: ${paths.configFile}`,
+        cause,
+      }),
     ),
   );
 

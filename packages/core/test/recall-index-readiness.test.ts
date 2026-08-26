@@ -16,16 +16,16 @@ import {
 } from "../src/semantic/EmbeddingModel.ts";
 import { synchronizeSemanticIndex } from "../src/semantic/SemanticIndex.ts";
 
-interface EmbeddingModelAccess {
+type EmbeddingModelAccess = {
   embedCalls: number;
   inspectCalls: number;
   installCalls: number;
   rejectEmbeddings: boolean;
-}
+};
 
-interface FileSystemAccess {
+type FileSystemAccess = {
   calls: number;
-}
+};
 
 const makeObservedFileSystem = (access: FileSystemAccess): FileSystem.FileSystem =>
   new Proxy(FileSystem.makeNoop({}), {
@@ -57,7 +57,7 @@ const makeObservedEmbeddingModelLayer = (
       embed: (texts) => {
         access.embedCalls += 1;
         return access.rejectEmbeddings
-          ? Effect.fail(new EmbeddingRuntimeError({ message: "Rejected embedding for test" }))
+          ? Effect.fail(EmbeddingRuntimeError.make({ message: "Rejected embedding for test" }))
           : Effect.succeed(
               texts.map(() => Array.from({ length: EMBEDDING_MODEL_DIMENSIONS }, () => 0)),
             );

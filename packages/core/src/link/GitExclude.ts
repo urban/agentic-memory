@@ -3,14 +3,14 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 export const GIT_EXCLUDE_ENTRY = ".agentic-memory-link/";
 
-export class GitExcludeError extends Schema.TaggedErrorClass<GitExcludeError>()("GitExcludeError", {
+export class GitExcludeError extends Schema.TaggedError<GitExcludeError>()("GitExcludeError", {
   message: Schema.String,
   cause: Schema.optional(Schema.Unknown),
 }) {}
 
 const resolveGitDir = Effect.fnUntraced(function* (
   projectRoot: string,
-): Effect.fn.Return<string | undefined, never, ChildProcessSpawner.ChildProcessSpawner> {
+): Effect.fn.Return<string | void, never, ChildProcessSpawner.ChildProcessSpawner> {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const command = ChildProcess.make("git", ["rev-parse", "--git-dir"], {
     cwd: projectRoot,
@@ -31,12 +31,12 @@ const resolveGitDir = Effect.fnUntraced(function* (
       );
 
       if (result.exitCode !== ChildProcessSpawner.ExitCode(0)) {
-        return undefined;
+        return;
       }
 
       const gitDir = result.stdout.trim();
       if (gitDir.length === 0) {
-        return undefined;
+        return;
       }
 
       return gitDir.startsWith("/") ? gitDir : `${projectRoot}/${gitDir}`;
@@ -44,9 +44,9 @@ const resolveGitDir = Effect.fnUntraced(function* (
   ).pipe(
     Effect.timeoutOrElse({
       duration: 5_000,
-      orElse: () => Effect.void.pipe(Effect.as(undefined)),
+      orElse: () => Effect.void,
     }),
-    Effect.catch(() => Effect.void.pipe(Effect.as(undefined))),
+    Effect.orElseSucceed(() => undefined),
   );
 });
 
@@ -72,12 +72,11 @@ export const ensureGitExcludeEntry = Effect.fnUntraced(function* (
     Effect.catchTag("PlatformError", (error) =>
       error.reason._tag === "NotFound" ? Effect.succeed("") : Effect.fail(error),
     ),
-    Effect.mapError(
-      (cause) =>
-        new GitExcludeError({
-          message: `Failed to read git exclude file: ${excludePath}`,
-          cause,
-        }),
+    Effect.mapError((cause) =>
+      GitExcludeError.make({
+        message: `Failed to read git exclude file: ${excludePath}`,
+        cause,
+      }),
     ),
   );
 
@@ -89,21 +88,19 @@ export const ensureGitExcludeEntry = Effect.fnUntraced(function* (
   const infoDirectory = `${gitDir}/info`;
 
   yield* fs.makeDirectory(infoDirectory, { recursive: true }).pipe(
-    Effect.mapError(
-      (cause) =>
-        new GitExcludeError({
-          message: `Failed to create git info directory: ${infoDirectory}`,
-          cause,
-        }),
+    Effect.mapError((cause) =>
+      GitExcludeError.make({
+        message: `Failed to create git info directory: ${infoDirectory}`,
+        cause,
+      }),
     ),
   );
   yield* fs.writeFileString(excludePath, next).pipe(
-    Effect.mapError(
-      (cause) =>
-        new GitExcludeError({
-          message: `Failed to update git exclude file: ${excludePath}`,
-          cause,
-        }),
+    Effect.mapError((cause) =>
+      GitExcludeError.make({
+        message: `Failed to update git exclude file: ${excludePath}`,
+        cause,
+      }),
     ),
   );
 

@@ -36,7 +36,7 @@ export const StewardContextResult = Schema.Struct({
 }).annotate({ identifier: "StewardContextResult" });
 export type StewardContextResult = typeof StewardContextResult.Type;
 
-export class StewardContextError extends Schema.TaggedErrorClass<StewardContextError>()(
+export class StewardContextError extends Schema.TaggedError<StewardContextError>()(
   "StewardContextError",
   {
     message: Schema.String,
@@ -57,7 +57,7 @@ export const buildStewardContext = Effect.fnUntraced(function* (input: {
   readonly payloadWarnings: ReadonlyArray<string>;
 }): Effect.fn.Return<StewardContextResult, StewardContextError, FileSystem.FileSystem | Path.Path> {
   if (input.payload.projectSlug !== input.projectSlug) {
-    return yield* new StewardContextError({
+    return yield* StewardContextError.make({
       message: `Payload projectSlug ${input.payload.projectSlug} does not match resolved project ${input.projectSlug}`,
     });
   }
@@ -66,12 +66,11 @@ export const buildStewardContext = Effect.fnUntraced(function* (input: {
     vaultPath: input.vaultPath,
     projectSlug: input.projectSlug,
   }).pipe(
-    Effect.mapError(
-      (cause) =>
-        new StewardContextError({
-          message: cause.message,
-          cause,
-        }),
+    Effect.mapError((cause) =>
+      StewardContextError.make({
+        message: cause.message,
+        cause,
+      }),
     ),
   );
 
@@ -81,12 +80,11 @@ export const buildStewardContext = Effect.fnUntraced(function* (input: {
   });
   const fs = yield* FileSystem.FileSystem;
   const outsideVault = yield* fs.readFileString(paths.outsideVaultInstructions).pipe(
-    Effect.mapError(
-      (cause) =>
-        new StewardContextError({
-          message: `Failed to read outside-vault instructions: ${paths.outsideVaultInstructions}`,
-          cause,
-        }),
+    Effect.mapError((cause) =>
+      StewardContextError.make({
+        message: `Failed to read outside-vault instructions: ${paths.outsideVaultInstructions}`,
+        cause,
+      }),
     ),
   );
   const prompt = yield* buildStewardPrompt({
@@ -94,12 +92,11 @@ export const buildStewardContext = Effect.fnUntraced(function* (input: {
     vault: paths,
     payloadWarnings: input.payloadWarnings,
   }).pipe(
-    Effect.mapError(
-      (cause) =>
-        new StewardContextError({
-          message: "Failed to encode steward prompt payload JSON",
-          cause,
-        }),
+    Effect.mapError((cause) =>
+      StewardContextError.make({
+        message: "Failed to encode steward prompt payload JSON",
+        cause,
+      }),
     ),
   );
 

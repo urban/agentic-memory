@@ -8,24 +8,24 @@ type CaptureMarker = import("../markers/CaptureMarker.ts").CaptureMarker;
 type ObservationResultMarker = import("../markers/CaptureMarker.ts").ObservationResultMarker;
 type ScheduleResultMarker = import("../markers/CaptureMarker.ts").ScheduleResultMarker;
 
-export interface MarkerEntry<TMarker extends CaptureMarker> {
-  readonly entry: CustomEntry<unknown>;
+export type MarkerEntry<TMarker extends CaptureMarker> = {
+  readonly entry: CustomEntry;
   readonly marker: TMarker;
-}
+};
 
-export interface MarkerBranchState {
+export type MarkerBranchState = {
   readonly latestCapturedObservation: MarkerEntry<ObservationResultMarker> | undefined;
   readonly latestSchedule: MarkerEntry<ScheduleResultMarker> | undefined;
   readonly decodeWarnings: ReadonlyArray<string>;
-}
+};
 
-export interface ObservationSelection {
+export type ObservationSelection = {
   readonly observedEntries: ReadonlyArray<SessionEntry>;
   readonly capturableMessages: ReadonlyArray<SessionMessageEntry>;
   readonly state: MarkerBranchState;
-}
+};
 
-const isCustomMarkerEntry = (entry: SessionEntry): entry is CustomEntry<unknown> =>
+const isCustomMarkerEntry = (entry: SessionEntry): entry is CustomEntry =>
   entry.type === "custom" && entry.customType === CUSTOM_ENTRY_TYPE;
 
 export const isCapturableMessageEntry = (entry: SessionEntry): entry is SessionMessageEntry =>
@@ -34,9 +34,7 @@ export const isCapturableMessageEntry = (entry: SessionEntry): entry is SessionM
 export const isCompletedAssistantTurn = (entry: SessionEntry): entry is SessionMessageEntry =>
   entry.type === "message" && entry.message.role === "assistant";
 
-const decodeMarkerEntry = (
-  entry: CustomEntry<unknown>,
-): Option.Option<MarkerEntry<CaptureMarker>> =>
+const decodeMarkerEntry = (entry: CustomEntry): Option.Option<MarkerEntry<CaptureMarker>> =>
   Option.map(decodeCaptureMarkerOption(entry.data), (marker) => ({ entry, marker }));
 
 const isObservationMarker = (marker: CaptureMarker): marker is ObservationResultMarker =>

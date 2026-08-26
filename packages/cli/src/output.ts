@@ -1,5 +1,8 @@
-import { Console, Effect, Runtime, Schema } from "effect";
+import { Console, Effect, Schema } from "effect";
 import { commandRoot } from "./commands/root.ts";
+import { CliCommandExit, CliCommandFailure } from "./failures.ts";
+
+export { CliCommandExit, CliCommandFailure, exitWith, toFailure } from "./failures.ts";
 
 export const CliError = Schema.Struct({
   code: Schema.String,
@@ -19,47 +22,6 @@ export const CliFailureResultJson = Schema.fromJsonString(CliFailureResult).anno
 });
 export const encodeCliFailureResultJson = Schema.encodeUnknownEffect(CliFailureResultJson);
 export const decodeCliFailureResultJson = Schema.decodeUnknownEffect(CliFailureResultJson);
-
-export class CliCommandFailure extends Schema.TaggedErrorClass<CliCommandFailure>()(
-  "CliCommandFailure",
-  {
-    code: Schema.String,
-    message: Schema.String,
-    exitCode: Schema.Literals([1, 2]),
-    warnings: Schema.optional(Schema.Array(Schema.String)),
-  },
-) {
-  override readonly [Runtime.errorExitCode] = this.exitCode;
-  override readonly [Runtime.errorReported] = false;
-}
-
-export class CliCommandExit extends Schema.TaggedErrorClass<CliCommandExit>()("CliCommandExit", {
-  exitCode: Schema.Literals([1, 2]),
-}) {
-  override readonly [Runtime.errorExitCode] = this.exitCode;
-  override readonly [Runtime.errorReported] = false;
-}
-
-export const toFailure = (input: {
-  readonly code: string;
-  readonly message: string;
-  readonly exitCode?: 1 | 2;
-  readonly warnings?: ReadonlyArray<string>;
-}): CliCommandFailure =>
-  input.warnings === undefined
-    ? new CliCommandFailure({
-        code: input.code,
-        message: input.message,
-        exitCode: input.exitCode ?? 1,
-      })
-    : new CliCommandFailure({
-        code: input.code,
-        message: input.message,
-        exitCode: input.exitCode ?? 1,
-        warnings: [...input.warnings],
-      });
-
-export const exitWith = (exitCode: 1 | 2): CliCommandExit => new CliCommandExit({ exitCode });
 
 const encodeFailureJson = (failure: CliCommandFailure): Effect.Effect<string> => {
   const result: CliFailureResult = {

@@ -39,7 +39,7 @@ export type CaptureExecutionStatus =
   | "no_new_activity"
   | "no_capturable_messages";
 
-export interface CaptureExecution {
+export type CaptureExecution = {
   readonly status: CaptureExecutionStatus;
   readonly summary: string;
   readonly warnings: ReadonlyArray<string>;
@@ -49,15 +49,15 @@ export interface CaptureExecution {
   readonly attemptId?: CaptureAttemptId;
   readonly stewardSession?: StewardSessionPointer;
   readonly decisionReport?: StewardDecisionReport;
-}
+};
 
-export interface CaptureCommandInput {
+export type CaptureCommandInput = {
   readonly cwd: string;
   readonly branch: ReadonlyArray<SessionEntry>;
   readonly triggerKind: CaptureTriggerKind;
   readonly timeout: StewardDuration;
   readonly force: boolean;
-}
+};
 
 const captureSemaphores = new Map<string, Semaphore.Semaphore>();
 

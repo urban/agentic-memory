@@ -26,14 +26,14 @@ type StewardDuration =
 
 const MAX_EXECUTOR_TIMEOUT_MILLIS = 2_147_483_647;
 
-export interface StewardObservationResult {
+export type StewardObservationResult = {
   readonly status: StewardResultStatus;
   readonly summary: string | undefined;
   readonly filesChanged: ReadonlyArray<string>;
   readonly warnings: ReadonlyArray<string>;
   readonly decisionReport: StewardDecisionReport;
   readonly stewardSession?: StewardSessionPointer;
-}
+};
 
 export type StewardRunResult =
   | {
@@ -48,7 +48,7 @@ export type StewardRunResult =
       readonly stewardSession?: StewardSessionPointer;
     };
 
-export class MemoryStewardError extends Schema.TaggedErrorClass<MemoryStewardError>()(
+export class MemoryStewardError extends Schema.TaggedError<MemoryStewardError>()(
   "MemoryStewardError",
   {
     message: Schema.String,
@@ -69,7 +69,7 @@ export class StewardExecutor extends Context.Service<
 
 const normalizeFailureReason = (message: string): string => {
   const baseWords = message
-    .replace(/\s+/g, " ")
+    .replaceAll(/\s+/g, " ")
     .trim()
     .split(" ")
     .filter((word) => word.length > 0);
@@ -94,7 +94,7 @@ export const stewardExecutorTimeoutMillis = (
     timeoutMillis <= MAX_EXECUTOR_TIMEOUT_MILLIS
     ? Effect.succeed(timeoutMillis)
     : Effect.fail(
-        new MemoryStewardError({
+        MemoryStewardError.make({
           message: "Memory Steward outer timeout exceeds the executor timer ceiling",
         }),
       );
@@ -135,33 +135,30 @@ export class MemorySteward extends Context.Service<
           Effect.gen(function* () {
             const signal = yield* Effect.abortSignal;
             const payloadJson = yield* encodeCapturePayloadJson(input.payload).pipe(
-              Effect.mapError(
-                (cause) =>
-                  new MemoryStewardError({
-                    message: "Failed to encode Capture Payload JSON",
-                    cause,
-                  }),
+              Effect.mapError((cause) =>
+                MemoryStewardError.make({
+                  message: "Failed to encode Capture Payload JSON",
+                  cause,
+                }),
               ),
             );
             const payloadPath = yield* Effect.acquireRelease(
               fs.makeTempFile({ prefix: "agentic-memory-payload-", suffix: ".json" }).pipe(
-                Effect.mapError(
-                  (cause) =>
-                    new MemoryStewardError({
-                      message: "Failed to create temporary capture payload file",
-                      cause,
-                    }),
+                Effect.mapError((cause) =>
+                  MemoryStewardError.make({
+                    message: "Failed to create temporary capture payload file",
+                    cause,
+                  }),
                 ),
               ),
               (path) => fs.remove(path, { force: true }).pipe(Effect.ignore),
             );
             yield* fs.writeFileString(payloadPath, payloadJson).pipe(
-              Effect.mapError(
-                (cause) =>
-                  new MemoryStewardError({
-                    message: `Failed to write temporary capture payload file: ${payloadPath}`,
-                    cause,
-                  }),
+              Effect.mapError((cause) =>
+                MemoryStewardError.make({
+                  message: `Failed to write temporary capture payload file: ${payloadPath}`,
+                  cause,
+                }),
               ),
             );
             const executorTimeoutMillis = yield* stewardExecutorTimeoutMillis(input.timeout);

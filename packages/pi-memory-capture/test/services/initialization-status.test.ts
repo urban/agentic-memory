@@ -1,11 +1,10 @@
 import * as BunServices from "@effect/platform-bun/BunServices";
 import { AuthStorage, ModelRegistry, SessionManager } from "@earendil-works/pi-coding-agent";
-import { encodeLinkConfigJson, type LinkConfig } from "@urban/agentic-memory-core/link/LinkConfig";
+import { encodeLinkConfigJson } from "@urban/agentic-memory-core/link/LinkConfig";
+type LinkConfig = import("@urban/agentic-memory-core/link/LinkConfig").LinkConfig;
 import { Effect, FileSystem, Layer, ManagedRuntime } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { theme } from "../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js";
-// @effect-diagnostics-next-line nodeBuiltinImport:off
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { runInitCommand } from "../../src/initialization.ts";
 import { CaptureConfig } from "../../src/services/CaptureConfig.ts";
@@ -14,6 +13,7 @@ import { applyInitialization, planInitialization } from "../../src/workflows/ini
 import { loadStatus } from "../../src/workflows/status.ts";
 import {
   createTempDirectory,
+  joinPath as join,
   makeCustomMarkerEntry,
   removeTempDirectory,
   writeFile,
@@ -35,7 +35,9 @@ const initializeGitRepository = Effect.fnUntraced(function* (cwd: string) {
     }),
   );
 
-  expect(exitCode).toBe(ChildProcessSpawner.ExitCode(0));
+  if (exitCode !== ChildProcessSpawner.ExitCode(0)) {
+    return yield* Effect.die(new Error("Failed to initialize the test Git repository"));
+  }
 });
 
 const makeCommandContext = (cwd: string) =>
@@ -44,31 +46,31 @@ const makeCommandContext = (cwd: string) =>
       select: () => Promise.resolve(undefined),
       confirm: () => Promise.resolve(false),
       input: () => Promise.resolve(undefined),
-      notify: () => undefined,
-      onTerminalInput: () => () => undefined,
-      setStatus: () => undefined,
-      setWorkingMessage: () => undefined,
-      setWorkingVisible: () => undefined,
-      setWorkingIndicator: () => undefined,
-      setHiddenThinkingLabel: () => undefined,
-      setWidget: () => undefined,
-      setFooter: () => undefined,
-      setHeader: () => undefined,
-      setTitle: () => undefined,
+      notify: () => {},
+      onTerminalInput: () => () => {},
+      setStatus: () => {},
+      setWorkingMessage: () => {},
+      setWorkingVisible: () => {},
+      setWorkingIndicator: () => {},
+      setHiddenThinkingLabel: () => {},
+      setWidget: () => {},
+      setFooter: () => {},
+      setHeader: () => {},
+      setTitle: () => {},
       custom: () => Promise.reject(new Error("Unexpected custom UI request")),
-      pasteToEditor: () => undefined,
-      setEditorText: () => undefined,
+      pasteToEditor: () => {},
+      setEditorText: () => {},
       getEditorText: () => "",
       editor: () => Promise.resolve(undefined),
-      addAutocompleteProvider: () => undefined,
-      setEditorComponent: () => undefined,
-      getEditorComponent: () => undefined,
+      addAutocompleteProvider: () => {},
+      setEditorComponent: () => {},
+      getEditorComponent: () => {},
       theme,
       getAllThemes: () => [],
-      getTheme: () => undefined,
+      getTheme: () => {},
       setTheme: () => ({ success: false, error: "Theme switching is unavailable in tests" }),
       getToolsExpanded: () => false,
-      setToolsExpanded: () => undefined,
+      setToolsExpanded: () => {},
     },
     hasUI: false,
     cwd,
@@ -77,18 +79,18 @@ const makeCommandContext = (cwd: string) =>
     model: undefined,
     isIdle: () => true,
     signal: undefined,
-    abort: () => undefined,
+    abort: () => {},
     hasPendingMessages: () => false,
-    shutdown: () => undefined,
-    getContextUsage: () => undefined,
-    compact: () => undefined,
+    shutdown: () => {},
+    getContextUsage: () => {},
+    compact: () => {},
     getSystemPrompt: () => "",
-    waitForIdle: () => Promise.resolve(undefined),
+    waitForIdle: () => Promise.resolve(),
     newSession: () => Promise.resolve({ cancelled: false }),
     fork: () => Promise.resolve({ cancelled: false }),
     navigateTree: () => Promise.resolve({ cancelled: false }),
     switchSession: () => Promise.resolve({ cancelled: false }),
-    reload: () => Promise.resolve(undefined),
+    reload: () => Promise.resolve(),
   }) satisfies ExtensionCommandContext;
 
 describe("initialization status flow", () => {
@@ -135,9 +137,7 @@ updated: 2026-01-01
         }),
       )
       .finally(() =>
-        Promise.all([runtime.dispose(), Promise.resolve(removeTempDirectory(root))]).then(
-          () => undefined,
-        ),
+        Promise.all([runtime.dispose(), Promise.resolve(removeTempDirectory(root))]).then(() => {}),
       );
   });
 
@@ -256,9 +256,7 @@ updated: 2026-01-01
         }),
       )
       .finally(() =>
-        Promise.all([runtime.dispose(), Promise.resolve(removeTempDirectory(root))]).then(
-          () => undefined,
-        ),
+        Promise.all([runtime.dispose(), Promise.resolve(removeTempDirectory(root))]).then(() => {}),
       );
   });
 });

@@ -11,13 +11,11 @@ import {
   decodeCaptureAttemptId,
   decodeCaptureRunId,
 } from "@urban/agentic-memory-core/observability/CaptureTelemetry";
-import { Effect, Fiber, Layer, ManagedRuntime, Option } from "effect";
+import { Effect, Fiber, Layer, ManagedRuntime, Option, Schema } from "effect";
 import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
-// @effect-diagnostics-next-line nodeBuiltinImport:off
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { MARKER_VERSION } from "../../src/markers/CaptureMarker.ts";
-import { CAPTURE_BATCH_SIZE } from "../../src/workflows/capture.ts";
+import { CAPTURE_BATCH_SIZE, runCapturePass } from "../../src/workflows/capture.ts";
 import memoryCapture from "../../src/index.ts";
 import { CaptureConfig } from "../../src/services/CaptureConfig.ts";
 import {
@@ -27,9 +25,9 @@ import {
 } from "../../src/services/MemorySteward.ts";
 import { Markers } from "../../src/services/Markers.ts";
 import { Preprocessor } from "../../src/services/Preprocessor.ts";
-import { runCapturePass } from "../../src/workflows/capture.ts";
 import {
   createTempDirectory,
+  joinPath as join,
   makeAssistantEntry,
   makeCustomMarkerEntry,
   makeSessionManager,
@@ -37,6 +35,8 @@ import {
   removeTempDirectory,
   writeFile,
 } from "../helpers.ts";
+
+const encodeUnknownJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 type StewardDecisionReport =
   import("@urban/agentic-memory-core/steward/StewardResult").StewardDecisionReport;
@@ -226,8 +226,7 @@ describe("MemorySteward", () => {
                   code: 0,
                   stderr: "",
                   killed: false,
-                  // @effect-diagnostics-next-line preferSchemaOverJson:off
-                  stdout: `${JSON.stringify({
+                  stdout: `${encodeUnknownJson({
                     status: "succeeded",
                     result: {
                       status: "captured",
@@ -302,9 +301,7 @@ describe("MemorySteward", () => {
         }),
       )
       .finally(() =>
-        Promise.all([runtime.dispose(), Promise.resolve(removeTempDirectory(root))]).then(
-          () => undefined,
-        ),
+        Promise.all([runtime.dispose(), Promise.resolve(removeTempDirectory(root))]).then(() => {}),
       );
   });
 
@@ -377,14 +374,13 @@ describe("MemorySteward", () => {
         }),
       )
       .finally(() =>
-        Promise.all([runtime.dispose(), Promise.resolve(removeTempDirectory(root))]).then(
-          () => undefined,
-        ),
+        Promise.all([runtime.dispose(), Promise.resolve(removeTempDirectory(root))]).then(() => {}),
       );
   });
 
-  it("cancels session_before_tree capture when tree preparation is aborted", () =>
-    Effect.runPromise(
+  it("cancels session_before_tree capture when tree preparation is aborted", () => {
+    const controller = new AbortController();
+    return Effect.runPromise(
       Effect.gen(function* () {
         const root = createTempDirectory("pi-memory-tree-abort-");
         const projectRoot = join(root, "project");
@@ -397,20 +393,20 @@ describe("MemorySteward", () => {
           on: (event, handler) => {
             handlers.set(event, handler);
           },
-          registerTool: () => undefined,
-          registerCommand: () => undefined,
-          registerShortcut: () => undefined,
-          registerFlag: () => undefined,
-          getFlag: () => undefined,
-          registerMessageRenderer: () => undefined,
-          sendMessage: () => undefined,
-          sendUserMessage: () => undefined,
+          registerTool: () => {},
+          registerCommand: () => {},
+          registerShortcut: () => {},
+          registerFlag: () => {},
+          getFlag: () => {},
+          registerMessageRenderer: () => {},
+          sendMessage: () => {},
+          sendUserMessage: () => {},
           appendEntry: (customType) => {
             appendedEntries.push(customType);
           },
-          setSessionName: () => undefined,
-          getSessionName: () => undefined,
-          setLabel: () => undefined,
+          setSessionName: () => {},
+          getSessionName: () => {},
+          setLabel: () => {},
           exec: (_command, _args, options) => {
             execStarted = true;
             const deferred = Promise.withResolvers<{
@@ -419,13 +415,14 @@ describe("MemorySteward", () => {
               readonly code: number;
               readonly killed: boolean;
             }>();
-            const onAbort = () =>
+            const onAbort = () => {
               deferred.resolve({
                 stdout: "",
                 stderr: "",
                 code: 143,
                 killed: true,
               });
+            };
 
             if (options?.signal?.aborted === true) {
               onAbort();
@@ -439,16 +436,16 @@ describe("MemorySteward", () => {
           },
           getActiveTools: () => [],
           getAllTools: () => [],
-          setActiveTools: () => undefined,
+          setActiveTools: () => {},
           getCommands: () => [],
           setModel: () => Promise.resolve(false),
           getThinkingLevel: () => "medium",
-          setThinkingLevel: () => undefined,
-          registerProvider: () => undefined,
-          unregisterProvider: () => undefined,
+          setThinkingLevel: () => {},
+          registerProvider: () => {},
+          unregisterProvider: () => {},
           events: {
-            emit: () => undefined,
-            on: () => () => undefined,
+            emit: () => {},
+            on: () => () => {},
           },
         } satisfies ExtensionAPI;
 
@@ -480,7 +477,7 @@ describe("MemorySteward", () => {
 
         const ctx = {
           ui: {
-            notify: () => undefined,
+            notify: () => {},
           },
           hasUI: false,
           cwd: projectRoot,
@@ -489,19 +486,17 @@ describe("MemorySteward", () => {
           model: undefined,
           isIdle: () => true,
           signal: undefined,
-          abort: () => undefined,
+          abort: () => {},
           hasPendingMessages: () => false,
-          shutdown: () => undefined,
-          getContextUsage: () => undefined,
-          compact: () => undefined,
+          shutdown: () => {},
+          getContextUsage: () => {},
+          compact: () => {},
           getSystemPrompt: () => "",
         };
         const cleanupCtx = {
           ...ctx,
           sessionManager: makeSessionManager([]),
         };
-        const controller = new AbortController();
-
         yield* Effect.gen(function* () {
           const captureFiber = yield* Effect.forkChild(
             Effect.promise(() =>
@@ -531,7 +526,9 @@ describe("MemorySteward", () => {
           }
 
           expect(execStarted).toBe(true);
-          yield* Effect.sync(() => controller.abort());
+          yield* Effect.sync(() => {
+            controller.abort();
+          });
 
           const status = yield* Effect.raceFirst(
             Fiber.join(captureFiber).pipe(Effect.as("settled")),
@@ -554,10 +551,15 @@ describe("MemorySteward", () => {
               ),
             ),
           ),
-          Effect.ensuring(Effect.sync(() => removeTempDirectory(root))),
+          Effect.ensuring(
+            Effect.sync(() => {
+              removeTempDirectory(root);
+            }),
+          ),
         );
       }),
-    ));
+    );
+  });
 });
 
 describe("runtime capture flow", () => {

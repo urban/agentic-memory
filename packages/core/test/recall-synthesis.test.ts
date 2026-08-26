@@ -91,13 +91,14 @@ const synthesizeWith = (
 
 describe("local recall synthesis", () => {
   it.effect("generates answered and not_found through the structured schema", () => {
+    const notFoundContent = '{"status":"not_found"}';
     const contents = [
       '{"status":"answered","answer":"azure-17","claim":"The launch code is azure-17.","evidenceIds":["E1"],"providerModelIdentity":"absent"}',
-      '{"status":"not_found"}',
+      notFoundContent,
     ];
     let requestCount = 0;
     const client = makeHttpClient((request) => {
-      const content = contents[requestCount] ?? contents[1];
+      const content = contents[requestCount] ?? notFoundContent;
       requestCount += 1;
       return Effect.succeed(jsonResponse(request, responseBody(content)));
     });
@@ -141,7 +142,9 @@ describe("local recall synthesis", () => {
 
     return Effect.gen(function* () {
       yield* synthesizeWith("http://localhost:8080/v1/", client);
-      if (decodedRequest === undefined) assert.fail("Expected one synthesis request");
+      if (decodedRequest === undefined) {
+        assert.fail("Expected one synthesis request");
+      }
 
       assert.strictEqual(decodedRequest.model, "agentic-memory-qwen3-4b");
       assert.strictEqual(decodedRequest.temperature, 0);

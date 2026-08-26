@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect";
 import { validateLocalSynthesisEndpoint } from "../src/recall/LocalSynthesisEndpoint.ts";
 
-export class SemanticStackProbeConfigurationError extends Schema.TaggedErrorClass<SemanticStackProbeConfigurationError>()(
+export class SemanticStackProbeConfigurationError extends Schema.TaggedError<SemanticStackProbeConfigurationError>()(
   "SemanticStackProbeConfigurationError",
   {
     reason: Schema.Literals(["MissingSynthesisEndpoint", "InvalidSynthesisEndpoint"]),
@@ -10,10 +10,10 @@ export class SemanticStackProbeConfigurationError extends Schema.TaggedErrorClas
 ) {}
 
 export const requireSemanticStackProbeSynthesisEndpoint = Effect.fnUntraced(function* (
-  input: unknown,
+  input?: unknown,
 ): Effect.fn.Return<string, SemanticStackProbeConfigurationError> {
   if (input === undefined) {
-    return yield* new SemanticStackProbeConfigurationError({
+    return yield* SemanticStackProbeConfigurationError.make({
       reason: "MissingSynthesisEndpoint",
       message:
         "Set AGENTIC_MEMORY_SYNTHESIS_URL to the running loopback Qwen endpoint before running the semantic stack probe.",
@@ -21,12 +21,11 @@ export const requireSemanticStackProbeSynthesisEndpoint = Effect.fnUntraced(func
   }
 
   return yield* validateLocalSynthesisEndpoint(input).pipe(
-    Effect.mapError(
-      (cause) =>
-        new SemanticStackProbeConfigurationError({
-          reason: "InvalidSynthesisEndpoint",
-          message: cause.message,
-        }),
+    Effect.mapError((cause) =>
+      SemanticStackProbeConfigurationError.make({
+        reason: "InvalidSynthesisEndpoint",
+        message: cause.message,
+      }),
     ),
   );
 });

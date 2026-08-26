@@ -1,16 +1,16 @@
-export interface RecallEvidenceCandidate {
+export type RecallEvidenceCandidate = {
   readonly documentPath: string;
   readonly text: string;
-}
+};
 
-export interface RecallEvidencePassage {
+export type RecallEvidencePassage = {
   readonly id: string;
   readonly text: string;
-}
+};
 
-export interface RecallEvidencePacket {
+export type RecallEvidencePacket = {
   readonly passages: ReadonlyArray<RecallEvidencePassage>;
-}
+};
 
 const MAX_EVIDENCE_PASSAGES = 5;
 const MAX_EVIDENCE_DOCUMENTS = 5;
@@ -19,7 +19,7 @@ const MAX_EVIDENCE_TOKENS = 4_500;
 const MIN_OVERLAP_CHARACTERS = 24;
 const MIN_OVERLAP_WORDS = 4;
 
-const normalizeWhitespace = (text: string): string => text.replace(/\s+/gu, " ").trim();
+const normalizeWhitespace = (text: string): string => text.replaceAll(/\s+/gu, " ").trim();
 const approximateTokens = (text: string): number => Math.ceil(text.length / 4);
 
 const deduplicatePassageUnits = (text: string): string => {
@@ -30,7 +30,9 @@ const deduplicatePassageUnits = (text: string): string => {
   const seen = new Set<string>();
   const unique = units.filter((unit) => {
     const normalized = normalizeWhitespace(unit);
-    if (seen.has(normalized)) return false;
+    if (seen.has(normalized)) {
+      return false;
+    }
     seen.add(normalized);
     return true;
   });
@@ -44,7 +46,9 @@ const boundaryOverlapLength = (left: string, right: string): number => {
   const maximumLength = Math.min(left.length, right.length);
   for (let length = maximumLength; length >= MIN_OVERLAP_CHARACTERS; length -= 1) {
     const overlap = right.slice(0, length);
-    if (left.endsWith(overlap) && isMeaningfulOverlap(overlap)) return length;
+    if (left.endsWith(overlap) && isMeaningfulOverlap(overlap)) {
+      return length;
+    }
   }
   return 0;
 };
@@ -57,7 +61,9 @@ const removeSelectedOverlap = (
   for (const passage of selected) {
     const existing = normalizeWhitespace(passage.text);
     const normalizedRemaining = normalizeWhitespace(remaining);
-    if (existing.includes(normalizedRemaining)) return undefined;
+    if (existing.includes(normalizedRemaining)) {
+      return undefined;
+    }
     if (isMeaningfulOverlap(existing) && normalizedRemaining.includes(existing)) {
       remaining = normalizeWhitespace(normalizedRemaining.replace(existing, " "));
       continue;

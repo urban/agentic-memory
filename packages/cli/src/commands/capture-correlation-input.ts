@@ -1,7 +1,7 @@
 import { decodeCaptureCorrelation } from "@urban/agentic-memory-core/observability/CaptureTelemetry";
 import { Config, Effect, Option } from "effect";
 import { Flag } from "effect/unstable/cli";
-import { toFailure } from "../output.ts";
+import { toFailure } from "../failures.ts";
 
 type CaptureCorrelation =
   import("@urban/agentic-memory-core/observability/CaptureTelemetry").CaptureCorrelation;

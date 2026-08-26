@@ -1,7 +1,7 @@
 import { decodeCapturePayloadJson } from "@urban/agentic-memory-core/capture/CapturePayload";
 import { Effect, FileSystem, Stdio, Stream } from "effect";
 import { Flag } from "effect/unstable/cli";
-import { toFailure } from "../output.ts";
+import { toFailure } from "../failures.ts";
 import { resolvePathInput } from "./path-input.ts";
 
 type AbsolutePath = import("@urban/agentic-memory-core/link/LinkConfig").AbsolutePath;

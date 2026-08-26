@@ -28,11 +28,11 @@ import {
 } from "../src/semantic/EmbeddingModel.ts";
 import { synchronizeSemanticIndex } from "../src/semantic/SemanticIndex.ts";
 
-interface EmbeddingControl {
+type EmbeddingControl = {
   inputs: Array<string>;
   beforeEmbeddingResult?: Effect.Effect<void>;
   rejectEmbeddings?: boolean;
-}
+};
 
 const vector = (first: number, second: number, third: number): ReadonlyArray<number> =>
   Array.from({ length: EMBEDDING_MODEL_DIMENSIONS }, (_, index) =>
@@ -40,17 +40,37 @@ const vector = (first: number, second: number, third: number): ReadonlyArray<num
   );
 
 const embeddingFor = (input: string): ReadonlyArray<number> => {
-  if (input.startsWith("task: search result | query:")) return vector(1, 0, 0);
+  if (input.startsWith("task: search result | query:")) {
+    return vector(1, 0, 0);
+  }
   const evidenceRank = input.match(/evidence-rank-(\d+)/u)?.[1];
-  if (evidenceRank !== undefined) return vector(1, Number(evidenceRank) / 100, 0);
-  if (input.includes("route-only-nearest")) return vector(1, 0.01, 0);
-  if (input.includes("safe-scrubbed-answer")) return vector(0.98, 0.2, 0);
-  if (input.includes("substantive-map-answer")) return vector(0.96, 0.28, 0);
-  if (input.includes("linked-route-answer")) return vector(0, 0, 1);
-  if (input.includes("approved timeout is 640ms")) return vector(0.99, 0.1, 0);
-  if (input.includes("recall timeout answer is 900ms")) return vector(0.2, 0.98, 0);
-  if (input.includes("source-near-")) return vector(1, 0.01, 0);
-  if (input.includes("eligible semantic fallback")) return vector(0.8, 0.6, 0);
+  if (evidenceRank !== undefined) {
+    return vector(1, Number(evidenceRank) / 100, 0);
+  }
+  if (input.includes("route-only-nearest")) {
+    return vector(1, 0.01, 0);
+  }
+  if (input.includes("safe-scrubbed-answer")) {
+    return vector(0.98, 0.2, 0);
+  }
+  if (input.includes("substantive-map-answer")) {
+    return vector(0.96, 0.28, 0);
+  }
+  if (input.includes("linked-route-answer")) {
+    return vector(0, 0, 1);
+  }
+  if (input.includes("approved timeout is 640ms")) {
+    return vector(0.99, 0.1, 0);
+  }
+  if (input.includes("recall timeout answer is 900ms")) {
+    return vector(0.2, 0.98, 0);
+  }
+  if (input.includes("source-near-")) {
+    return vector(1, 0.01, 0);
+  }
+  if (input.includes("eligible semantic fallback")) {
+    return vector(0.8, 0.6, 0);
+  }
   return vector(0, 0, 1);
 };
 
@@ -64,7 +84,7 @@ const makeControlledEmbeddingLayer = (control: EmbeddingControl): Layer.Layer<Em
         const result =
           control.rejectEmbeddings === true
             ? Effect.fail(
-                new EmbeddingRuntimeError({ message: "Rejected query embedding for test" }),
+                EmbeddingRuntimeError.make({ message: "Rejected query embedding for test" }),
               )
             : Effect.succeed(inputs.map(embeddingFor));
         return Effect.sync(() => control.inputs.push(...inputs)).pipe(
@@ -109,7 +129,10 @@ const executeSemanticIndexSql = Effect.fnUntraced(function* (vaultPath: string, 
   yield* Effect.acquireUseRelease(
     Effect.sync(() => createClient({ url: databaseUrl.href })),
     (client) => Effect.promise(() => client.execute(sql)),
-    (client) => Effect.sync(() => client.close()),
+    (client) =>
+      Effect.sync(() => {
+        client.close();
+      }),
   );
 });
 
@@ -134,12 +157,12 @@ const recallSingleAnswerDocument = Effect.fnUntraced(function* (
 const groundedMemoryContent = (...statements: ReadonlyArray<string>): string =>
   ["# Answer", "", ...statements.flatMap((statement) => [statement, ""])].join("\n");
 
-interface ProhibitedPublicOutputCase {
+type ProhibitedPublicOutputCase = {
   readonly name: string;
   readonly answer: string;
   readonly claim: string;
   readonly providerModelIdentity?: "absent" | "present";
-}
+};
 
 const prohibitedPublicOutputCases: ReadonlyArray<ProhibitedPublicOutputCase> = [
   {
@@ -1873,7 +1896,9 @@ describe("semantic recall", () => {
           const hydrationFailureFileSystem = FileSystem.FileSystem.of({
             ...fs,
             readFileString: (entryPath, encoding) => {
-              if (entryPath !== notePath) return fs.readFileString(entryPath, encoding);
+              if (entryPath !== notePath) {
+                return fs.readFileString(entryPath, encoding);
+              }
               answerReads += 1;
               return answerReads === 3
                 ? Effect.fail(permissionDenied)

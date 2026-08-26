@@ -4,11 +4,11 @@ import { encodeCapturePayloadJson } from "../capture/CapturePayload.ts";
 type CapturePayload = import("../capture/CapturePayload.ts").CapturePayload;
 type VaultPaths = import("../vault/VaultStatus.ts").VaultPaths;
 
-export interface StewardPromptInput {
+export type StewardPromptInput = {
   readonly payload: CapturePayload;
   readonly vault: VaultPaths;
   readonly payloadWarnings: ReadonlyArray<string>;
-}
+};
 
 export const buildStewardPrompt = Effect.fnUntraced(function* (input: StewardPromptInput) {
   const payloadJson = yield* encodeCapturePayloadJson(input.payload);

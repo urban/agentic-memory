@@ -3,7 +3,7 @@ import { projectFileRelativePathFromSlug, projectWikiLinkFromSlug } from "../lin
 
 type ProjectSlug = import("../link/ProjectSlug.ts").ProjectSlug;
 
-export class ProjectRouteError extends Schema.TaggedErrorClass<ProjectRouteError>()(
+export class ProjectRouteError extends Schema.TaggedError<ProjectRouteError>()(
   "ProjectRouteError",
   {
     message: Schema.String,
@@ -52,7 +52,7 @@ const findNextHeadingIndex = (lines: ReadonlyArray<string>, fromIndex: number): 
   let index = fromIndex + 1;
 
   while (index < lines.length) {
-    if (lines[index]?.startsWith("## ")) {
+    if (lines[index]?.startsWith("## ") === true) {
       return index;
     }
     index += 1;
@@ -99,7 +99,7 @@ const withProjectsRouteInExistingSection = (
   const before = lines.slice(0, endIndex);
   const after = lines.slice(endIndex);
   const normalizedBefore =
-    before.length > 0 && before[before.length - 1]?.trim().length === 0 ? before : [...before, ""];
+    before.length > 0 && before.at(-1)?.trim().length === 0 ? before : [...before, ""];
 
   return [...normalizedBefore, routeLine, "", ...after];
 };
@@ -139,7 +139,7 @@ export const ensureProjectRouteInMemory = (
           return [...lines, ...projectsSection];
         })();
 
-  const nextContent = `${prefix}${nextLines.join("\n")}`.replace(/\n{3,}/g, "\n\n");
+  const nextContent = `${prefix}${nextLines.join("\n")}`.replaceAll(/\n{3,}/g, "\n\n");
   return {
     content: updateFrontmatterUpdatedDate(nextContent, updatedDate),
     added: true,
@@ -259,12 +259,11 @@ export const ensureProjectFile = Effect.fnUntraced(function* (input: {
   const path = yield* Path.Path;
   const filepath = yield* projectFilePath(input.vaultPath, input.projectSlug);
   const alreadyExists = yield* fs.exists(filepath).pipe(
-    Effect.mapError(
-      (cause) =>
-        new ProjectRouteError({
-          message: `Failed to inspect project file: ${filepath}`,
-          cause,
-        }),
+    Effect.mapError((cause) =>
+      ProjectRouteError.make({
+        message: `Failed to inspect project file: ${filepath}`,
+        cause,
+      }),
     ),
   );
 
@@ -274,22 +273,20 @@ export const ensureProjectFile = Effect.fnUntraced(function* (input: {
 
   const templatePath = path.join(input.vaultPath, ".agentic-memory", "templates", "project.md");
   const templateExists = yield* fs.exists(templatePath).pipe(
-    Effect.mapError(
-      (cause) =>
-        new ProjectRouteError({
-          message: `Failed to inspect project template: ${templatePath}`,
-          cause,
-        }),
+    Effect.mapError((cause) =>
+      ProjectRouteError.make({
+        message: `Failed to inspect project template: ${templatePath}`,
+        cause,
+      }),
     ),
   );
   const templateDocument = templateExists
     ? yield* fs.readFileString(templatePath).pipe(
-        Effect.mapError(
-          (cause) =>
-            new ProjectRouteError({
-              message: `Failed to read project template: ${templatePath}`,
-              cause,
-            }),
+        Effect.mapError((cause) =>
+          ProjectRouteError.make({
+            message: `Failed to read project template: ${templatePath}`,
+            cause,
+          }),
         ),
       )
     : undefined;
@@ -304,21 +301,19 @@ export const ensureProjectFile = Effect.fnUntraced(function* (input: {
   );
 
   yield* fs.makeDirectory(path.dirname(filepath), { recursive: true }).pipe(
-    Effect.mapError(
-      (cause) =>
-        new ProjectRouteError({
-          message: `Failed to create project directory for: ${filepath}`,
-          cause,
-        }),
+    Effect.mapError((cause) =>
+      ProjectRouteError.make({
+        message: `Failed to create project directory for: ${filepath}`,
+        cause,
+      }),
     ),
   );
   yield* fs.writeFileString(filepath, scaffold).pipe(
-    Effect.mapError(
-      (cause) =>
-        new ProjectRouteError({
-          message: `Failed to write project file: ${filepath}`,
-          cause,
-        }),
+    Effect.mapError((cause) =>
+      ProjectRouteError.make({
+        message: `Failed to write project file: ${filepath}`,
+        cause,
+      }),
     ),
   );
 
@@ -334,12 +329,11 @@ export const ensureMemoryRoute = Effect.fnUntraced(function* (input: {
   const path = yield* Path.Path;
   const memoryPath = path.join(input.vaultPath, "MEMORY.md");
   const contents = yield* fs.readFileString(memoryPath).pipe(
-    Effect.mapError(
-      (cause) =>
-        new ProjectRouteError({
-          message: `Failed to read vault MEMORY.md: ${memoryPath}`,
-          cause,
-        }),
+    Effect.mapError((cause) =>
+      ProjectRouteError.make({
+        message: `Failed to read vault MEMORY.md: ${memoryPath}`,
+        cause,
+      }),
     ),
   );
   const updated = ensureProjectRouteInMemory(contents, input.projectSlug, input.date);
@@ -349,12 +343,11 @@ export const ensureMemoryRoute = Effect.fnUntraced(function* (input: {
   }
 
   yield* fs.writeFileString(memoryPath, updated.content).pipe(
-    Effect.mapError(
-      (cause) =>
-        new ProjectRouteError({
-          message: `Failed to update vault MEMORY.md: ${memoryPath}`,
-          cause,
-        }),
+    Effect.mapError((cause) =>
+      ProjectRouteError.make({
+        message: `Failed to update vault MEMORY.md: ${memoryPath}`,
+        cause,
+      }),
     ),
   );
   return true;

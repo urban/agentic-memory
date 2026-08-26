@@ -89,7 +89,7 @@ const reportFailureDiagnostics = (report: BenchmarkSuiteReport): Effect.Effect<v
   return diagnostics.length === 0 ? Effect.void : Console.error(diagnostics.join("\n"));
 };
 
-class BenchmarkVaultPreparationError extends Schema.TaggedErrorClass<BenchmarkVaultPreparationError>()(
+class BenchmarkVaultPreparationError extends Schema.TaggedError<BenchmarkVaultPreparationError>()(
   "BenchmarkVaultPreparationError",
   {
     step: Schema.Literals(["init", "index"]),
@@ -106,7 +106,7 @@ const requireSuccessfulPreparationStep = (
   return execution.exitCode === ChildProcessSpawner.ExitCode(0)
     ? Effect.void
     : Effect.fail(
-        new BenchmarkVaultPreparationError({
+        BenchmarkVaultPreparationError.make({
           step,
           message: `Failed to ${step} the disposable benchmark vault${diagnostics.length === 0 ? "" : `: ${diagnostics}`}`,
           stderr: execution.stderr,

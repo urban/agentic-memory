@@ -15,21 +15,21 @@ export type ManagedMemoryLayer =
 export type ManagedContentStatus = "draft" | "active" | "stale" | "archived";
 export type ManagedProjectStatus = "candidate" | "active" | "completed" | "archived";
 
-export interface ManagedMemoryDocument {
+export type ManagedMemoryDocument = {
   readonly path: string;
   readonly memoryLayer: ManagedMemoryLayer;
   readonly content: string;
   readonly contentHash: string;
-}
+};
 
-export interface ManagedMemoryPath {
+export type ManagedMemoryPath = {
   readonly path: string;
   readonly memoryLayer: ManagedMemoryLayer;
-}
+};
 
 export type ManagedMemoryEligibility = (candidate: ManagedMemoryPath) => boolean;
 
-export interface ParsedManagedMemoryDocument extends ManagedMemoryDocument {
+export type ParsedManagedMemoryDocument = {
   readonly body: string;
   readonly bodyStartLine: number;
   readonly title: string;
@@ -38,9 +38,9 @@ export interface ParsedManagedMemoryDocument extends ManagedMemoryDocument {
   readonly projectStatus: ManagedProjectStatus | undefined;
   readonly summary: string | undefined;
   readonly aliases: ReadonlyArray<string>;
-}
+} & ManagedMemoryDocument;
 
-export class ManagedMemoryError extends Schema.TaggedErrorClass<ManagedMemoryError>()(
+export class ManagedMemoryError extends Schema.TaggedError<ManagedMemoryError>()(
   "ManagedMemoryError",
   {
     reason: Schema.Literals(["InvalidVaultPath", "ReadVaultFailed", "UnsafeManagedPath"]),
@@ -61,8 +61,12 @@ const managedPrefixes = [
 export const classifyManagedMemoryLayer = (
   relativePath: string,
 ): ManagedMemoryLayer | undefined => {
-  if (relativePath === "MEMORY.md") return "core";
-  if (relativePath === "USER.md") return "user";
+  if (relativePath === "MEMORY.md") {
+    return "core";
+  }
+  if (relativePath === "USER.md") {
+    return "user";
+  }
   return managedPrefixes.find(([prefix]) => relativePath.startsWith(prefix))?.[1];
 };
 
@@ -82,7 +86,9 @@ export const isManagedMemoryPath = (relativePath: string): boolean =>
   classifyManagedMemoryPath(relativePath) !== undefined;
 
 export const classifyManagedMemoryPath = (relativePath: string): ManagedMemoryPath | undefined => {
-  if (!isVaultRelativeMarkdownPath(relativePath)) return undefined;
+  if (!isVaultRelativeMarkdownPath(relativePath)) {
+    return undefined;
+  }
   const memoryLayer = classifyManagedMemoryLayer(relativePath);
   return memoryLayer === undefined ? undefined : { path: relativePath, memoryLayer };
 };
@@ -95,9 +101,9 @@ export const hashManagedMemoryContent = (content: string): string =>
 
 const cleanMetadataMarkup = (value: string): string =>
   value
-    .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/gu, "$2")
-    .replace(/\[\[([^\]]+)\]\]/gu, "$1")
-    .replace(/[*_`]/gu, "")
+    .replaceAll(/\[\[([^\]|]+)\|([^\]]+)\]\]/gu, "$2")
+    .replaceAll(/\[\[([^\]]+)\]\]/gu, "$1")
+    .replaceAll(/[*_`]/gu, "")
     .trim();
 
 export const splitManagedFrontmatter = (
@@ -108,7 +114,9 @@ export const splitManagedFrontmatter = (
   readonly bodyStartLine: number;
 } => {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/u);
-  if (match === null) return { frontmatter: undefined, body: content, bodyStartLine: 1 };
+  if (match === null) {
+    return { frontmatter: undefined, body: content, bodyStartLine: 1 };
+  }
   return {
     frontmatter: match[1],
     body: content.slice(match[0].length),
@@ -119,7 +127,7 @@ export const splitManagedFrontmatter = (
 const unquote = (value: string): string => {
   const trimmed = value.trim();
   const first = trimmed[0];
-  const last = trimmed[trimmed.length - 1];
+  const last = trimmed.at(-1);
   return (first === `"` || first === "'") && first === last ? trimmed.slice(1, -1) : trimmed;
 };
 
@@ -127,7 +135,9 @@ const frontmatterString = (
   frontmatter: string | undefined,
   fieldName: string,
 ): string | undefined => {
-  if (frontmatter === undefined) return undefined;
+  if (frontmatter === undefined) {
+    return undefined;
+  }
   const prefix = `${fieldName}:`;
   const line = frontmatter
     .split(/\r?\n/u)
@@ -143,7 +153,9 @@ const frontmatterStrings = (
   frontmatter: string | undefined,
   fieldName: string,
 ): ReadonlyArray<string> => {
-  if (frontmatter === undefined) return [];
+  if (frontmatter === undefined) {
+    return [];
+  }
   const values: Array<string> = [];
   let insideField = false;
   for (const rawLine of frontmatter.split(/\r?\n/u)) {
@@ -157,7 +169,9 @@ const frontmatterStrings = (
       continue;
     }
     const item = insideField ? rawLine.match(/^\s*-\s*(.+)$/u)?.[1] : undefined;
-    if (item !== undefined) values.push(cleanMetadataMarkup(unquote(item)));
+    if (item !== undefined) {
+      values.push(cleanMetadataMarkup(unquote(item)));
+    }
   }
   return [...new Set(values.filter((value) => value.length > 0))];
 };
@@ -198,7 +212,7 @@ const projectStatus = (value: string | undefined): ManagedProjectStatus | undefi
 
 export const titleFromManagedPath = (relativePath: string): string => {
   const filename = relativePath.split("/").at(-1)?.replace(/\.md$/u, "") ?? relativePath;
-  return filename.replace(/[-_]+/gu, " ");
+  return filename.replaceAll(/[-_]+/gu, " ");
 };
 
 export const parseManagedMemoryDocument = (
@@ -236,23 +250,21 @@ export const readManagedMemoryDocuments = Effect.fnUntraced(function* (
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const vaultRealPath = yield* fs.realPath(vaultPath).pipe(
-    Effect.mapError(
-      (cause) =>
-        new ManagedMemoryError({
-          reason: "ReadVaultFailed",
-          message: `Failed to resolve vault path: ${vaultPath}`,
-          cause,
-        }),
+    Effect.mapError((cause) =>
+      ManagedMemoryError.make({
+        reason: "ReadVaultFailed",
+        message: `Failed to resolve vault path: ${vaultPath}`,
+        cause,
+      }),
     ),
   );
   const entries = yield* fs.readDirectory(vaultPath, { recursive: true }).pipe(
-    Effect.mapError(
-      (cause) =>
-        new ManagedMemoryError({
-          reason: "ReadVaultFailed",
-          message: `Failed to read vault contents: ${vaultPath}`,
-          cause,
-        }),
+    Effect.mapError((cause) =>
+      ManagedMemoryError.make({
+        reason: "ReadVaultFailed",
+        message: `Failed to read vault contents: ${vaultPath}`,
+        cause,
+      }),
     ),
   );
   const candidates = entries
@@ -268,29 +280,27 @@ export const readManagedMemoryDocuments = Effect.fnUntraced(function* (
     Effect.gen(function* () {
       const absolutePath = path.join(vaultPath, relativePath);
       const candidateRealPath = yield* fs.realPath(absolutePath).pipe(
-        Effect.mapError(
-          (cause) =>
-            new ManagedMemoryError({
-              reason: "ReadVaultFailed",
-              message: `Failed to resolve managed memory document: ${relativePath}`,
-              cause,
-            }),
+        Effect.mapError((cause) =>
+          ManagedMemoryError.make({
+            reason: "ReadVaultFailed",
+            message: `Failed to resolve managed memory document: ${relativePath}`,
+            cause,
+          }),
         ),
       );
       if (!isPathInsideRoot(vaultRealPath, candidateRealPath, path)) {
-        return yield* new ManagedMemoryError({
+        return yield* ManagedMemoryError.make({
           reason: "UnsafeManagedPath",
           message: `Managed memory symlink resolves outside the vault: ${relativePath}`,
         });
       }
       const content = yield* fs.readFileString(absolutePath).pipe(
-        Effect.mapError(
-          (cause) =>
-            new ManagedMemoryError({
-              reason: "ReadVaultFailed",
-              message: `Failed to read managed memory document: ${relativePath}`,
-              cause,
-            }),
+        Effect.mapError((cause) =>
+          ManagedMemoryError.make({
+            reason: "ReadVaultFailed",
+            message: `Failed to read managed memory document: ${relativePath}`,
+            cause,
+          }),
         ),
       );
       return {

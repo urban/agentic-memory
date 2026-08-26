@@ -35,7 +35,7 @@ export const encodeRecallSuccessJson = Schema.encodeUnknownEffect(RecallSuccessJ
   onExcessProperty: "error",
 });
 
-export class RecallError extends Schema.TaggedErrorClass<RecallError>()("RecallError", {
+export class RecallError extends Schema.TaggedError<RecallError>()("RecallError", {
   reason: Schema.Literals([
     "InvalidQuestion",
     "UnsupportedMultipartQuestion",

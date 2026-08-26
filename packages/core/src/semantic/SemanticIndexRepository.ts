@@ -7,7 +7,7 @@ type ManagedMemoryLayer = import("../vault/ManagedMemory.ts").ManagedMemoryLayer
 
 export const INDEX_SCHEMA_VERSION = 1;
 
-export class SemanticIndexRepositoryError extends Schema.TaggedErrorClass<SemanticIndexRepositoryError>()(
+export class SemanticIndexRepositoryError extends Schema.TaggedError<SemanticIndexRepositoryError>()(
   "SemanticIndexRepositoryError",
   {
     reason: Schema.Literals(["OpenFailed", "ReadFailed", "WriteFailed", "InvalidData"]),
@@ -16,26 +16,26 @@ export class SemanticIndexRepositoryError extends Schema.TaggedErrorClass<Semant
   },
 ) {}
 
-export interface StoredIndexMetadata {
+export type StoredIndexMetadata = {
   readonly schemaVersion: number;
   readonly compatibilityFingerprint: string;
   readonly inventoryFingerprint: string;
   readonly state: "complete" | "incomplete";
-}
+};
 
-export interface StoredIndexDocument {
+export type StoredIndexDocument = {
   readonly path: string;
   readonly contentHash: string;
   readonly chunkCount: number;
   readonly integrity: "complete" | "incomplete" | "chunk_count_mismatch";
-}
+};
 
-export interface StoredIndexSnapshot {
+export type StoredIndexSnapshot = {
   readonly metadata: StoredIndexMetadata | undefined;
   readonly documents: ReadonlyArray<StoredIndexDocument>;
-}
+};
 
-export interface IndexedDocumentWrite {
+export type IndexedDocumentWrite = {
   readonly path: string;
   readonly contentHash: string;
   readonly memoryLayer: ManagedMemoryLayer;
@@ -52,7 +52,7 @@ export interface IndexedDocumentWrite {
     readonly textHash: string;
     readonly embedding: ReadonlyArray<number>;
   }>;
-}
+};
 
 const MetadataRow = Schema.Struct({
   schema_version: Schema.Int,
@@ -93,7 +93,7 @@ const repositoryOperation = <A>(
 ): Effect.Effect<A, SemanticIndexRepositoryError> =>
   Effect.tryPromise({
     try: operation,
-    catch: (cause) => new SemanticIndexRepositoryError({ reason, message, cause }),
+    catch: (cause) => SemanticIndexRepositoryError.make({ reason, message, cause }),
   });
 
 const repositoryReadOperation = <A>(
@@ -103,32 +103,34 @@ const repositoryReadOperation = <A>(
   Effect.tryPromise({
     try: operation,
     catch: (cause) =>
-      new SemanticIndexRepositoryError({ reason: readFailureReason(cause), message, cause }),
+      SemanticIndexRepositoryError.make({ reason: readFailureReason(cause), message, cause }),
   });
 
 const acquireClient = Effect.fnUntraced(function* (databasePath: string) {
   const path = yield* Path.Path;
   const databaseUrl = yield* path.toFileUrl(databasePath).pipe(
-    Effect.mapError(
-      (cause) =>
-        new SemanticIndexRepositoryError({
-          reason: "OpenFailed",
-          message: "Failed to encode the semantic index database path",
-          cause,
-        }),
+    Effect.mapError((cause) =>
+      SemanticIndexRepositoryError.make({
+        reason: "OpenFailed",
+        message: "Failed to encode the semantic index database path",
+        cause,
+      }),
     ),
   );
   return yield* Effect.acquireRelease(
     Effect.try({
       try: () => createClient({ url: databaseUrl.href, intMode: "number" }),
       catch: (cause) =>
-        new SemanticIndexRepositoryError({
+        SemanticIndexRepositoryError.make({
           reason: "OpenFailed",
           message: "Failed to open the semantic index database",
           cause,
         }),
     }),
-    (client) => Effect.sync(() => client.close()),
+    (client) =>
+      Effect.sync(() => {
+        client.close();
+      }),
   );
 });
 
@@ -149,13 +151,12 @@ const readStoredDocuments = Effect.fnUntraced(function* (
   );
   const documents = yield* Effect.forEach(result.rows, (row) =>
     decodeDocumentRow(row).pipe(
-      Effect.mapError(
-        (cause) =>
-          new SemanticIndexRepositoryError({
-            reason: "InvalidData",
-            message: "Semantic index document metadata is invalid",
-            cause,
-          }),
+      Effect.mapError((cause) =>
+        SemanticIndexRepositoryError.make({
+          reason: "InvalidData",
+          message: "Semantic index document metadata is invalid",
+          cause,
+        }),
       ),
     ),
   );
@@ -228,13 +229,12 @@ export const readSemanticIndexSnapshot = (
         metadataRow === undefined
           ? undefined
           : yield* decodeMetadataRow(metadataRow).pipe(
-              Effect.mapError(
-                (cause) =>
-                  new SemanticIndexRepositoryError({
-                    reason: "InvalidData",
-                    message: "Semantic index metadata is invalid",
-                    cause,
-                  }),
+              Effect.mapError((cause) =>
+                SemanticIndexRepositoryError.make({
+                  reason: "InvalidData",
+                  message: "Semantic index metadata is invalid",
+                  cause,
+                }),
               ),
             );
       const documents = yield* readStoredDocuments(client);
@@ -296,24 +296,22 @@ export const replaceSemanticIndexDocument = (
           document.chunks.length,
         ],
       },
-      ...document.chunks.map(
-        (chunk): InStatement => ({
-          sql: `INSERT INTO chunks
+      ...document.chunks.map((chunk): InStatement => ({
+        sql: `INSERT INTO chunks
             (id, document_path, ordinal, heading_path, start_line, end_line, text, text_hash, embedding)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, vector32(?))`,
-          args: [
-            chunk.id,
-            document.path,
-            chunk.ordinal,
-            chunk.headingPath.join("\n"),
-            chunk.startLine,
-            chunk.endLine,
-            chunk.text,
-            chunk.textHash,
-            `[${chunk.embedding.join(",")}]`,
-          ],
-        }),
-      ),
+        args: [
+          chunk.id,
+          document.path,
+          chunk.ordinal,
+          chunk.headingPath.join("\n"),
+          chunk.startLine,
+          chunk.endLine,
+          chunk.text,
+          chunk.textHash,
+          `[${chunk.embedding.join(",")}]`,
+        ],
+      })),
     ];
     return repositoryOperation(
       "WriteFailed",
@@ -334,12 +332,10 @@ export const removeSemanticIndexDocuments = (
           "Failed to remove deleted semantic index documents",
           () =>
             client.batch(
-              documentPaths.map(
-                (documentPath): InStatement => ({
-                  sql: "DELETE FROM documents WHERE path = ?",
-                  args: [documentPath],
-                }),
-              ),
+              documentPaths.map((documentPath): InStatement => ({
+                sql: "DELETE FROM documents WHERE path = ?",
+                args: [documentPath],
+              })),
               "write",
             ),
         ).pipe(Effect.asVoid),
@@ -394,13 +390,12 @@ export const searchSemanticIndexExact = (
       );
       const rows = yield* Effect.forEach(result.rows, (row) =>
         decodeSearchRow(row).pipe(
-          Effect.mapError(
-            (cause) =>
-              new SemanticIndexRepositoryError({
-                reason: "InvalidData",
-                message: "Semantic index search result is invalid",
-                cause,
-              }),
+          Effect.mapError((cause) =>
+            SemanticIndexRepositoryError.make({
+              reason: "InvalidData",
+              message: "Semantic index search result is invalid",
+              cause,
+            }),
           ),
         ),
       );

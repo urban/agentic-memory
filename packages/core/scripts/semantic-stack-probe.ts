@@ -28,23 +28,19 @@ import {
 } from "../src/semantic/EmbeddingModel.ts";
 import { SemanticIndexResult } from "../src/semantic/SemanticIndex.ts";
 
-class ProbePrerequisiteError extends Schema.TaggedErrorClass<ProbePrerequisiteError>()(
+class ProbePrerequisiteError extends Schema.TaggedError<ProbePrerequisiteError>()(
   "ProbePrerequisiteError",
   { message: Schema.String },
 ) {}
 
-class ProbeInvariantError extends Schema.TaggedErrorClass<ProbeInvariantError>()(
-  "ProbeInvariantError",
-  { message: Schema.String },
-) {}
+class ProbeInvariantError extends Schema.TaggedError<ProbeInvariantError>()("ProbeInvariantError", {
+  message: Schema.String,
+}) {}
 
-class ProbeOperationError extends Schema.TaggedErrorClass<ProbeOperationError>()(
-  "ProbeOperationError",
-  {
-    message: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {}
+class ProbeOperationError extends Schema.TaggedError<ProbeOperationError>()("ProbeOperationError", {
+  message: Schema.String,
+  cause: Schema.Defect(),
+}) {}
 
 const IndexResultJson = Schema.fromJsonString(SemanticIndexResult).annotate({
   identifier: "SemanticStackProbeIndexResultJson",
@@ -76,12 +72,12 @@ const expectedLifecycle = [
 ];
 
 const requireProbe = (condition: boolean, message: string) =>
-  condition ? Effect.void : Effect.fail(new ProbeInvariantError({ message }));
+  condition ? Effect.void : Effect.fail(ProbeInvariantError.make({ message }));
 
 const operation =
   (message: string) =>
   <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, ProbeOperationError, R> =>
-    effect.pipe(Effect.mapError((cause) => new ProbeOperationError({ message, cause })));
+    effect.pipe(Effect.mapError((cause) => ProbeOperationError.make({ message, cause })));
 
 const lifecycleEvents = (stderr: string): ReadonlyArray<string> =>
   stderr
@@ -192,7 +188,7 @@ const inspectStoredVectors = Effect.fnUntraced(function* (databasePath: string) 
   const client = yield* Effect.try({
     try: () => createClient({ url: databaseUrl.href, intMode: "number" }),
     catch: (cause) =>
-      new ProbeOperationError({ message: "Failed to open the semantic index database", cause }),
+      ProbeOperationError.make({ message: "Failed to open the semantic index database", cause }),
   });
 
   return yield* Effect.gen(function* () {
@@ -202,11 +198,11 @@ const inspectStoredVectors = Effect.fnUntraced(function* (databasePath: string) 
           (SELECT COUNT(*) FROM documents) AS document_count,
           (SELECT COUNT(*) FROM chunks) AS chunk_count`),
       catch: (cause) =>
-        new ProbeOperationError({ message: "Failed to inspect semantic index counts", cause }),
+        ProbeOperationError.make({ message: "Failed to inspect semantic index counts", cause }),
     });
     const countRow = countsResult.rows[0];
     if (countRow === undefined) {
-      return yield* new ProbeInvariantError({ message: "Semantic index counts were omitted" });
+      return yield* ProbeInvariantError.make({ message: "Semantic index counts were omitted" });
     }
     const counts = yield* decodeIndexCountRow(countRow).pipe(
       operation("Semantic index counts were invalid"),
@@ -215,7 +211,7 @@ const inspectStoredVectors = Effect.fnUntraced(function* (databasePath: string) 
     const vectorResult = yield* Effect.tryPromise({
       try: () => client.execute("SELECT vector_extract(embedding) AS embedding FROM chunks"),
       catch: (cause) =>
-        new ProbeOperationError({ message: "Failed to extract stored semantic vectors", cause }),
+        ProbeOperationError.make({ message: "Failed to extract stored semantic vectors", cause }),
     });
     const vectors = yield* Effect.forEach(vectorResult.rows, (row) =>
       decodeVectorRow(row).pipe(
@@ -238,14 +234,20 @@ const inspectStoredVectors = Effect.fnUntraced(function* (databasePath: string) 
       chunkCount: counts.chunk_count,
       validatedVectorCount: vectors.length,
     };
-  }).pipe(Effect.ensuring(Effect.sync(() => client.close())));
+  }).pipe(
+    Effect.ensuring(
+      Effect.sync(() => {
+        client.close();
+      }),
+    ),
+  );
 });
 
 const program = Effect.scoped(
   Effect.gen(function* () {
     const optIn = yield* Config.string("AGENTIC_MEMORY_SEMANTIC_PROBE").pipe(Config.option);
     if (!Option.contains(optIn, "1")) {
-      return yield* new ProbePrerequisiteError({
+      return yield* ProbePrerequisiteError.make({
         message:
           "Set AGENTIC_MEMORY_SEMANTIC_PROBE=1 to run the model/native production-composition probe.",
       });
@@ -253,12 +255,12 @@ const program = Effect.scoped(
 
     const residencyGuard = yield* Config.string("GGML_METAL_NO_RESIDENCY").pipe(Config.option);
     if (Option.isSome(residencyGuard)) {
-      return yield* new ProbePrerequisiteError({
+      return yield* ProbePrerequisiteError.make({
         message: "Unset GGML_METAL_NO_RESIDENCY before running the sustained lifecycle proof.",
       });
     }
     if (process.platform !== "darwin" || process.arch !== "arm64") {
-      return yield* new ProbePrerequisiteError({
+      return yield* ProbePrerequisiteError.make({
         message: `The sustained lifecycle proof requires darwin-arm64; received ${process.platform}-${process.arch}.`,
       });
     }
@@ -267,7 +269,7 @@ const program = Effect.scoped(
     );
     const synthesisEndpoint = yield* requireSemanticStackProbeSynthesisEndpoint(
       Option.getOrUndefined(synthesisEndpointConfig),
-    ).pipe(Effect.mapError((cause) => new ProbePrerequisiteError({ message: cause.message })));
+    ).pipe(Effect.mapError((cause) => ProbePrerequisiteError.make({ message: cause.message })));
 
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;

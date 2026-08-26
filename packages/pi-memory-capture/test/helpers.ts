@@ -1,5 +1,4 @@
-// @effect-diagnostics nodeBuiltinImport:off
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -77,7 +76,7 @@ export const makeCustomMarkerEntry = (
   id: string,
   marker: unknown,
   parentId: string | null = null,
-): CustomEntry<unknown> => ({
+): CustomEntry => ({
   type: "custom",
   id,
   parentId,
@@ -132,7 +131,7 @@ export const makeSessionManager = (branch: ReadonlyArray<SessionEntry>) => {
     getLeafId: () => branch.at(-1)?.id ?? null,
     getLeafEntry: () => branch.at(-1),
     getEntry: (id: string) => byId.get(id),
-    getLabel: (_id: string) => undefined,
+    getLabel: (_id: string) => {},
     getBranch: () => [...branch],
     getHeader: () => header,
     getEntries: () => [...branch],
@@ -141,9 +140,11 @@ export const makeSessionManager = (branch: ReadonlyArray<SessionEntry>) => {
         entry,
         children: [],
       })),
-    getSessionName: () => undefined,
+    getSessionName: () => {},
   };
 };
+
+export const joinPath = join;
 
 export const createTempDirectory = (prefix: string): string => mkdtempSync(join(tmpdir(), prefix));
 
@@ -154,4 +155,10 @@ export const removeTempDirectory = (path: string): void => {
 export const writeFile = (path: string, content: string): void => {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, content);
+};
+
+export const readFile = (path: string): string => readFileSync(path, "utf8");
+
+export const createSymlink = (target: string, path: string): void => {
+  symlinkSync(target, path);
 };

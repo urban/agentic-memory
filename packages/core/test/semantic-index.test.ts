@@ -47,13 +47,13 @@ import {
 import { initVaultFromTemplate } from "../src/vault/VaultTemplate.ts";
 import { VaultRepository, VaultRepositoryLive } from "../src/vault/VaultRepository.ts";
 
-interface FakeModelControl {
+type FakeModelControl = {
   calls: number;
   availability?: "available" | "missing";
   failOnText?: string;
   inspections?: number;
   invalidVectors?: "wrong_dimension" | "non_finite";
-}
+};
 
 const fakeFileInfo = (type: FileSystem.File.Type): FileSystem.File.Info => ({
   type,
@@ -117,7 +117,9 @@ const makeControlledModelLayer = (control: FakeModelControl): Layer.Layer<Embedd
             : control.failOnText !== undefined &&
                 texts.some((text) => text.includes(control.failOnText ?? ""))
               ? Effect.fail(
-                  new EmbeddingRuntimeError({ message: `Rejected ${control.failOnText} for test` }),
+                  EmbeddingRuntimeError.make({
+                    message: `Rejected ${control.failOnText} for test`,
+                  }),
                 )
               : Effect.succeed(texts.map(fakeVector));
       },
@@ -783,7 +785,10 @@ describe("semantic index workflow with native libSQL", () => {
                   databaseAfterInvalidInspection,
                 };
               }),
-            (resource) => Effect.sync(() => resource.close()),
+            (resource) =>
+              Effect.sync(() => {
+                resource.close();
+              }),
           );
           const {
             incomplete,
@@ -1021,7 +1026,10 @@ describe("semantic index workflow with native libSQL", () => {
                 );
                 return { incomplete, incompleteGuard, mismatched, mismatchedGuard };
               }),
-            (resource) => Effect.sync(() => resource.close()),
+            (resource) =>
+              Effect.sync(() => {
+                resource.close();
+              }),
           );
 
           assert.strictEqual(inspections.incomplete.index.status, "incomplete");
@@ -1295,7 +1303,10 @@ describe("semantic index workflow with native libSQL", () => {
                 Effect.sync(() => createClient({ url: databaseUrl.href })),
                 (client) =>
                   Effect.promise(() => client.execute("CREATE TABLE unrelated (id TEXT)")),
-                (client) => Effect.sync(() => client.close()),
+                (client) =>
+                  Effect.sync(() => {
+                    client.close();
+                  }),
               );
             }
 
@@ -1356,7 +1367,10 @@ describe("semantic index workflow with native libSQL", () => {
             const databaseUrl = yield* path.toFileUrl(databasePath);
             const client = yield* Effect.acquireRelease(
               Effect.sync(() => createClient({ url: databaseUrl.href, intMode: "number" })),
-              (resource) => Effect.sync(() => resource.close()),
+              (resource) =>
+                Effect.sync(() => {
+                  resource.close();
+                }),
             );
             yield* Effect.promise(() => client.execute(updateSql));
 
@@ -1410,7 +1424,10 @@ describe("semantic index workflow with native libSQL", () => {
           const databaseUrl = yield* path.toFileUrl(databasePath);
           const client = yield* Effect.acquireRelease(
             Effect.sync(() => createClient({ url: databaseUrl.href, intMode: "number" })),
-            (resource) => Effect.sync(() => resource.close()),
+            (resource) =>
+              Effect.sync(() => {
+                resource.close();
+              }),
           );
           yield* Effect.promise(() => client.execute("DELETE FROM index_metadata WHERE id = 1"));
 

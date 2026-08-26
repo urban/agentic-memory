@@ -30,7 +30,7 @@ const validateRecallQuestion = (question: string): Effect.Effect<string, RecallE
   const trimmed = question.trim();
   if (trimmed.length === 0) {
     return Effect.fail(
-      new RecallError({
+      RecallError.make({
         reason: "InvalidQuestion",
         message: "Recall question must not be empty or whitespace.",
       }),
@@ -38,7 +38,7 @@ const validateRecallQuestion = (question: string): Effect.Effect<string, RecallE
   }
   return isUnsupportedMultipartQuestion(trimmed)
     ? Effect.fail(
-        new RecallError({
+        RecallError.make({
           reason: "UnsupportedMultipartQuestion",
           message: "Recall supports one factual question at a time; use separate recall commands.",
         }),
@@ -65,7 +65,7 @@ const toRecallReadinessError = (cause: SemanticIndexError): RecallError => {
               : cause.reason === "IncompatibleIndex"
                 ? "SemanticIndexIncompatible"
                 : "SemanticIndexNotReady";
-  return new RecallError({
+  return RecallError.make({
     reason,
     message: cause.message,
     cause,
@@ -85,7 +85,7 @@ const toRecallSynthesisError = (cause: RecallSynthesisError): RecallError => {
             : cause.reason === "ServerIncompatible"
               ? "SynthesisServerIncompatible"
               : "SynthesisStructuredOutputFailed";
-  return new RecallError({ reason, message: cause.message, cause });
+  return RecallError.make({ reason, message: cause.message, cause });
 };
 
 export const recall = Effect.fnUntraced(function* (
@@ -101,30 +101,28 @@ export const recall = Effect.fnUntraced(function* (
   );
   const model = yield* EmbeddingModel;
   const queryVectors = yield* model.embed([formatQueryEmbeddingInput(question)]).pipe(
-    Effect.mapError(
-      (cause) =>
-        new RecallError({
-          reason: "QueryEmbeddingFailed",
-          message: "Failed to embed the recall question",
-          cause,
-        }),
+    Effect.mapError((cause) =>
+      RecallError.make({
+        reason: "QueryEmbeddingFailed",
+        message: "Failed to embed the recall question",
+        cause,
+      }),
     ),
   );
   const query = queryVectors[0];
   if (query === undefined) {
-    return yield* new RecallError({
+    return yield* RecallError.make({
       reason: "QueryEmbeddingFailed",
       message: "The embedding model omitted the recall question vector",
     });
   }
   const hits = yield* searchSemanticIndex(request.vaultPath, query, 10).pipe(
-    Effect.mapError(
-      (cause) =>
-        new RecallError({
-          reason: "SemanticSearchFailed",
-          message: "Failed to search Agentic Memory",
-          cause,
-        }),
+    Effect.mapError((cause) =>
+      RecallError.make({
+        reason: "SemanticSearchFailed",
+        message: "Failed to search Agentic Memory",
+        cause,
+      }),
     ),
   );
   yield* requireCurrentSemanticIndex(request.vaultPath).pipe(
@@ -133,13 +131,12 @@ export const recall = Effect.fnUntraced(function* (
   const candidates: Array<RecallEvidenceCandidate> = [];
   for (const hit of hits) {
     const hydrated = yield* hydrateSemanticRecallCandidate(request.vaultPath, hit).pipe(
-      Effect.mapError(
-        (cause) =>
-          new RecallError({
-            reason: "EvidenceHydrationFailed",
-            message: cause.message,
-            cause,
-          }),
+      Effect.mapError((cause) =>
+        RecallError.make({
+          reason: "EvidenceHydrationFailed",
+          message: cause.message,
+          cause,
+        }),
       ),
     );
     const prepared = prepareSafeRecallEvidence(hydrated);
@@ -161,13 +158,12 @@ export const recall = Effect.fnUntraced(function* (
     .synthesize({ question, evidence: packet })
     .pipe(Effect.mapError(toRecallSynthesisError));
   const grounded = yield* validateRecallGrounding(packet, result).pipe(
-    Effect.mapError(
-      (cause) =>
-        new RecallError({
-          reason: "GroundingValidationFailed",
-          message: cause.message,
-          cause,
-        }),
+    Effect.mapError((cause) =>
+      RecallError.make({
+        reason: "GroundingValidationFailed",
+        message: cause.message,
+        cause,
+      }),
     ),
   );
   return grounded.status === "answered"

@@ -64,15 +64,12 @@ export default function memoryCapture(pi: ExtensionAPI) {
           signal: event.signal,
         },
       )
-      .catch((error) => {
+      .catch((error: unknown) => {
         if (event.signal.aborted) {
           return;
         }
 
-        return notifyUnexpectedError(
-          ctx,
-          "Automatic capture failed before tree navigation.",
-        )(error);
+        notifyUnexpectedError(ctx, "Automatic capture failed before tree navigation.")(error);
       }),
   );
 

@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json.schemastore.org/tsconfig",
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "declaration": true,
+    "rootDir": ".",
+    "tsBuildInfoFile": "./node_modules/.cache/tsconfig.src.tsbuildinfo",
+    "types": ["bun", "node"]
+  },
+  "include": ["packages/*/src/**/*.ts"],
+  "exclude": ["node_modules", "coverage", "dist"]
+}

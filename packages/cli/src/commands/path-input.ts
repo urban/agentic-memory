@@ -1,14 +1,14 @@
 import { AbsolutePath, decodeAbsolutePath } from "@urban/agentic-memory-core/link/LinkConfig";
 import { Effect, FileSystem, Option, Path, Schema } from "effect";
 import { CliError, Flag } from "effect/unstable/cli";
-import { toFailure } from "../output.ts";
+import { toFailure } from "../failures.ts";
 
 type CliCommandFailure = import("../output.ts").CliCommandFailure;
 
-export interface InvocationDirectory {
+export type InvocationDirectory = {
   readonly path: AbsolutePath;
   readonly explicit: boolean;
-}
+};
 
 const PathInput = Schema.NonEmptyString.annotate({ identifier: "CliPathInput" });
 const decodePathInput = Schema.decodeUnknownEffect(PathInput);

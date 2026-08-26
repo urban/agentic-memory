@@ -28,7 +28,7 @@ export type CaptureConfigState = typeof CaptureConfigState.Type;
 type ResolvedProjectConfig = LinkConfig;
 type LocalPaths = LocalLinkPaths;
 
-export class CaptureConfigServiceError extends Schema.TaggedErrorClass<CaptureConfigServiceError>()(
+export class CaptureConfigServiceError extends Schema.TaggedError<CaptureConfigServiceError>()(
   "CaptureConfigServiceError",
   {
     message: Schema.String,
@@ -36,10 +36,10 @@ export class CaptureConfigServiceError extends Schema.TaggedErrorClass<CaptureCo
   },
 ) {}
 
-export interface EnvironmentOverrides {
+export type EnvironmentOverrides = {
   readonly vaultOverride: string | undefined;
   readonly cliBinary: string | undefined;
-}
+};
 
 const CORE_INVALID_CONFIG_PREFIX = "Invalid .agentic-memory-link/config.json:";
 
@@ -49,7 +49,7 @@ const translateLoadErrorMessage = (message: string): string =>
     : message;
 
 const translateWriteError = (error: LinkConfigError): CaptureConfigServiceError =>
-  new CaptureConfigServiceError({
+  CaptureConfigServiceError.make({
     message: error.message,
     cause: error,
   });

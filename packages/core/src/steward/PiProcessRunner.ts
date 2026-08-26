@@ -19,13 +19,13 @@ type StewardRunOptions = import("./StewardExecution.ts").StewardRunOptions;
 type StewardRunnerRequest = import("./StewardExecution.ts").StewardRunnerRequest;
 type StewardSessionPointer = import("./StewardExecution.ts").StewardSessionPointer;
 
-export interface PiProcessCommand {
+export type PiProcessCommand = {
   readonly command: string;
   readonly args: ReadonlyArray<string>;
   readonly cwd: string;
   readonly timeoutMillis: number | undefined;
   readonly sessionName: string;
-}
+};
 
 const AssistantMessageEndEvent = Schema.Struct({
   type: Schema.Literal("message_end"),
@@ -95,7 +95,7 @@ const processTimeoutMillis = (
     timeoutMillis <= Number.MAX_SAFE_INTEGER
     ? Effect.succeed(timeoutMillis)
     : Effect.fail(
-        new StewardRunnerError({
+        StewardRunnerError.make({
           message: "Memory Steward timeout cannot be represented as finite positive milliseconds",
         }),
       );
@@ -186,7 +186,7 @@ export const extractStewardSessionPointer = (
 
   const header = decodeSessionHeaderEvent(firstLine);
   return Option.match(header, {
-    onNone: () => undefined,
+    onNone: (): undefined => undefined,
     onSome: (value: SessionHeaderEvent) => ({
       sessionId: value.id,
       name: sessionName,
@@ -221,12 +221,11 @@ const runProcess = Effect.fnUntraced(function* (
     stream.pipe(
       Stream.decodeText(),
       Stream.runForEach((chunk) => Ref.update(ref, (current) => current + chunk)),
-      Effect.mapError(
-        (cause) =>
-          new StewardRunnerError({
-            message: `Failed while collecting Memory Steward process ${channel}`,
-            cause,
-          }),
+      Effect.mapError((cause) =>
+        StewardRunnerError.make({
+          message: `Failed while collecting Memory Steward process ${channel}`,
+          cause,
+        }),
       ),
     );
 
@@ -235,12 +234,11 @@ const runProcess = Effect.fnUntraced(function* (
       const stdoutRef = yield* Ref.make("");
       const stderrRef = yield* Ref.make("");
       const handle = yield* spawner.spawn(command).pipe(
-        Effect.mapError(
-          (cause) =>
-            new StewardRunnerError({
-              message: `Failed to launch Memory Steward command: ${processCommand.command}`,
-              cause,
-            }),
+        Effect.mapError((cause) =>
+          StewardRunnerError.make({
+            message: `Failed to launch Memory Steward command: ${processCommand.command}`,
+            cause,
+          }),
         ),
       );
       const stdoutFiber = yield* appendDecodedStream(handle.stdout, stdoutRef, "stdout").pipe(
@@ -262,12 +260,11 @@ const runProcess = Effect.fnUntraced(function* (
           ]),
         ),
         Effect.map(([, , processResult]) => processResult),
-        Effect.mapError(
-          (cause) =>
-            new StewardRunnerError({
-              message: "Failed while collecting Memory Steward process output",
-              cause,
-            }),
+        Effect.mapError((cause) =>
+          StewardRunnerError.make({
+            message: "Failed while collecting Memory Steward process output",
+            cause,
+          }),
         ),
       );
 
@@ -287,7 +284,7 @@ const runProcess = Effect.fnUntraced(function* (
                 processCommand.sessionName,
               );
 
-              return yield* new StewardRunnerError({
+              return yield* StewardRunnerError.make({
                 message: "Timed out waiting for steward final JSON after child process launch",
                 cause: processOutputDiagnostics({ stdout, stderr }),
                 ...(stewardSession === undefined ? {} : { stewardSession }),
@@ -321,7 +318,7 @@ const decodeProcessResult = Effect.fnUntraced(function* (input: {
   );
 
   if (input.processResult.exitCode !== ChildProcessSpawner.ExitCode(0)) {
-    return yield* new StewardRunnerError({
+    return yield* StewardRunnerError.make({
       message: "Steward process exited with non-zero status before emitting final JSON",
       cause: processOutputDiagnostics(input.processResult),
       ...(stewardSession === undefined ? {} : { stewardSession }),
@@ -330,7 +327,7 @@ const decodeProcessResult = Effect.fnUntraced(function* (input: {
 
   const assistantText = extractAssistantText(input.processResult.stdout);
   if (assistantText.trim().length === 0) {
-    return yield* new StewardRunnerError({
+    return yield* StewardRunnerError.make({
       message: "Steward returned EOF before final assistant JSON response was emitted",
       cause: processOutputDiagnostics(input.processResult),
       ...(stewardSession === undefined ? {} : { stewardSession }),
@@ -338,13 +335,12 @@ const decodeProcessResult = Effect.fnUntraced(function* (input: {
   }
 
   const result = yield* decodeStewardResultJson(assistantText).pipe(
-    Effect.mapError(
-      (cause) =>
-        new StewardRunnerError({
-          message: "Steward returned invalid final JSON for capture result schema",
-          cause,
-          ...(stewardSession === undefined ? {} : { stewardSession }),
-        }),
+    Effect.mapError((cause) =>
+      StewardRunnerError.make({
+        message: "Steward returned invalid final JSON for capture result schema",
+        cause,
+        ...(stewardSession === undefined ? {} : { stewardSession }),
+      }),
     ),
   );
 

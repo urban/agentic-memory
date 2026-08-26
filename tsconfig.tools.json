@@ -1,0 +1,12 @@
+{
+  "$schema": "http://json.schemastore.org/tsconfig",
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": ".",
+    "tsBuildInfoFile": "./node_modules/.cache/tsconfig.tools.tsbuildinfo",
+    "types": ["bun", "node"]
+  },
+  "include": ["oxfmt.config.ts", "oxlint.config.ts", "vitest.config.ts", "vitest.setup.ts"],
+  "exclude": ["node_modules", "coverage", "dist"]
+}

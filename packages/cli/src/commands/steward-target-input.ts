@@ -2,7 +2,7 @@ import { loadLinkConfig } from "@urban/agentic-memory-core/link/LinkConfig";
 import { decodeProjectSlug } from "@urban/agentic-memory-core/link/ProjectSlug";
 import { Effect, FileSystem, Option, Path } from "effect";
 import { Flag } from "effect/unstable/cli";
-import { toFailure } from "../output.ts";
+import { toFailure } from "../failures.ts";
 import { resolvePathInput } from "./path-input.ts";
 
 type ProjectSlug = import("@urban/agentic-memory-core/link/ProjectSlug").ProjectSlug;
@@ -10,10 +10,10 @@ type AbsolutePath = import("@urban/agentic-memory-core/link/LinkConfig").Absolut
 type CliCommandFailure = import("../output.ts").CliCommandFailure;
 type InvocationDirectory = import("./path-input.ts").InvocationDirectory;
 
-export interface ResolvedStewardTarget {
+export type ResolvedStewardTarget = {
   readonly vaultPath: AbsolutePath;
   readonly projectSlug: ProjectSlug;
-}
+};
 
 export const optionalVaultFlag = Flag.string("vault").pipe(
   Flag.withDescription("Agentic Memory vault path for direct mode"),

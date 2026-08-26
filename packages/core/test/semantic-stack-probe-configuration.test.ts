@@ -5,9 +5,7 @@ import { requireSemanticStackProbeSynthesisEndpoint } from "../scripts/SemanticS
 describe("semantic stack probe configuration", () => {
   it.effect("requires a valid loopback synthesis endpoint", () =>
     Effect.gen(function* () {
-      const missing = yield* requireSemanticStackProbeSynthesisEndpoint(undefined).pipe(
-        Effect.flip,
-      );
+      const missing = yield* requireSemanticStackProbeSynthesisEndpoint().pipe(Effect.flip);
       const publicEndpoint = yield* requireSemanticStackProbeSynthesisEndpoint(
         "http://example.com/v1",
       ).pipe(Effect.flip);

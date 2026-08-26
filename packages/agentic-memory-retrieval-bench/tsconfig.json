@@ -1,14 +1,14 @@
 {
-  "$schema": "https://raw.githubusercontent.com/Effect-TS/tsgo/refs/heads/main/schema.json",
-  "extends": "../../tsconfig.base.jsonc",
+  "$schema": "http://json.schemastore.org/tsconfig",
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    "composite": true,
     "declaration": true,
-    "resolveJsonModule": true,
     "rootDir": ".",
     "outDir": "dist",
     "tsBuildInfoFile": "tsconfig.tsbuildinfo",
     "types": ["bun", "node"]
   },
-  "include": ["package.json", "src/**/*", "test/**/*", "vitest.config.ts"],
+  "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist", "coverage"]
 }

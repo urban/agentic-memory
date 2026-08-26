@@ -3,7 +3,7 @@ import { chunkManagedMemoryDocument } from "../semantic/MarkdownChunking.ts";
 import { parseManagedMemoryDocument, readManagedMemoryDocuments } from "../vault/ManagedMemory.ts";
 type SemanticRecallCandidate = import("../semantic/SemanticIndex.ts").SemanticRecallCandidate;
 
-export class EvidenceHydrationError extends Schema.TaggedErrorClass<EvidenceHydrationError>()(
+export class EvidenceHydrationError extends Schema.TaggedError<EvidenceHydrationError>()(
   "EvidenceHydrationError",
   {
     reason: Schema.Literals([
@@ -25,18 +25,17 @@ export const hydrateSemanticRecallCandidate = Effect.fnUntraced(function* (
     vaultPath,
     ({ path }) => path === candidate.documentPath,
   ).pipe(
-    Effect.mapError(
-      (cause) =>
-        new EvidenceHydrationError({
-          reason: "ReadFailed",
-          message: "Failed to hydrate current Agentic Memory evidence",
-          cause,
-        }),
+    Effect.mapError((cause) =>
+      EvidenceHydrationError.make({
+        reason: "ReadFailed",
+        message: "Failed to hydrate current Agentic Memory evidence",
+        cause,
+      }),
     ),
   );
   const document = documents[0];
   if (document === undefined) {
-    return yield* new EvidenceHydrationError({
+    return yield* EvidenceHydrationError.make({
       reason: "DocumentMissing",
       message: "The selected semantic evidence document is no longer available",
     });
@@ -45,13 +44,13 @@ export const hydrateSemanticRecallCandidate = Effect.fnUntraced(function* (
     ({ ordinal }) => ordinal === candidate.ordinal,
   );
   if (chunk === undefined) {
-    return yield* new EvidenceHydrationError({
+    return yield* EvidenceHydrationError.make({
       reason: "OrdinalMissing",
       message: "The selected semantic evidence ordinal is missing from current Markdown",
     });
   }
   if (chunk.textHash !== candidate.textHash) {
-    return yield* new EvidenceHydrationError({
+    return yield* EvidenceHydrationError.make({
       reason: "ProvenanceMismatch",
       message: "The selected semantic evidence provenance no longer matches current Markdown",
     });

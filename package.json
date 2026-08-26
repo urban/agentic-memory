@@ -9,38 +9,44 @@
   },
   "type": "module",
   "scripts": {
-    "check": "bun run lint && bun run typecheck && bun run test",
-    "lint": "oxlint --fix && oxfmt",
-    "prepare": "husky",
+    "check": "bun run check:static-analysis && bun run format && bun run lint && bun run typecheck && bun run test",
+    "check:static-analysis": "bun run scripts/static-analysis-source.ts",
+    "format": "oxfmt --write -c ./oxfmt.config.ts",
+    "hooks:install": "lefthook install",
+    "lint": "oxlint --fix --tsconfig tsconfig.json -c ./oxlint.config.ts .",
+    "prepare": "effect-tsgo patch --oxlint",
+    "setup": "bun run prepare && bun run hooks:install",
     "start:llama": "set -a; source .env.local; set +a; \"$LLAMA_CPP_HOME/llama-server\" --model \"$AGENTIC_MEMORY_QWEN_MODEL\" --host 127.0.0.1 --port 8080 --alias agentic-memory-qwen3-4b --ctx-size 16384 --jinja --reasoning off --n-gpu-layers 99",
-    "test": "bun --filter='./packages/*' run test",
-    "typecheck": "bun --filter='./packages/*' run typecheck"
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.src.json --noEmit --composite false --incremental false && tsc -p tsconfig.test.json --noEmit --composite false --incremental false && tsc -p tsconfig.tools.json --noEmit --composite false --incremental false && tsc -p tsconfig.scripts.json --noEmit --composite false --incremental false"
   },
   "dependencies": {},
   "devDependencies": {
-    "@effect/tsgo": "0.24.2",
-    "@effect/vitest": "4.0.0-beta.100",
-    "@types/bun": "1.3.14",
-    "@types/node": "26.1.1",
+    "@effect/platform-bun": "4.0.0-rc.108",
+    "@effect/tsgo": "0.36.4",
+    "@effect/vitest": "4.0.0-rc.108",
+    "@modelcontextprotocol/sdk": "latest",
+    "@types/async-retry": "latest",
+    "@types/bun": "1.4.0",
+    "@types/node": "26.3.0",
     "@vitest/coverage-v8": "4.1.10",
-    "husky": "9.1.7",
-    "lint-staged": "17.1.0",
-    "oxfmt": "0.59.0",
-    "oxlint": "1.74.0",
+    "lefthook": "2.1.10",
+    "oxc-parser": "0.144.0",
+    "oxfmt": "0.65.0",
+    "oxlint": "1.77.0",
+    "oxlint-tsgolint": "7.0.2001",
     "typescript": "7.0.2",
+    "undici-types": "latest",
+    "vite": "7.3.3",
     "vitest": "4.1.10"
   },
-  "lint-staged": {
-    "*.{ts,tsx}": [
-      "oxfmt",
-      "oxlint --fix"
-    ],
-    "*.{css,html,json,jsonc,md,mdx,yml,yaml}": [
-      "oxfmt"
-    ]
+  "overrides": {
+    "@effect/platform-node-shared": "4.0.0-rc.108"
   },
   "engines": {
     "node": ">= 24.12.0"
   },
-  "packageManager": "bun@1.3.5"
+  "packageManager": "bun@1.3.14"
 }

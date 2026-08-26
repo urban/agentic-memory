@@ -66,7 +66,7 @@ const makeGate = (
 });
 
 const normalizeAnswerText = (input: string): string =>
-  input.toLowerCase().replace(/\s+/gu, " ").trim();
+  input.toLowerCase().replaceAll(/\s+/gu, " ").trim();
 
 export const evaluateHardGates = (input: {
   readonly benchmarkCase: HardGateBenchmarkCase;

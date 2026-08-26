@@ -1,13 +1,16 @@
-// @effect-diagnostics-next-line nodeBuiltinImport:off
-import { readFileSync, symlinkSync } from "node:fs";
 import * as BunFileSystem from "@effect/platform-bun/BunFileSystem";
 import * as BunPath from "@effect/platform-bun/BunPath";
 import { ConfigProvider, Effect, Layer, ManagedRuntime } from "effect";
-// @effect-diagnostics-next-line nodeBuiltinImport:off
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { CaptureConfig } from "../../src/services/CaptureConfig.ts";
-import { createTempDirectory, removeTempDirectory, writeFile } from "../helpers.ts";
+import {
+  createSymlink,
+  createTempDirectory,
+  joinPath as join,
+  readFile,
+  removeTempDirectory,
+  writeFile,
+} from "../helpers.ts";
 
 const InfrastructureLayer = Layer.mergeAll(BunFileSystem.layer, BunPath.layer);
 const CaptureConfigTestLayer = CaptureConfig.layer.pipe(Layer.provide(InfrastructureLayer));
@@ -31,7 +34,9 @@ describe("CaptureConfig", () => {
           expect(loaded.paths.configFile).toBe(join(cwd, ".agentic-memory-link", "config.json"));
         }
       }),
-    ).finally(() => removeTempDirectory(root));
+    ).finally(() => {
+      removeTempDirectory(root);
+    });
   });
 
   it("loads valid .agentic-memory-link config without overriding its stored vault path", () => {
@@ -77,7 +82,9 @@ describe("CaptureConfig", () => {
           }),
         ),
       ),
-    ).finally(() => removeTempDirectory(root));
+    ).finally(() => {
+      removeTempDirectory(root);
+    });
   });
 
   it("rejects invalid project links and missing steward contracts", () => {
@@ -100,7 +107,9 @@ describe("CaptureConfig", () => {
           expect(loaded.message).toContain("Invalid config JSON");
         }
       }),
-    ).finally(() => removeTempDirectory(root));
+    ).finally(() => {
+      removeTempDirectory(root);
+    });
   });
 
   it("reports valid link configs as invalid when the target vault is unhealthy", () => {
@@ -134,7 +143,9 @@ describe("CaptureConfig", () => {
           );
         }
       }),
-    ).finally(() => removeTempDirectory(root));
+    ).finally(() => {
+      removeTempDirectory(root);
+    });
   });
 
   it("writes only config.json under the link directory", () => {
@@ -152,9 +163,11 @@ describe("CaptureConfig", () => {
         });
 
         expect(paths.directory.endsWith(".agentic-memory-link")).toBe(true);
-        expect(readFileSync(paths.configFile, "utf8")).toContain("capture-extension");
+        expect(readFile(paths.configFile)).toContain("capture-extension");
       }),
-    ).finally(() => removeTempDirectory(root));
+    ).finally(() => {
+      removeTempDirectory(root);
+    });
   });
 
   it("rejects symlinked config files instead of reading through them", () => {
@@ -169,7 +182,7 @@ describe("CaptureConfig", () => {
       '{"version":1,"vaultPath":"/vault-a","projectSlug":"capture-extension"}\n',
     );
     writeFile(join(localDirectory, ".gitkeep"), "");
-    symlinkSync(targetFile, join(localDirectory, "config.json"));
+    createSymlink(targetFile, join(localDirectory, "config.json"));
 
     return CaptureConfigRuntime.runPromise(
       Effect.gen(function* () {
@@ -181,7 +194,9 @@ describe("CaptureConfig", () => {
           expect(loaded.message).toContain("must not be a symlink");
         }
       }),
-    ).finally(() => removeTempDirectory(root));
+    ).finally(() => {
+      removeTempDirectory(root);
+    });
   });
 
   it("rejects symlinked config targets instead of overwriting them", () => {
@@ -193,7 +208,7 @@ describe("CaptureConfig", () => {
     writeFile(join(cwd, "README.md"), "# project\n");
     writeFile(targetFile, '{"version":1,"vaultPath":"/vault-a","projectSlug":"old-project"}\n');
     writeFile(join(localDirectory, ".gitkeep"), "");
-    symlinkSync(targetFile, join(localDirectory, "config.json"));
+    createSymlink(targetFile, join(localDirectory, "config.json"));
 
     return CaptureConfigRuntime.runPromise(
       Effect.gen(function* () {
@@ -207,11 +222,13 @@ describe("CaptureConfig", () => {
           .pipe(Effect.exit);
 
         expect(written._tag).toBe("Failure");
-        expect(readFileSync(targetFile, "utf8")).toBe(
+        expect(readFile(targetFile)).toBe(
           '{"version":1,"vaultPath":"/vault-a","projectSlug":"old-project"}\n',
         );
       }),
-    ).finally(() => removeTempDirectory(root));
+    ).finally(() => {
+      removeTempDirectory(root);
+    });
   });
 
   it("rejects symlinked link directories before creating config files", () => {
@@ -221,7 +238,7 @@ describe("CaptureConfig", () => {
 
     writeFile(join(cwd, "README.md"), "# project\n");
     writeFile(join(outsideDirectory, ".gitkeep"), "");
-    symlinkSync(outsideDirectory, join(cwd, ".agentic-memory-link"));
+    createSymlink(outsideDirectory, join(cwd, ".agentic-memory-link"));
 
     return CaptureConfigRuntime.runPromise(
       Effect.gen(function* () {
@@ -235,8 +252,10 @@ describe("CaptureConfig", () => {
           .pipe(Effect.exit);
 
         expect(written._tag).toBe("Failure");
-        expect(readFileSync(join(outsideDirectory, ".gitkeep"), "utf8")).toBe("");
+        expect(readFile(join(outsideDirectory, ".gitkeep"))).toBe("");
       }),
-    ).finally(() => removeTempDirectory(root));
+    ).finally(() => {
+      removeTempDirectory(root);
+    });
   });
 });

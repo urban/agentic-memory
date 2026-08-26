@@ -12,14 +12,10 @@ type HttpClientResponseValue = import("effect/unstable/http/HttpClientResponse")
 type HttpClientErrorValue = import("effect/unstable/http/HttpClientError").HttpClientError;
 
 const GeneratedJsonSchema = Schema.Struct({
-  anyOf: Schema.Array(
-    Schema.Struct({
-      type: Schema.Literal("object"),
-      properties: Schema.Record(Schema.String, Schema.Unknown),
-      required: Schema.Array(Schema.String),
-      additionalProperties: Schema.Literal(false),
-    }),
-  ),
+  type: Schema.Literal("object"),
+  properties: Schema.Record(Schema.String, Schema.Unknown),
+  required: Schema.Array(Schema.String),
+  additionalProperties: Schema.Literal(false),
 });
 
 const CompatibilityRequest = Schema.Struct({
@@ -187,21 +183,16 @@ describe("local Qwen compatibility spike", () => {
               request.model === LOCAL_SYNTHESIS_MODEL_ALIAS &&
               request.temperature === 0 &&
               request.max_tokens === 768 &&
-              request.chat_template_kwargs.enable_thinking === false &&
+              !request.chat_template_kwargs.enable_thinking &&
               request.response_format.type === "json_schema" &&
               request.response_format.json_schema.strict,
           ),
         );
         assert.isTrue(
           decodedRequests.every(
-            (request) => request.response_format.json_schema.schema.anyOf.length === 2,
-          ),
-        );
-        assert.isTrue(
-          decodedRequests.every((request) =>
-            request.response_format.json_schema.schema.anyOf.every(
-              (branch) => branch.additionalProperties === false,
-            ),
+            (request) =>
+              request.response_format.json_schema.schema.required.includes("status") &&
+              !request.response_format.json_schema.schema.additionalProperties,
           ),
         );
       });

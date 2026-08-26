@@ -37,12 +37,23 @@ export const RecallSynthesisOutput = Schema.Union([
 ]).annotate({ identifier: "RecallSynthesisOutput" });
 export type RecallSynthesisOutput = typeof RecallSynthesisOutput.Type;
 
-export interface RecallSynthesisInput {
+export const RecallSynthesisGenerationOutput = Schema.Struct({
+  status: Schema.Literals(["answered", "not_found"]),
+  answer: Schema.optional(TrimmedNonEmptyString),
+  claim: Schema.optional(TrimmedNonEmptyString),
+  evidenceIds: Schema.optional(Schema.Array(TrimmedNonEmptyString).check(Schema.isMinLength(1))),
+  providerModelIdentity: Schema.optional(Schema.Literals(["absent", "present"])),
+}).annotate({
+  identifier: "RecallSynthesisGenerationOutput",
+  parseOptions: { onExcessProperty: "error" },
+});
+
+export type RecallSynthesisInput = {
   readonly question: string;
   readonly evidence: RecallEvidencePacket;
-}
+};
 
-export class RecallSynthesisError extends Schema.TaggedErrorClass<RecallSynthesisError>()(
+export class RecallSynthesisError extends Schema.TaggedError<RecallSynthesisError>()(
   "RecallSynthesisError",
   {
     reason: Schema.Literals([
@@ -103,20 +114,20 @@ const mapAiError = (cause: AiError.AiError): RecallSynthesisError => {
   switch (cause.reason._tag) {
     case "NetworkError":
     case "InternalProviderError":
-      return new RecallSynthesisError({
+      return RecallSynthesisError.make({
         reason: "ServerUnavailable",
         message: "The local synthesis server is unavailable",
         cause,
       });
     case "InvalidOutputError":
     case "StructuredOutputError":
-      return new RecallSynthesisError({
+      return RecallSynthesisError.make({
         reason: "MalformedStructuredOutput",
         message: "The local synthesis response did not match the required structured output",
         cause,
       });
     default:
-      return new RecallSynthesisError({
+      return RecallSynthesisError.make({
         reason: "ServerIncompatible",
         message: "The local synthesis server is incompatible with the required structured request",
         cause,
@@ -130,14 +141,14 @@ export const generateRecallSynthesis = Effect.fnUntraced(function* (
   const response = yield* LanguageModel.generateObject({
     objectName: "agentic_memory_recall_result",
     prompt: makeRecallSynthesisPrompt(input),
-    schema: RecallSynthesisOutput,
+    schema: RecallSynthesisGenerationOutput,
   }).pipe(
     Effect.mapError(mapAiError),
     Effect.timeoutOrElse({
       duration: LOCAL_SYNTHESIS_TIMEOUT,
       orElse: () =>
         Effect.fail(
-          new RecallSynthesisError({
+          RecallSynthesisError.make({
             reason: "ServerUnavailable",
             message: "The local synthesis server did not respond within 60 seconds",
           }),
@@ -146,32 +157,38 @@ export const generateRecallSynthesis = Effect.fnUntraced(function* (
   );
 
   if (response.reasoning.length > 0) {
-    return yield* new RecallSynthesisError({
+    return yield* RecallSynthesisError.make({
       reason: "ServerIncompatible",
       message: "The local synthesis server returned reasoning despite non-thinking mode",
     });
   }
-  return response.value;
+  return yield* Schema.decodeUnknownEffect(RecallSynthesisOutput)(response.value).pipe(
+    Effect.mapError((cause) =>
+      RecallSynthesisError.make({
+        reason: "MalformedStructuredOutput",
+        message: "The local synthesis response did not match the required structured output",
+        cause,
+      }),
+    ),
+  );
 });
 
 export const validateLocalSynthesisEndpoint = Effect.fnUntraced(function* (
   input: unknown,
 ): Effect.fn.Return<string, RecallSynthesisError> {
   if (input === undefined) {
-    return yield* new RecallSynthesisError({
+    return yield* RecallSynthesisError.make({
       reason: "MissingConfiguration",
       message: "AGENTIC_MEMORY_SYNTHESIS_URL is not configured",
     });
   }
   return yield* validateEndpoint(input).pipe(
-    Effect.mapError(
-      (cause) =>
-        new RecallSynthesisError({
-          reason:
-            cause.reason === "NonLoopbackHost" ? "NonLoopbackEndpoint" : "InvalidConfiguration",
-          message: cause.message,
-          cause,
-        }),
+    Effect.mapError((cause) =>
+      RecallSynthesisError.make({
+        reason: cause.reason === "NonLoopbackHost" ? "NonLoopbackEndpoint" : "InvalidConfiguration",
+        message: cause.message,
+        cause,
+      }),
     ),
   );
 });
@@ -218,13 +235,12 @@ export const makeLocalRecallSynthesisLayer = (
 const configuredEndpoint = Config.string("AGENTIC_MEMORY_SYNTHESIS_URL").pipe(
   Config.option,
   Effect.map(Option.getOrUndefined),
-  Effect.mapError(
-    (cause) =>
-      new RecallSynthesisError({
-        reason: "InvalidConfiguration",
-        message: "Failed to read AGENTIC_MEMORY_SYNTHESIS_URL",
-        cause,
-      }),
+  Effect.mapError((cause) =>
+    RecallSynthesisError.make({
+      reason: "InvalidConfiguration",
+      message: "Failed to read AGENTIC_MEMORY_SYNTHESIS_URL",
+      cause,
+    }),
   ),
 );
 

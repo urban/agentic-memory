@@ -5,7 +5,7 @@ import { Markers } from "../services/Markers.ts";
 type SessionEntry = import("@earendil-works/pi-coding-agent").SessionEntry;
 type CaptureConfigState = import("../services/CaptureConfig.ts").CaptureConfigState;
 
-export interface StatusResult {
+export type StatusResult = {
   readonly config: CaptureConfigState;
   readonly latestObservationSummary: string | undefined;
   readonly latestObservationStatus: string | undefined;
@@ -13,7 +13,7 @@ export interface StatusResult {
   readonly latestScheduleStatus: string | undefined;
   readonly automaticCaptureEnabled: boolean;
   readonly warnings: ReadonlyArray<string>;
-}
+};
 
 export const loadStatus = (
   cwd: string,

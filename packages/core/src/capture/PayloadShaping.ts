@@ -21,15 +21,15 @@ const SECRET_ASSIGNMENT_PATTERN =
   /^([A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|PRIVATE)[A-Z0-9_]*\s*=\s*)(.+)$/gm;
 const MULTI_BLANK_LINES_PATTERN = /\n{4,}/g;
 
-export interface ShapeableCaptureMessage {
+export type ShapeableCaptureMessage = {
   readonly role: CaptureMessageRole;
   readonly text: string;
-}
+};
 
-export interface ShapeCapturePayloadInput {
+export type ShapeCapturePayloadInput = {
   readonly projectSlug: string;
   readonly messages: ReadonlyArray<ShapeableCaptureMessage>;
-}
+};
 
 export type ShapeCapturePayloadResult =
   | {
@@ -54,21 +54,21 @@ export const truncateWithSuffix = (value: string, maxChars: number, suffix: stri
 
 export const redactSecrets = (value: string): string =>
   value
-    .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/g, "Bearer [REDACTED]")
+    .replaceAll(/Bearer\s+[A-Za-z0-9._~+/=-]+/g, "Bearer [REDACTED]")
     .replace(SECRET_ASSIGNMENT_PATTERN, "$1[REDACTED]")
-    .replace(
+    .replaceAll(
       /-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?-----END [^-]*PRIVATE KEY-----/g,
       "[REDACTED PRIVATE KEY BLOCK]",
     )
-    .replace(/\bgithub_pat_[A-Za-z0-9_]+\b/g, "[REDACTED_GITHUB_TOKEN]")
-    .replace(/\bgh[pousr]_[A-Za-z0-9_]+\b/g, "[REDACTED_GITHUB_TOKEN]")
-    .replace(/\bsk-ant-[A-Za-z0-9_-]{10,}\b/g, "[REDACTED_API_KEY]")
-    .replace(/\bsk-[A-Za-z0-9_-]{20,}\b/g, "[REDACTED_API_KEY]");
+    .replaceAll(/\bgithub_pat_[A-Za-z0-9_]+\b/g, "[REDACTED_GITHUB_TOKEN]")
+    .replaceAll(/\bgh[pousr]_[A-Za-z0-9_]+\b/g, "[REDACTED_GITHUB_TOKEN]")
+    .replaceAll(/\bsk-ant-[A-Za-z0-9_-]{10,}\b/g, "[REDACTED_API_KEY]")
+    .replaceAll(/\bsk-[A-Za-z0-9_-]{20,}\b/g, "[REDACTED_API_KEY]");
 
 export const normalizeMessageText = (value: string): string =>
   value
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n")
+    .replaceAll("\r\n", "\n")
+    .replaceAll("\r", "\n")
     .trim()
     .replace(MULTI_BLANK_LINES_PATTERN, "\n\n");
 

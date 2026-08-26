@@ -60,9 +60,7 @@ const parseInitCommandArgs = (args: string) => {
 };
 
 const promptForMissingValue = (ctx: ExtensionCommandContext, title: string, placeholder: string) =>
-  ctx.hasUI
-    ? Effect.promise(() => ctx.ui.input(title, placeholder))
-    : Effect.void.pipe(Effect.as(undefined));
+  ctx.hasUI ? Effect.promise(() => ctx.ui.input(title, placeholder)) : Effect.void;
 
 const confirmDialog = (ctx: ExtensionCommandContext, title: string, description: string) =>
   ctx.hasUI ? Effect.promise(() => ctx.ui.confirm(title, description)) : Effect.succeed(false);
@@ -86,19 +84,23 @@ export const runInitCommand = Effect.fn("MemoryCapture.runInitCommand")(function
     parsedArgs.vaultPath ??
     vaultOverride ??
     (yield* promptForMissingValue(ctx, "Vault path", "/absolute/path/to/agentic-memory-vault"));
-  if (vaultPath === undefined || vaultPath.trim().length === 0) {
-    yield* Effect.sync(() => notifyError(ctx, "Vault path is required for /memory-capture-init."));
+  if (typeof vaultPath !== "string" || vaultPath.trim().length === 0) {
+    yield* Effect.sync(() => {
+      notifyError(ctx, "Vault path is required for /memory-capture-init.");
+    });
     return;
   }
 
-  const requestedProjectSlug = normalizeProjectSlugInput(
+  const projectSlugInput =
     parsedArgs.projectSlug ??
-      (yield* promptForMissingValue(ctx, "Project link", "[[projects/example-project]]")),
+    (yield* promptForMissingValue(ctx, "Project link", "[[projects/example-project]]"));
+  const requestedProjectSlug = normalizeProjectSlugInput(
+    typeof projectSlugInput === "string" ? projectSlugInput : undefined,
   );
   if (requestedProjectSlug === undefined) {
-    yield* Effect.sync(() =>
-      notifyError(ctx, "Project link or slug is required for /memory-capture-init."),
-    );
+    yield* Effect.sync(() => {
+      notifyError(ctx, "Project link or slug is required for /memory-capture-init.");
+    });
     return;
   }
 
@@ -110,12 +112,12 @@ export const runInitCommand = Effect.fn("MemoryCapture.runInitCommand")(function
 
   if (plan.overwriteConflict !== undefined) {
     if (!ctx.hasUI) {
-      yield* Effect.sync(() =>
+      yield* Effect.sync(() => {
         notifyError(
           ctx,
           "Existing capture config differs. Run /memory-capture-init interactively to confirm overwrite.",
-        ),
-      );
+        );
+      });
       return;
     }
 
@@ -125,19 +127,21 @@ export const runInitCommand = Effect.fn("MemoryCapture.runInitCommand")(function
       `Current: ${plan.overwriteConflict.current.vaultPath} ${plan.overwriteConflict.current.projectSlug}\nNext: ${plan.overwriteConflict.next.vaultPath} ${plan.overwriteConflict.next.projectSlug}`,
     );
     if (!overwrite) {
-      yield* Effect.sync(() => ctx.ui.notify("Initialization cancelled.", "info"));
+      yield* Effect.sync(() => {
+        ctx.ui.notify("Initialization cancelled.", "info");
+      });
       return;
     }
   }
 
   if (plan.projectMissing) {
     if (!ctx.hasUI) {
-      yield* Effect.sync(() =>
+      yield* Effect.sync(() => {
         notifyError(
           ctx,
           "The target project file does not exist in the vault. Run /memory-capture-init interactively to confirm creation.",
-        ),
-      );
+        );
+      });
       return;
     }
 
@@ -147,7 +151,9 @@ export const runInitCommand = Effect.fn("MemoryCapture.runInitCommand")(function
       `Create project ${plan.config.projectSlug} in ${plan.config.vaultPath}?`,
     );
     if (!createProject) {
-      yield* Effect.sync(() => ctx.ui.notify("Initialization cancelled.", "info"));
+      yield* Effect.sync(() => {
+        ctx.ui.notify("Initialization cancelled.", "info");
+      });
       return;
     }
   }

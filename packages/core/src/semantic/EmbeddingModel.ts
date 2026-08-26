@@ -13,12 +13,12 @@ export type EmbeddingModelInspection =
   | { readonly status: "missing"; readonly id: typeof EMBEDDING_MODEL_ID }
   | { readonly status: "available"; readonly id: typeof EMBEDDING_MODEL_ID };
 
-export interface EmbeddingModelInstallResult {
+export type EmbeddingModelInstallResult = {
   readonly status: "downloaded" | "already_available";
   readonly id: typeof EMBEDDING_MODEL_ID;
-}
+};
 
-export class InvalidEmbeddingArtifactError extends Schema.TaggedErrorClass<InvalidEmbeddingArtifactError>()(
+export class InvalidEmbeddingArtifactError extends Schema.TaggedError<InvalidEmbeddingArtifactError>()(
   "InvalidEmbeddingArtifactError",
   {
     message: Schema.String,
@@ -26,7 +26,7 @@ export class InvalidEmbeddingArtifactError extends Schema.TaggedErrorClass<Inval
   },
 ) {}
 
-export class EmbeddingModelDownloadError extends Schema.TaggedErrorClass<EmbeddingModelDownloadError>()(
+export class EmbeddingModelDownloadError extends Schema.TaggedError<EmbeddingModelDownloadError>()(
   "EmbeddingModelDownloadError",
   {
     message: Schema.String,
@@ -34,22 +34,22 @@ export class EmbeddingModelDownloadError extends Schema.TaggedErrorClass<Embeddi
   },
 ) {}
 
-export class EmbeddingModelMissingError extends Schema.TaggedErrorClass<EmbeddingModelMissingError>()(
+export class EmbeddingModelMissingError extends Schema.TaggedError<EmbeddingModelMissingError>()(
   "EmbeddingModelMissingError",
   { message: Schema.String },
 ) {}
 
-export class EmbeddingBatchError extends Schema.TaggedErrorClass<EmbeddingBatchError>()(
+export class EmbeddingBatchError extends Schema.TaggedError<EmbeddingBatchError>()(
   "EmbeddingBatchError",
   { message: Schema.String },
 ) {}
 
-export class EmptyEmbeddingTextError extends Schema.TaggedErrorClass<EmptyEmbeddingTextError>()(
+export class EmptyEmbeddingTextError extends Schema.TaggedError<EmptyEmbeddingTextError>()(
   "EmptyEmbeddingTextError",
   { message: Schema.String },
 ) {}
 
-export class EmbeddingRuntimeError extends Schema.TaggedErrorClass<EmbeddingRuntimeError>()(
+export class EmbeddingRuntimeError extends Schema.TaggedError<EmbeddingRuntimeError>()(
   "EmbeddingRuntimeError",
   {
     message: Schema.String,
@@ -65,7 +65,7 @@ export type EmbeddingModelError =
   | EmptyEmbeddingTextError
   | EmbeddingRuntimeError;
 
-export interface EmbeddingModelAdapter {
+export type EmbeddingModelAdapter = {
   readonly inspect: Effect.Effect<
     EmbeddingModelInspection,
     InvalidEmbeddingArtifactError | EmbeddingModelDownloadError
@@ -83,7 +83,7 @@ export interface EmbeddingModelAdapter {
     | EmbeddingModelMissingError
     | EmbeddingRuntimeError
   >;
-}
+};
 
 const validateEmbeddingVectors = (
   textCount: number,
@@ -91,7 +91,7 @@ const validateEmbeddingVectors = (
 ): Effect.Effect<ReadonlyArray<ReadonlyArray<number>>, EmbeddingRuntimeError> => {
   if (vectors.length !== textCount) {
     return Effect.fail(
-      new EmbeddingRuntimeError({
+      EmbeddingRuntimeError.make({
         message: `Embedding runtime returned ${vectors.length} vectors for ${textCount} texts`,
       }),
     );
@@ -101,7 +101,7 @@ const validateEmbeddingVectors = (
   );
   if (wrongDimensionIndex >= 0) {
     return Effect.fail(
-      new EmbeddingRuntimeError({
+      EmbeddingRuntimeError.make({
         message: `Embedding vector ${wrongDimensionIndex} has dimension ${vectors[wrongDimensionIndex]?.length ?? 0}; expected ${EMBEDDING_MODEL_DIMENSIONS}`,
       }),
     );
@@ -109,7 +109,7 @@ const validateEmbeddingVectors = (
   const nonFiniteIndex = vectors.findIndex((vector) => !vector.every(Number.isFinite));
   return nonFiniteIndex >= 0
     ? Effect.fail(
-        new EmbeddingRuntimeError({
+        EmbeddingRuntimeError.make({
           message: `Embedding vector ${nonFiniteIndex} contains non-finite values`,
         }),
       )
@@ -140,14 +140,14 @@ export const makeEmbeddingModel = (adapter: EmbeddingModelAdapter): EmbeddingMod
     embed: (texts) => {
       if (texts.length > MAX_EMBEDDING_BATCH_SIZE) {
         return Effect.fail(
-          new EmbeddingBatchError({
+          EmbeddingBatchError.make({
             message: `Embedding batches are limited to ${MAX_EMBEDDING_BATCH_SIZE} texts`,
           }),
         );
       }
       if (texts.some((text) => text.length === 0)) {
         return Effect.fail(
-          new EmptyEmbeddingTextError({
+          EmptyEmbeddingTextError.make({
             message: "Embedding text must not be empty",
           }),
         );
@@ -158,10 +158,10 @@ export const makeEmbeddingModel = (adapter: EmbeddingModelAdapter): EmbeddingMod
     },
   });
 
-export interface FakeEmbeddingModelOptions {
+export type FakeEmbeddingModelOptions = {
   readonly initiallyAvailable?: boolean;
   readonly installError?: EmbeddingModelDownloadError;
-}
+};
 
 export const makeFakeEmbeddingModel = (
   options: FakeEmbeddingModelOptions = {},
@@ -169,11 +169,10 @@ export const makeFakeEmbeddingModel = (
   let available = options.initiallyAvailable ?? true;
 
   return makeEmbeddingModel({
-    inspect: Effect.sync(
-      (): EmbeddingModelInspection =>
-        available
-          ? { status: "available", id: EMBEDDING_MODEL_ID }
-          : { status: "missing", id: EMBEDDING_MODEL_ID },
+    inspect: Effect.sync((): EmbeddingModelInspection =>
+      available
+        ? { status: "available", id: EMBEDDING_MODEL_ID }
+        : { status: "missing", id: EMBEDDING_MODEL_ID },
     ),
     install:
       options.installError === undefined
