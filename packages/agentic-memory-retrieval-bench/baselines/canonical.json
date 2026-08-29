@@ -1,0 +1,453 @@
+{
+  "corpusFingerprint": "sha256:d16421855dda359f08a5af5ff8e199d20002c512c4c44345cce3da2cc2676bd8",
+  "judgeFingerprint": "sha256:c452681d3e3fc4b5e5bc4a372e3d8345f4cc19533ebbcbf183d425c3cee218c2",
+  "createdAt": "2026-08-29T22:14:10.173Z",
+  "recallRevision": { "commit": "db692f8b0c8f945159dd0e5e9daf52d76191d1ab", "dirty": true },
+  "judge": {
+    "provider": "openai-codex",
+    "model": "gpt-5.6-sol",
+    "thinking": "high",
+    "piVersion": "0.84.3",
+    "promptFingerprint": "sha256:1a3d4852877bb988428fd40cc57b215104f7155d59db4a2563dadd21bc5a7b2b"
+  },
+  "score": 78.125,
+  "metrics": {
+    "correctCount": 12,
+    "partiallyCorrectCount": 1,
+    "incorrectCount": 3,
+    "statusAccuracy": 93.75,
+    "forbiddenFactViolationCount": 0,
+    "recallLatencyP50Ms": 5154,
+    "recallLatencyP95Ms": 7745
+  },
+  "cases": [
+    {
+      "benchmarkCase": {
+        "id": "alpha-options-format-in-context",
+        "fixtureId": "project-memory",
+        "question": "In Alpha Product, how should I present prioritization options back to Urban?",
+        "expected": {
+          "status": "answered",
+          "referenceAnswer": "Present prioritization options as stack-ranked capital-letter choices.",
+          "forbiddenFacts": ["5 second batch retry window"]
+        }
+      },
+      "response": {
+        "status": "answered",
+        "question": "In Alpha Product, how should I present prioritization options back to Urban?",
+        "answer": "Explicit: When presenting prioritization options, use stack-ranked capital-letter choices so the user can reply with an order such as C > A > B.",
+        "warnings": []
+      },
+      "durationMs": 7745,
+      "evaluation": {
+        "source": "judge",
+        "outcome": "correct",
+        "score": 1,
+        "rationale": "The response matches the reference: present options as stack-ranked capital-letter choices, with a valid ordering example.",
+        "hardGateViolations": []
+      }
+    },
+    {
+      "benchmarkCase": {
+        "id": "alpha-latency-only",
+        "fixtureId": "project-memory",
+        "question": "In Alpha Product, what latency budget should I follow for the retry scheduler?",
+        "expected": {
+          "status": "answered",
+          "referenceAnswer": "Alpha retry scheduling uses a 200ms p95 latency budget.",
+          "forbiddenFacts": ["5 second batch retry window", "stack-ranked", "capital-letter"]
+        }
+      },
+      "response": {
+        "status": "answered",
+        "question": "In Alpha Product, what latency budget should I follow for the retry scheduler?",
+        "answer": "Alpha Product interactive retry scheduling should use a 200ms p95 latency budget.",
+        "warnings": []
+      },
+      "durationMs": 7123,
+      "evaluation": {
+        "source": "judge",
+        "outcome": "correct",
+        "score": 1,
+        "rationale": "The response exactly matches the reference’s 200ms p95 latency budget for Alpha retry scheduling.",
+        "hardGateViolations": []
+      }
+    },
+    {
+      "benchmarkCase": {
+        "id": "beta-retry-policy",
+        "fixtureId": "project-memory",
+        "question": "In Beta Platform, what retry policy should I follow?",
+        "expected": {
+          "status": "answered",
+          "referenceAnswer": "Beta Platform uses a 5 second batch retry window.",
+          "forbiddenFacts": ["200ms p95", "stack-ranked", "capital-letter"]
+        }
+      },
+      "response": {
+        "status": "answered",
+        "question": "In Beta Platform, what retry policy should I follow?",
+        "answer": "Decision: Use a 5 second batch retry window for Beta Platform.",
+        "warnings": []
+      },
+      "durationMs": 4294,
+      "evaluation": {
+        "source": "judge",
+        "outcome": "correct",
+        "score": 1,
+        "rationale": "The response exactly matches the reference policy: use a 5 second batch retry window.",
+        "hardGateViolations": []
+      }
+    },
+    {
+      "benchmarkCase": {
+        "id": "user-option-format-only",
+        "fixtureId": "user-preferences",
+        "question": "How should I present prioritization options?",
+        "expected": {
+          "status": "answered",
+          "referenceAnswer": "Present prioritization options as stack-ranked capital-letter choices.",
+          "forbiddenFacts": ["200ms p95", "5 second batch retry window"]
+        }
+      },
+      "response": {
+        "status": "answered",
+        "question": "How should I present prioritization options?",
+        "answer": "Present prioritization options as stack-ranked capital-letter choices.",
+        "warnings": []
+      },
+      "durationMs": 4002,
+      "evaluation": {
+        "source": "judge",
+        "outcome": "correct",
+        "score": 1,
+        "rationale": "The response exactly matches the reference answer.",
+        "hardGateViolations": []
+      }
+    },
+    {
+      "benchmarkCase": {
+        "id": "unknown-project-not-found",
+        "fixtureId": "project-memory",
+        "question": "What launch window did Gamma Project choose?",
+        "expected": {
+          "status": "not_found",
+          "forbiddenFacts": [
+            "200ms p95",
+            "5 second batch retry window",
+            "stack-ranked",
+            "capital-letter"
+          ]
+        }
+      },
+      "response": {
+        "status": "not_found",
+        "question": "What launch window did Gamma Project choose?",
+        "answer": "I don't know based on the available Agentic Memory.",
+        "warnings": []
+      },
+      "durationMs": 3597,
+      "evaluation": {
+        "source": "deterministic",
+        "outcome": "correct",
+        "score": 1,
+        "rationale": "Recall correctly abstained.",
+        "hardGateViolations": []
+      }
+    },
+    {
+      "benchmarkCase": {
+        "id": "off-topic-not-found",
+        "fixtureId": "project-memory",
+        "question": "What coffee grinder setting should I use tomorrow morning?",
+        "expected": {
+          "status": "not_found",
+          "forbiddenFacts": [
+            "200ms p95",
+            "5 second batch retry window",
+            "stack-ranked",
+            "capital-letter"
+          ]
+        }
+      },
+      "response": {
+        "status": "not_found",
+        "question": "What coffee grinder setting should I use tomorrow morning?",
+        "answer": "I don't know based on the available Agentic Memory.",
+        "warnings": []
+      },
+      "durationMs": 3378,
+      "evaluation": {
+        "source": "deterministic",
+        "outcome": "correct",
+        "score": 1,
+        "rationale": "Recall correctly abstained.",
+        "hardGateViolations": []
+      }
+    },
+    {
+      "benchmarkCase": {
+        "id": "alpha-current-latency",
+        "fixtureId": "project-memory",
+        "question": "For Alpha Product, what current p95 latency budget applies to the retry scheduler?",
+        "expected": {
+          "status": "answered",
+          "referenceAnswer": "Alpha retry scheduling uses a 200ms p95 latency budget.",
+          "forbiddenFacts": [
+            "120ms p95",
+            "180ms observed p95 verification threshold",
+            "350ms p95",
+            "400ms p95"
+          ]
+        }
+      },
+      "response": {
+        "status": "answered",
+        "question": "For Alpha Product, what current p95 latency budget applies to the retry scheduler?",
+        "answer": "Alpha Product interactive retry scheduling should use a 200ms p95 latency budget.",
+        "warnings": []
+      },
+      "durationMs": 5732,
+      "evaluation": {
+        "source": "judge",
+        "outcome": "correct",
+        "score": 1,
+        "rationale": "The response matches the reference: Alpha retry scheduling has a 200ms p95 latency budget.",
+        "hardGateViolations": []
+      }
+    },
+    {
+      "benchmarkCase": {
+        "id": "alpha-source-only-not-found",
+        "fixtureId": "project-memory",
+        "question": "What source verification evidence did the Alpha Product responsiveness trial record for the latency decision?",
+        "expected": {
+          "status": "not_found",
+          "forbiddenFacts": ["120ms p95", "180ms observed p95 verification threshold"]
+        }
+      },
+      "response": {
+        "status": "answered",
+        "question": "What source verification evidence did the Alpha Product responsiveness trial record for the latency decision?",
+        "answer": "Use a 200ms p95 latency budget for Alpha Product interactive retry scheduling.",
+        "warnings": []
+      },
+      "durationMs": 6301,
+      "evaluation": {
+        "source": "deterministic",
+        "outcome": "incorrect",
+        "score": 0,
+        "rationale": "Deterministic status or forbidden-fact gate failed.",
+        "hardGateViolations": [{ "_tag": "status", "expected": "not_found", "actual": "answered" }]
+      }
+    },
+    {
+      "benchmarkCase": {
+        "id": "alpha-current-latency-conflicts",
+        "fixtureId": "project-memory",
+        "question": "What is the current Alpha Product retry scheduler latency budget?",
+        "expected": {
+          "status": "answered",
+          "referenceAnswer": "Alpha retry scheduling uses a 200ms p95 latency budget.",
+          "forbiddenFacts": ["120ms p95", "350ms p95", "400ms p95"]
+        }
+      },
+      "response": {
+        "status": "answered",
+        "question": "What is the current Alpha Product retry scheduler latency budget?",
+        "answer": "Alpha Product interactive retry scheduling should use a 200ms p95 latency budget.",
+        "warnings": []
+      },
+      "durationMs": 6145,
+      "evaluation": {
+        "source": "judge",
+        "outcome": "correct",
+        "score": 1,
+        "rationale": "The response exactly matches the reference’s essential fact: a 200ms p95 latency budget for Alpha retry scheduling.",
+        "hardGateViolations": []
+      }
+    },
+    {
+      "benchmarkCase": {
+        "id": "alpha-timing-constraint",
+        "fixtureId": "project-memory",
+        "question": "I am changing Alpha retry scheduler timing. What constraint matters?",
+        "expected": {
+          "status": "answered",
+          "referenceAnswer": "Alpha retry scheduling uses a 200ms p95 latency budget.",
+          "forbiddenFacts": ["5 second batch retry window"]
+        }
+      },
+      "response": {
+        "status": "answered",
+        "question": "I am changing Alpha retry scheduler timing. What constraint matters?",
+        "answer": "Alpha Product interactive retry scheduling should use a 200ms p95 latency budget.",
+        "warnings": []
+      },
+      "durationMs": 5381,
+      "evaluation": {
+        "source": "judge",
+        "outcome": "correct",
+        "score": 1,
+        "rationale": "The response exactly captures the key constraint: Alpha retry scheduling has a 200ms p95 latency budget.",
+        "hardGateViolations": []
+      }
+    },
+    {
+      "benchmarkCase": {
+        "id": "alpha-latency-rationale",
+        "fixtureId": "project-memory",
+        "question": "Why was the Alpha scheduler latency budget chosen?",
+        "expected": {
+          "status": "answered",
+          "referenceAnswer": "The Alpha scheduler latency budget was chosen to protect user-facing flows.",
+          "forbiddenFacts": ["5 second batch retry window"]
+        }
+      },
+      "response": {
+        "status": "answered",
+        "question": "Why was the Alpha scheduler latency budget chosen?",
+        "answer": "Alpha Product interactive retry scheduling should use a 200ms p95 latency budget.",
+        "warnings": []
+      },
+      "durationMs": 5154,
+      "evaluation": {
+        "source": "judge",
+        "outcome": "incorrect",
+        "score": 0,
+        "rationale": "The response states the budget value but does not explain why it was chosen: to protect user-facing flows.",
+        "hardGateViolations": []
+      }
+    },
+    {
+      "benchmarkCase": {
+        "id": "alpha-accepted-latency-budget",
+        "fixtureId": "project-memory",
+        "question": "What latency budget was accepted for the Alpha retry scheduler?",
+        "expected": {
+          "status": "answered",
+          "referenceAnswer": "Alpha retry scheduling uses a 200ms p95 latency budget.",
+          "forbiddenFacts": ["5 second batch retry window"]
+        }
+      },
+      "response": {
+        "status": "answered",
+        "question": "What latency budget was accepted for the Alpha retry scheduler?",
+        "answer": "Alpha Product accepted a 200ms p95 latency budget for interactive retry scheduling.",
+        "warnings": []
+      },
+      "durationMs": 4968,
+      "evaluation": {
+        "source": "judge",
+        "outcome": "correct",
+        "score": 1,
+        "rationale": "The response matches the accepted 200ms p95 latency budget for Alpha retry scheduling.",
+        "hardGateViolations": []
+      }
+    },
+    {
+      "benchmarkCase": {
+        "id": "alpha-resuming-work-constraint",
+        "fixtureId": "project-memory",
+        "question": "Before resuming Alpha scheduler work, what constraint matters for user-facing scheduling?",
+        "expected": {
+          "status": "answered",
+          "referenceAnswer": "Alpha user-facing scheduling must preserve responsiveness over throughput.",
+          "forbiddenFacts": ["5 second batch retry window"]
+        }
+      },
+      "response": {
+        "status": "answered",
+        "question": "Before resuming Alpha scheduler work, what constraint matters for user-facing scheduling?",
+        "answer": "Alpha Product interactive retry scheduling should use a 200ms p95 latency budget. This budget applies when a retry decision blocks or influences a user-facing flow.",
+        "warnings": []
+      },
+      "durationMs": 6018,
+      "evaluation": {
+        "source": "judge",
+        "outcome": "partially_correct",
+        "score": 0.5,
+        "rationale": "It reflects a responsiveness concern through a latency budget, but omits the essential priority of responsiveness over throughput and adds an unsupported 200ms p95 figure.",
+        "hardGateViolations": []
+      }
+    },
+    {
+      "benchmarkCase": {
+        "id": "alpha-planning-context",
+        "fixtureId": "project-memory",
+        "question": "For Alpha user-facing planning context, what scheduler constraint should I follow?",
+        "expected": {
+          "status": "answered",
+          "referenceAnswer": "Treat Alpha scheduler work as interaction-design constraints.",
+          "forbiddenFacts": ["5 second batch retry window"]
+        }
+      },
+      "response": {
+        "status": "answered",
+        "question": "For Alpha user-facing planning context, what scheduler constraint should I follow?",
+        "answer": "Alpha Product interactive retry scheduling should use a 200ms p95 latency budget. This budget applies when a retry decision blocks or influences a user-facing flow.",
+        "warnings": []
+      },
+      "durationMs": 6326,
+      "evaluation": {
+        "source": "judge",
+        "outcome": "incorrect",
+        "score": 0,
+        "rationale": "The response invents a 200ms p95 latency budget and does not state the required guidance: treat Alpha scheduler work as interaction-design constraints.",
+        "hardGateViolations": []
+      }
+    },
+    {
+      "benchmarkCase": {
+        "id": "alpha-scheduler-framing",
+        "fixtureId": "project-memory",
+        "question": "How does Alpha frame scheduler choices: interaction design or background jobs?",
+        "expected": {
+          "status": "answered",
+          "referenceAnswer": "Alpha frames scheduler choices as interaction-design constraints, not background-job tuning.",
+          "forbiddenFacts": ["5 second batch retry window"]
+        }
+      },
+      "response": {
+        "status": "answered",
+        "question": "How does Alpha frame scheduler choices: interaction design or background jobs?",
+        "answer": "Alpha scheduler memory treats scheduler choices as interaction-design constraints, not background-job tuning.",
+        "warnings": []
+      },
+      "durationMs": 4988,
+      "evaluation": {
+        "source": "judge",
+        "outcome": "correct",
+        "score": 1,
+        "rationale": "The response exactly matches the reference: scheduler choices are framed as interaction-design constraints rather than background-job tuning.",
+        "hardGateViolations": []
+      }
+    },
+    {
+      "benchmarkCase": {
+        "id": "alpha-latency-consistency",
+        "fixtureId": "project-memory",
+        "question": "For Alpha Product retry scheduling, what latency budget should I use?",
+        "expected": {
+          "status": "answered",
+          "referenceAnswer": "Alpha retry scheduling uses a 200ms p95 latency budget.",
+          "forbiddenFacts": ["5 second batch retry window"]
+        }
+      },
+      "response": {
+        "status": "answered",
+        "question": "For Alpha Product retry scheduling, what latency budget should I use?",
+        "answer": "Alpha Product interactive retry scheduling should use a 200ms p95 latency budget.",
+        "warnings": []
+      },
+      "durationMs": 4670,
+      "evaluation": {
+        "source": "judge",
+        "outcome": "correct",
+        "score": 1,
+        "rationale": "The response exactly matches the reference’s essential latency target: 200ms at p95 for Alpha retry scheduling.",
+        "hardGateViolations": []
+      }
+    }
+  ]
+}

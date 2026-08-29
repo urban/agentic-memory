@@ -33,7 +33,7 @@ Slice 1 deliberately has:
 - no synthesis-server or model lifecycle management;
 - no server-backed embeddings or approximate vector search.
 
-The existing opt-in live benchmark is exploratory follow-on tooling. It is not a Slice 1 completion gate or part of normal deterministic validation.
+The Batch 2 canonical benchmark is an opt-in live feedback loop and remains outside normal deterministic validation. Its independent single-run judgments and directional deltas guide iteration but are not statistical or release gates.
 
 ## Prioritization principles
 
@@ -73,22 +73,22 @@ The arrows show hard or useful dependencies, not permission to implement multipl
 
 ## Stack-ranked batches
 
-| Rank | Batch                                      | Primary outcome                                           | Status                                        | Depends on               |
-| ---: | ------------------------------------------ | --------------------------------------------------------- | --------------------------------------------- | ------------------------ |
-|    1 | Native embedding reliability               | Stable indexing and Recall inference lifecycle            | Approved PRD                                  | Slice 1                  |
-|    2 | Benchmark foundation                       | A trustworthy feedback loop for later changes             | Approved PRD; existing partial implementation | Slice 1                  |
-|    3 | Current-state authority and policy ranking | Correct facts win when memory competes or conflicts       | Planned direction                             | 1–2                      |
-|    4 | Explicit source verification               | Users can deliberately answer from raw evidence           | Planned direction                             | 3                        |
-|    5 | Route and link expansion                   | Maps and projects guide one-hop discovery                 | Planned direction                             | 2–3                      |
-|    6 | Multi-evidence and multi-claim recall      | Complex singular questions can combine grounded facts     | Planned direction                             | 3–5                      |
-|    7 | Multipart, partial support, and citations  | Richer public answer contract                             | Deferred contract work                        | 6                        |
-|    8 | Local synthesis runtime hardening          | Easier and more resilient local operation                 | Planned direction                             | 1–3                      |
-|    9 | Read-only `get` and lexical `search`       | Direct progressive-disclosure tools                       | Draft                                         | 2–3                      |
-|   10 | Hybrid `query` and advanced retrieval      | Better large-vault candidate discovery                    | Draft and benchmark-gated                     | 3, 5, 9                  |
-|   11 | Server-backed embeddings                   | One persistent local-server inference architecture        | Planned follow-on slice                       | 1                        |
-|   12 | Quality hardening and release gates        | Repeatable quality, robustness, and regression thresholds | Draft and benchmark-gated                     | 2, 6                     |
-|   13 | Context packaging and diagnostics          | Explainable, token-bounded retrieval workflows            | Optional                                      | 9–12                     |
-|   14 | Conditional scale and deployment work      | Capabilities justified only by measured demand            | Unapproved parking lot                        | Relevant earlier batches |
+| Rank | Batch                                      | Primary outcome                                           | Status                                            | Depends on               |
+| ---: | ------------------------------------------ | --------------------------------------------------------- | ------------------------------------------------- | ------------------------ |
+|    1 | Native embedding reliability               | Stable indexing and Recall inference lifecycle            | Approved PRD                                      | Slice 1                  |
+|    2 | Benchmark foundation                       | A trustworthy feedback loop for later changes             | Implemented; initial live baseline review pending | Slice 1                  |
+|    3 | Current-state authority and policy ranking | Correct facts win when memory competes or conflicts       | Planned direction                                 | 1–2                      |
+|    4 | Explicit source verification               | Users can deliberately answer from raw evidence           | Planned direction                                 | 3                        |
+|    5 | Route and link expansion                   | Maps and projects guide one-hop discovery                 | Planned direction                                 | 2–3                      |
+|    6 | Multi-evidence and multi-claim recall      | Complex singular questions can combine grounded facts     | Planned direction                                 | 3–5                      |
+|    7 | Multipart, partial support, and citations  | Richer public answer contract                             | Deferred contract work                            | 6                        |
+|    8 | Local synthesis runtime hardening          | Easier and more resilient local operation                 | Planned direction                                 | 1–3                      |
+|    9 | Read-only `get` and lexical `search`       | Direct progressive-disclosure tools                       | Draft                                             | 2–3                      |
+|   10 | Hybrid `query` and advanced retrieval      | Better large-vault candidate discovery                    | Draft and benchmark-gated                         | 3, 5, 9                  |
+|   11 | Server-backed embeddings                   | One persistent local-server inference architecture        | Planned follow-on slice                           | 1                        |
+|   12 | Quality hardening and release gates        | Repeatable quality, robustness, and regression thresholds | Draft and benchmark-gated                         | 2, 6                     |
+|   13 | Context packaging and diagnostics          | Explainable, token-bounded retrieval workflows            | Optional                                          | 9–12                     |
+|   14 | Conditional scale and deployment work      | Capabilities justified only by measured demand            | Unapproved parking lot                            | Relevant earlier batches |
 
 ## 1. Native embedding reliability
 

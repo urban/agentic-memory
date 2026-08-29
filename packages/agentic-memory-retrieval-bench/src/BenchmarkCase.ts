@@ -1,15 +1,25 @@
 import { Effect, FileSystem, PlatformError, Schema } from "effect";
 
-export const BenchmarkExpectation = Schema.Struct({
-  status: Schema.Literals(["answered", "not_found"]),
-  answerMustContain: Schema.Array(Schema.String),
-  answerMustNotContain: Schema.Array(Schema.String),
-}).annotate({ identifier: "BenchmarkExpectation" });
+const NonEmptyString = Schema.String.check(Schema.isMinLength(1));
+
+export const AnsweredExpectation = Schema.Struct({
+  status: Schema.Literal("answered"),
+  referenceAnswer: NonEmptyString,
+  forbiddenFacts: Schema.Array(NonEmptyString),
+});
+
+export const NotFoundExpectation = Schema.Struct({
+  status: Schema.Literal("not_found"),
+  forbiddenFacts: Schema.Array(NonEmptyString),
+});
+
+export const BenchmarkExpectation = Schema.Union([AnsweredExpectation, NotFoundExpectation]);
 export type BenchmarkExpectation = typeof BenchmarkExpectation.Type;
 
 export const BenchmarkCase = Schema.Struct({
-  id: Schema.String,
-  question: Schema.String,
+  id: NonEmptyString,
+  fixtureId: Schema.Literals(["project-memory", "user-preferences"]),
+  question: NonEmptyString,
   expected: BenchmarkExpectation,
 }).annotate({ identifier: "BenchmarkCase" });
 export type BenchmarkCase = typeof BenchmarkCase.Type;

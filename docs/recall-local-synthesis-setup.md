@@ -1,6 +1,6 @@
 # Recall local synthesis setup
 
-Recall requires a separately managed local Qwen synthesis server in addition to the shared EmbeddingGemma model used for semantic indexing. This guide records the exact Apple-silicon stack that passed the Slice 1 compatibility gate.
+Recall requires a separately managed local Qwen synthesis server in addition to the shared EmbeddingGemma model used for semantic indexing. This guide records the exact Apple-silicon stack that passed the live compatibility gate with the repository's current Effect release candidate.
 
 Agentic Memory is only a client of this stack. It never installs, downloads, starts, stops, supervises, or restarts `llama-server` or Qwen. The root `start:llama` script is an explicit foreground convenience command for a user who has already installed and verified the pinned artifacts.
 
@@ -8,11 +8,11 @@ Agentic Memory is only a client of this stack. It never installs, downloads, sta
 
 | Component                   | Verified pin                                                                                                                        |
 | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `llama-server`              | `llama.cpp` release `b10081`, commit `60f6a17704163e0273bfadb9abb30deb14270f7f`                                                     |
-| Apple arm64 release archive | `llama-b10081-bin-macos-arm64.tar.gz`, 10,609,315 bytes, SHA-256 `ad6d5372d9a7283c458cd4918a083d9d002fd82c7a3c3241b8fe571ed0dc1729` |
+| `llama-server`              | `llama.cpp` release `b10687`, commit `c841aeeb8bb2fe417038dadfa9b007cf1a9ef950`                                                     |
+| Apple arm64 release archive | `llama-b10687-bin-macos-arm64.tar.gz`, 11,027,677 bytes, SHA-256 `ad1f407db2b21eb636779ef90c493b327ce55b59ab4fc43ed8197c5c61839b0a` |
 | Synthesis model             | `Qwen/Qwen3-4B-GGUF` revision `bc640142c66e1fdd12af0bd68f40445458f3869b`, `Qwen3-4B-Q4_K_M.gguf`                                    |
-| Effect AI provider          | `@effect/ai-openai-compat@4.0.0-beta.100`                                                                                           |
-| Effect                      | `effect@4.0.0-beta.100`                                                                                                             |
+| Effect AI provider          | `@effect/ai-openai-compat@4.0.0-rc.108`                                                                                             |
+| Effect                      | `effect@4.0.0-rc.108`                                                                                                               |
 
 The JavaScript dependency pins are recorded in `packages/core/package.json` and `bun.lock`. Treat the server, model artifact, fixed alias, and Effect AI package as one compatibility unit.
 
@@ -32,7 +32,7 @@ Both commands must succeed. Intel Macs, Linux, Windows, and non-Metal accelerati
 Download the exact upstream Apple arm64 release archive:
 
 ```sh
-LLAMA_CPP_VERSION=b10081
+LLAMA_CPP_VERSION=b10687
 LLAMA_CPP_ARCHIVE="llama-${LLAMA_CPP_VERSION}-bin-macos-arm64.tar.gz"
 LLAMA_CPP_ARCHIVE_URL="https://github.com/ggml-org/llama.cpp/releases/download/${LLAMA_CPP_VERSION}/${LLAMA_CPP_ARCHIVE}"
 
@@ -42,16 +42,16 @@ curl --fail --location --retry 3 \
   "$LLAMA_CPP_ARCHIVE_URL"
 
 printf '%s  %s\n' \
-  ad6d5372d9a7283c458cd4918a083d9d002fd82c7a3c3241b8fe571ed0dc1729 \
+  ad1f407db2b21eb636779ef90c493b327ce55b59ab4fc43ed8197c5c61839b0a \
   "$HOME/.local/opt/$LLAMA_CPP_ARCHIVE" \
   | shasum -a 256 --check
 
 tar -xzf "$HOME/.local/opt/$LLAMA_CPP_ARCHIVE" -C "$HOME/.local/opt"
-export LLAMA_CPP_HOME="$HOME/.local/opt/llama-b10081"
+export LLAMA_CPP_HOME="$HOME/.local/opt/llama-b10687"
 "$LLAMA_CPP_HOME/llama-server" --version
 ```
 
-The version command must identify build `10081` at commit `60f6a1770` for Darwin arm64. Keep the extracted dynamic libraries beside the binary.
+The version command must identify build `10687` at commit `c841aeeb8` for Darwin arm64. Keep the extracted dynamic libraries beside the binary.
 
 ## 3. Download the pinned Qwen artifact
 
@@ -102,7 +102,7 @@ cp .env.local.example .env.local
 The ignored `.env.local` must define:
 
 ```sh
-LLAMA_CPP_HOME=/absolute/path/to/llama-b10081
+LLAMA_CPP_HOME=/absolute/path/to/llama-b10687
 AGENTIC_MEMORY_QWEN_MODEL=/absolute/path/to/Qwen3-4B-Q4_K_M.gguf
 AGENTIC_MEMORY_SYNTHESIS_URL=http://127.0.0.1:8080/v1
 ```
@@ -171,7 +171,7 @@ The probe verifies Effect AI structured generation, schema acceptance, `answered
 
 ## 10. Troubleshoot and upgrade safely
 
-- **Server version differs:** reinstall `b10081`; a Homebrew binary or another `llama-server` on `PATH` is not the verified server.
+- **Server version differs:** reinstall `b10687`; a Homebrew binary or another `llama-server` on `PATH` is not the verified server.
 - **Archive or model checksum fails:** do not run the artifact. Delete it and download it again from the pinned URI.
 - **Server is unavailable:** confirm the foreground process is running and the server and endpoint both use port 8080.
 - **Model is incompatible:** confirm the fixed alias, model file, `--jinja`, and `--reasoning off` settings.

@@ -1,0 +1,8 @@
+{
+  "id": "recall-canonical",
+  "fixtures": [
+    { "id": "project-memory", "manifest": "fixtures/manifests/project-memory.json" },
+    { "id": "user-preferences", "manifest": "fixtures/manifests/user-preferences.json" }
+  ],
+  "cases": "fixtures/queries.json"
+}

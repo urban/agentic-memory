@@ -9,6 +9,7 @@ import {
 } from "../recall/LocalSynthesisEndpoint.ts";
 import {
   AnsweredRecallSynthesis,
+  decodeRecallSynthesisGenerationOutput,
   NotFoundRecallSynthesis,
   RecallSynthesisGenerationOutput,
   RecallSynthesisOutput,
@@ -106,7 +107,7 @@ const makeLanguageModel = Effect.fnUntraced(function* (endpoint: string) {
 
 const answeredPrompt = `This is a structured-output transport compatibility check, not a quality benchmark.
 The only evidence is: [E1] The compatibility code is azure-17.
-Return status answered, answer "azure-17", claim "The compatibility code is azure-17.", and evidenceIds ["E1"].`;
+Return status answered, answer "azure-17", claim "The compatibility code is azure-17.", evidenceIds ["E1"], and providerModelIdentity absent because the answer and claim name no provider or model.`;
 
 const notFoundPrompt = `This is a structured-output transport compatibility check, not a quality benchmark.
 The supplied evidence does not identify a project owner.
@@ -144,9 +145,7 @@ const generateCompatibilityCase = Effect.fnUntraced(function* (
       message: "The local Qwen server returned reasoning despite non-thinking mode",
     });
   }
-  const value = yield* Schema.decodeUnknownEffect(SynthesisCompatibilityOutput)(
-    response.value,
-  ).pipe(
+  const value = yield* decodeRecallSynthesisGenerationOutput(response.value).pipe(
     Effect.mapError((cause) =>
       SynthesisStructuredOutputError.make({
         message: "Qwen output did not decode through the required Effect Schema",

@@ -8,10 +8,14 @@
   ],
   "type": "module",
   "exports": {
+    "./Baseline": "./src/Baseline.ts",
     "./BenchmarkCase": "./src/BenchmarkCase.ts",
+    "./BenchmarkManifest": "./src/BenchmarkManifest.ts",
     "./BenchmarkRunner": "./src/BenchmarkRunner.ts",
     "./BenchmarkReport": "./src/BenchmarkReport.ts",
-    "./HardGates": "./src/HardGates.ts"
+    "./Evaluation": "./src/Evaluation.ts",
+    "./Judge": "./src/Judge.ts",
+    "./ScoredRun": "./src/ScoredRun.ts"
   },
   "scripts": {
     "bench": "bun src/bench.ts"

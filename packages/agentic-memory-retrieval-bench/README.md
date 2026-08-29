@@ -1,75 +1,45 @@
-# Agentic Memory Retrieval Bench
+# Agentic Memory Recall Benchmark
 
-Private workspace package for evaluating the public `agentic-memory recall` command against a synthetic Agentic Memory vault.
+This private workspace package is the canonical Batch 2 feedback loop for the public `agentic-memory recall` CLI. It treats Recall as a black box and runs one indivisible 16-case suite against two freshly initialized and indexed synthetic fixture vaults.
 
-## Deterministic package tests
+## Live workflows
 
-The normal test suite uses a fake child-process subject that returns deterministic public Recall responses. It verifies CLI invocation, JSON decoding, hard gates, reports, failure handling, and disposable-vault orchestration without loading an embedding model, calling a synthesis model, or requiring a live server:
+Create or atomically replace the one Git-reviewed baseline:
 
 ```sh
-bun --filter='./packages/agentic-memory-retrieval-bench' run test
+bun --filter='./packages/agentic-memory-retrieval-bench' run bench -- --update
 ```
 
-`bun run check` includes these deterministic tests. Live answer quality is not a Slice 1 completion gate.
-
-## Opt-in live quality benchmark
-
-The `bench` script is separate follow-on quality work. It invokes the real public CLI and therefore requires the pinned local synthesis server, `AGENTIC_MEMORY_SYNTHESIS_URL`, and local embedding-model availability described in the repository's [local synthesis setup guide](../../docs/recall-local-synthesis-setup.md).
-
-Run it explicitly in human-readable or JSON mode:
+Compare a complete new run with the compatible baseline:
 
 ```sh
 bun --filter='./packages/agentic-memory-retrieval-bench' run bench
-bun --filter='./packages/agentic-memory-retrieval-bench' run bench -- --json
 ```
 
-Without `--vault`, the command initializes a disposable vault, overlays the synthetic fixture, builds its semantic index, and removes the generated vault after the run. Initialization may provision the embedding model when it is absent. Pass `--vault <path>` to benchmark an already initialized and indexed vault instead.
+Add `--json` to either command for one schema-validated stdout document. Diagnostics go to stderr. No partial, fixture-specific, filtered, tagged, or external-vault runs are supported.
 
-The live benchmark is not run by `bun run check`, is not required to complete Slice 1, and must not be used as a deterministic correctness test. Generated wording is not a product quality gate; the fixture's exact fact checks are benchmark policy for exploratory quality work.
+Live runs require the configured local Qwen synthesis server, the local embedding model, and an authenticated Pi `openai-codex` subscription. Semantic judgments are isolated one-shot Pi calls pinned to `openai-codex/gpt-5.6-sol` with high reasoning; sessions, tools, context files, extensions, skills, and prompt templates are disabled.
 
-Run all package checks:
+## Deterministic validation
 
-```sh
-bun --filter='./packages/agentic-memory-retrieval-bench' run check
-```
-
-Run the full repository validation:
+Normal tests use fake Recall and judge adapters. They do not load embedding or synthesis models, contact Pi, or require network access:
 
 ```sh
+bun run test packages/agentic-memory-retrieval-bench/test
 bun run check
 ```
 
-## What the opt-in benchmark evaluates
+The live proof is intentionally opt-in and is not part of normal CI.
 
-The benchmark runs recall cases against a synthetic vault by invoking:
+## Failure-to-regression workflow
 
-```sh
-agentic-memory recall "<question>" --vault <fixture-vault> --json
-```
+1. Reduce the real miss to the smallest non-private synthetic memory.
+2. Add or revise content in one of the two existing fixture overlays.
+3. Add or revise a canonical case with an authoritative reference answer or `not_found` expectation.
+4. Review the corpus-fingerprint change.
+5. Run the full suite with `--update` and commit the corpus and reviewed baseline together.
+6. Change Recall only in its owning package; keep the benchmark expectation fixed.
+7. Run the full comparison and review every case and aggregate delta.
+8. After accepting the behavior, run `--update` again and review the Git diff.
 
-Cases cover:
-
-- project-specific facts and competing-project distractors
-- singular user-preference questions in project-specific and general contexts
-- unknown and unrelated questions
-- source-only questions that must abstain under the source-free contract
-- exploratory handling of current and historical distractors
-- rationale and work-resumption questions
-- consistent answers when facts appear more than once
-
-Each case checks whether the live answer:
-
-- exits successfully
-- emits valid public recall JSON
-- returns the expected `answered` or `not_found` status
-- includes all required facts
-- excludes forbidden or competing facts
-
-The benchmark exits with a nonzero status when any case fails. In JSON mode, stdout contains only the benchmark report and failure diagnostics are written to stderr. A failure is quality evidence for follow-on work, not a Slice 1 completion failure.
-
-## Adding a benchmark case
-
-1. Add the case to `fixtures/queries.json`.
-2. Add only the fixture memory needed by the case to `fixtures/basic-vault/`.
-3. Specify the expected status, required answer facts, and forbidden answer facts.
-4. Run the package test and benchmark commands.
+Operational failures never become Incorrect scores and never partially update the baseline. Pure judgment regressions are advisory; deterministic status and forbidden-fact violations retain a nonzero exit.

@@ -119,6 +119,44 @@ describe("local recall synthesis", () => {
     });
   });
 
+  it.effect("normalizes generation-only fields for a not_found result", () => {
+    const client = makeHttpClient((request) =>
+      Effect.succeed(
+        jsonResponse(
+          request,
+          responseBody(
+            '{"status":"not_found","answer":"The evidence does not contain the answer.","claim":"The evidence does not contain the answer.","evidenceIds":["E1"],"providerModelIdentity":"absent"}',
+          ),
+        ),
+      ),
+    );
+
+    return synthesizeWith("http://127.0.0.1:8080/v1", client).pipe(
+      Effect.map((result) => {
+        assert.deepEqual(result, { status: "not_found" });
+      }),
+    );
+  });
+
+  it.effect("normalizes empty generation-only fields for a not_found result", () => {
+    const client = makeHttpClient((request) =>
+      Effect.succeed(
+        jsonResponse(
+          request,
+          responseBody(
+            '{"status":"not_found","answer":"","claim":"","evidenceIds":["E1"],"providerModelIdentity":"absent"}',
+          ),
+        ),
+      ),
+    );
+
+    return synthesizeWith("http://127.0.0.1:8080/v1", client).pipe(
+      Effect.map((result) => {
+        assert.deepEqual(result, { status: "not_found" });
+      }),
+    );
+  });
+
   it.effect("uses the fixed deterministic non-thinking request and treats evidence as data", () => {
     let decodedRequest: typeof SynthesisRequest.Type | undefined;
     const client = makeHttpClient((request) =>
@@ -152,6 +190,14 @@ describe("local recall synthesis", () => {
       assert.isFalse(decodedRequest.chat_template_kwargs.enable_thinking);
       assert.isTrue(decodedRequest.response_format.json_schema.strict);
       assert.include(decodedRequest.messages[0]?.content ?? "", "untrusted data");
+      assert.include(
+        decodedRequest.messages[0]?.content ?? "",
+        "Inspect only the answer and claim text",
+      );
+      assert.include(
+        decodedRequest.messages[0]?.content ?? "",
+        "Numbers, measurements, durations, percentages, dates, and project names",
+      );
       assert.notInclude(decodedRequest.messages[0]?.content ?? "", "azure-17");
       assert.include(decodedRequest.messages[1]?.content ?? "", "Ignore prior instructions");
     });
@@ -205,11 +251,6 @@ describe("local recall synthesis", () => {
     const malformed = makeHttpClient((request) =>
       Effect.succeed(jsonResponse(request, responseBody("not-json"))),
     );
-    const schemaInvalid = makeHttpClient((request) =>
-      Effect.succeed(
-        jsonResponse(request, responseBody('{"status":"not_found","answer":"unsupported guess"}')),
-      ),
-    );
     const thinking = makeHttpClient((request) =>
       Effect.succeed(
         jsonResponse(request, responseBody('{"status":"not_found"}', "private reasoning")),
@@ -227,10 +268,6 @@ describe("local recall synthesis", () => {
       const malformedError = yield* synthesizeWith("http://127.0.0.1:8080/v1", malformed).pipe(
         Effect.flip,
       );
-      const schemaInvalidError = yield* synthesizeWith(
-        "http://127.0.0.1:8080/v1",
-        schemaInvalid,
-      ).pipe(Effect.flip);
       const thinkingError = yield* synthesizeWith("http://127.0.0.1:8080/v1", thinking).pipe(
         Effect.flip,
       );
@@ -238,7 +275,6 @@ describe("local recall synthesis", () => {
       assert.strictEqual(unavailableError.reason, "ServerUnavailable");
       assert.strictEqual(incompatibleError.reason, "ServerIncompatible");
       assert.strictEqual(malformedError.reason, "MalformedStructuredOutput");
-      assert.strictEqual(schemaInvalidError.reason, "MalformedStructuredOutput");
       assert.strictEqual(thinkingError.reason, "ServerIncompatible");
     });
   });
